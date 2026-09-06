@@ -34,8 +34,9 @@ func NewClient(base, token string) *Client {
 // --- wire types (only the fields the bot reads) ------------------------------
 
 type User struct {
-	ID       int64  `json:"id"`
-	Username string `json:"username"`
+	ID           int64  `json:"id"`
+	Username     string `json:"username"`
+	LanguageCode string `json:"language_code"`
 }
 
 type Chat struct {
@@ -46,6 +47,7 @@ type Chat struct {
 type Message struct {
 	MessageID int64  `json:"message_id"`
 	Chat      Chat   `json:"chat"`
+	From      *User  `json:"from"`
 	Text      string `json:"text"`
 }
 
@@ -68,6 +70,26 @@ type InlineKeyboardButton struct {
 
 type InlineKeyboardMarkup struct {
 	InlineKeyboard [][]InlineKeyboardButton `json:"inline_keyboard"`
+}
+
+type KeyboardButton struct {
+	Text string `json:"text"`
+}
+
+// ReplyKeyboardMarkup is the persistent main-menu keyboard under the input.
+type ReplyKeyboardMarkup struct {
+	Keyboard       [][]KeyboardButton `json:"keyboard"`
+	ResizeKeyboard bool               `json:"resize_keyboard"`
+}
+
+// ReplyKeyboardRemove hides the main menu (after unlink).
+type ReplyKeyboardRemove struct {
+	RemoveKeyboard bool `json:"remove_keyboard"`
+}
+
+type BotCommand struct {
+	Command     string `json:"command"`
+	Description string `json:"description"`
 }
 
 type apiResponse struct {
@@ -143,19 +165,32 @@ func (c *Client) GetUpdates(ctx context.Context, offset int64, timeout time.Dura
 	return out, err
 }
 
-func (c *Client) SendMessage(ctx context.Context, chatID int64, text string, markup *InlineKeyboardMarkup) error {
-	p := map[string]any{"chat_id": chatID, "text": text}
+// SendMessage sends HTML text and returns the new message id; markup is
+// *InlineKeyboardMarkup, *ReplyKeyboardMarkup, *ReplyKeyboardRemove or nil.
+func (c *Client) SendMessage(ctx context.Context, chatID int64, text string, markup any) (int64, error) {
+	p := map[string]any{"chat_id": chatID, "text": text, "parse_mode": "HTML"}
 	if markup != nil {
 		p["reply_markup"] = markup
 	}
-	return c.call(ctx, "sendMessage", p, nil)
+	var m Message
+	err := c.call(ctx, "sendMessage", p, &m)
+	return m.MessageID, err
+}
+
+// SetMyCommands registers the "/" menu; langCode "" is the default list.
+func (c *Client) SetMyCommands(ctx context.Context, cmds []BotCommand, langCode string) error {
+	p := map[string]any{"commands": cmds}
+	if langCode != "" {
+		p["language_code"] = langCode
+	}
+	return c.call(ctx, "setMyCommands", p, nil)
 }
 
 // EditMessage replaces text and keyboard of an existing message in one call
 // (editMessageText accepts reply_markup, so a separate
 // editMessageReplyMarkup is not needed).
 func (c *Client) EditMessage(ctx context.Context, chatID, messageID int64, text string, markup *InlineKeyboardMarkup) error {
-	p := map[string]any{"chat_id": chatID, "message_id": messageID, "text": text}
+	p := map[string]any{"chat_id": chatID, "message_id": messageID, "text": text, "parse_mode": "HTML"}
 	if markup != nil {
 		p["reply_markup"] = markup
 	}

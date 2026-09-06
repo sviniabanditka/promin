@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"errors"
+	"html"
 	"log/slog"
 	"regexp"
 	"strings"
@@ -17,21 +18,34 @@ import (
 const (
 	pollTimeout   = 30 * time.Second
 	callTimeout   = 15 * time.Second
-	searchLang    = "uk"
 	searchMinGap  = 2 * time.Second // per-chat rate limit
 	maxChatStates = 1000
+	maxListings   = 8               // listings remembered per chat (by message id)
+	deviceMemory  = 5 * time.Minute // how long a picked device is reused without asking
+	continueLimit = 10
 )
 
 var sixDigits = regexp.MustCompile(`^\d{6}$`)
 
-// chatState is the last search of a chat: enough to page without
-// re-sending the query in callback data and to name a title when opening.
+// action is a "send to device" request waiting for a device choice.
+type action struct {
+	kind      string // open | remote
+	tmdbID    int
+	mediaType string
+	title     string
+	resume    bool
+	remote    string // rc key
+}
+
+// chatState is a chat's per-message listings, its pending device action and
+// the last device it picked.
 type chatState struct {
-	q          string
-	items      []catalog.Title
-	tmdbPages  int // TMDB pages fetched so far
-	totalPages int // TMDB total pages
 	lastSearch time.Time
+	lists      map[int64]*listing
+	order      []int64 // message ids oldest first, for eviction
+	pending    *action
+	lastDev    string
+	lastDevAt  time.Time
 }
 
 // OpenTitlePayload is the sync.EventOpenTitle payload.
@@ -40,6 +54,7 @@ type OpenTitlePayload struct {
 	MediaType string `json:"media_type"`
 	DeviceID  string `json:"device_id"`
 	Title     string `json:"title"`
+	Resume    bool   `json:"resume,omitempty"` // continue from the saved timecode
 }
 
 // Bot is the long-polling Telegram companion. Nil-safe getters let httpapi
@@ -49,6 +64,7 @@ type Bot struct {
 	links   *Links
 	repo    *store.TelegramRepo
 	catalog *catalog.Service
+	sync    *promsync.Service
 	hub     *promsync.Hub
 	log     *slog.Logger
 
@@ -58,9 +74,9 @@ type Bot struct {
 }
 
 // New builds a Bot. The username is learned from getMe inside Run.
-func New(api *Client, repo *store.TelegramRepo, cat *catalog.Service, hub *promsync.Hub, logger *slog.Logger) *Bot {
+func New(api *Client, repo *store.TelegramRepo, cat *catalog.Service, syncSvc *promsync.Service, logger *slog.Logger) *Bot {
 	return &Bot{
-		api: api, links: NewLinks(nil), repo: repo, catalog: cat, hub: hub, log: logger,
+		api: api, links: NewLinks(nil), repo: repo, catalog: cat, sync: syncSvc, hub: syncSvc.Hub(), log: logger,
 		chats: map[int64]*chatState{},
 	}
 }
@@ -101,6 +117,12 @@ func (b *Bot) Run(ctx context.Context) {
 			return
 		}
 		backoff = min(backoff*2, time.Minute)
+	}
+	// "/" menu: default list in uk, localized copies for ru/en clients.
+	for _, l := range append([]string{""}, langs...) {
+		if err := b.api.SetMyCommands(ctx, botCommands(normLang(l)), l); err != nil {
+			b.log.Warn("telegram: setMyCommands failed", "lang", l, "error", err)
+		}
 	}
 
 	var offset int64
@@ -155,10 +177,14 @@ func (b *Bot) handle(parent context.Context, u Update) {
 	}
 }
 
-const (
-	textUnlinked = "Цей чат не прив'язано. Відкрий Promin → Налаштування → Telegram і надішли мені код."
-	textHelp     = "Надішли назву фільму або серіалу — я знайду і відкрию на телевізорі.\n\n/unlink — відв'язати цей чат\n/help — ця підказка"
-)
+// langOf is the profile's synced "lang" setting (uk when unset).
+func (b *Bot) langOf(userID int64) string {
+	s, err := b.sync.GetSettings(userID)
+	if err != nil {
+		return defaultLang
+	}
+	return normLang(s["lang"])
+}
 
 func (b *Bot) handleMessage(ctx context.Context, m *Message) {
 	chatID := m.Chat.ID
@@ -166,210 +192,464 @@ func (b *Bot) handleMessage(ctx context.Context, m *Message) {
 	cmd, arg, _ := strings.Cut(text, " ")
 	arg = strings.TrimSpace(arg)
 
-	switch {
-	case cmd == "/start" && sixDigits.MatchString(arg), sixDigits.MatchString(text):
+	// Before the chat is linked the only language hint is Telegram's.
+	lang := defaultLang
+	if m.From != nil {
+		lang = normLang(m.From.LanguageCode)
+	}
+	if (cmd == "/start" && sixDigits.MatchString(arg)) || sixDigits.MatchString(text) {
 		if arg == "" {
 			arg = text
 		}
-		b.link(ctx, chatID, arg)
-		return
-	case cmd == "/unlink":
-		if err := b.repo.UnlinkChat(chatID); err != nil {
-			b.fail(ctx, chatID, "unlink", err)
-			return
-		}
-		b.forget(chatID)
-		b.reply(ctx, chatID, "Чат відв'язано від Promin.")
+		b.link(ctx, chatID, arg, lang)
 		return
 	}
 
 	userID, err := b.repo.UserByChat(chatID)
 	if errors.Is(err, store.ErrNotFound) {
-		b.reply(ctx, chatID, textUnlinked)
+		b.reply(ctx, chatID, tr(lang, "unlinked"), nil)
 		return
 	}
 	if err != nil {
-		b.fail(ctx, chatID, "lookup link", err)
+		b.fail(ctx, chatID, lang, "lookup link", err)
 		return
 	}
+	lang = b.langOf(userID)
 
 	switch cmd {
-	case "/start":
-		b.reply(ctx, chatID, "Привіт! "+textHelp)
+	case "/start", "/menu":
+		b.reply(ctx, chatID, tr(lang, "hello")+" "+tr(lang, "help"), mainMenu(lang))
 	case "/help":
-		b.reply(ctx, chatID, textHelp)
+		b.reply(ctx, chatID, tr(lang, "help"), mainMenu(lang))
+	case "/unlink":
+		b.reply(ctx, chatID, tr(lang, "unlink.confirm"), unlinkConfirm(lang))
 	default:
 		if text == "" || strings.HasPrefix(text, "/") {
-			b.reply(ctx, chatID, textHelp)
+			b.reply(ctx, chatID, tr(lang, "help"), mainMenu(lang))
 			return
 		}
-		b.search(ctx, chatID, userID, text)
+		b.menu(ctx, chatID, userID, lang, text)
 	}
 }
 
-func (b *Bot) link(ctx context.Context, chatID int64, code string) {
+// menu dispatches a main-menu press; anything else is a title search.
+func (b *Bot) menu(ctx context.Context, chatID, userID int64, lang, text string) {
+	switch menuAction(text) {
+	case "search":
+		b.reply(ctx, chatID, tr(lang, "search.prompt"), nil)
+	case "continue":
+		b.showContinue(ctx, chatID, userID, lang)
+	case "bookmarks":
+		b.showBookmarks(ctx, chatID, userID, lang)
+	case "watch":
+		home, err := b.catalog.Home(ctx, lang)
+		if err != nil {
+			b.fail(ctx, chatID, lang, "home", err)
+			return
+		}
+		b.reply(ctx, chatID, tr(lang, "watch.header"), homeMenu(home.Rows))
+	case "remote":
+		b.reply(ctx, chatID, tr(lang, "remote.header"), remoteKeyboard(lang))
+	case "settings":
+		b.reply(ctx, chatID, tr(lang, "settings.header"), settingsKeyboard(lang))
+	default:
+		b.search(ctx, chatID, userID, lang, text)
+	}
+}
+
+func (b *Bot) link(ctx context.Context, chatID int64, code, lang string) {
 	userID, ok := b.links.Consume(code)
 	if !ok {
-		b.reply(ctx, chatID, "Код невірний або застарів. Отримай новий у Promin → Налаштування → Telegram.")
+		b.reply(ctx, chatID, tr(lang, "link.bad"), nil)
 		return
 	}
 	if err := b.repo.Link(chatID, userID, time.Now().Unix()); err != nil {
-		b.fail(ctx, chatID, "link", err)
+		b.fail(ctx, chatID, lang, "link", err)
 		return
 	}
 	b.log.Info("telegram: chat linked", "user_id", userID)
-	b.reply(ctx, chatID, "✅ Готово, чат прив'язано до твого профілю Promin. "+textHelp)
+	lang = b.langOf(userID)
+	b.reply(ctx, chatID, tr(lang, "link.ok")+"\n\n"+tr(lang, "help"), mainMenu(lang))
 }
 
-func (b *Bot) search(ctx context.Context, chatID, userID int64, q string) {
-	b.mu.Lock()
+// --- listings -----------------------------------------------------------------
+
+func (b *Bot) state(chatID int64) *chatState {
 	if len(b.chats) > maxChatStates { // ponytail: flush all instead of LRU; states are cheap to rebuild
 		b.chats = map[int64]*chatState{}
 	}
 	st := b.chats[chatID]
-	if st != nil && time.Since(st.lastSearch) < searchMinGap {
-		b.mu.Unlock()
-		b.reply(ctx, chatID, "Не так швидко — зачекай секунду.")
-		return
+	if st == nil {
+		st = &chatState{lists: map[int64]*listing{}}
+		b.chats[chatID] = st
 	}
-	st = &chatState{q: q, lastSearch: time.Now()}
-	b.chats[chatID] = st
-	b.mu.Unlock()
-
-	if err := b.fetchPage(ctx, st, 1); err != nil {
-		b.fail(ctx, chatID, "search", err)
-		return
-	}
-	b.mu.Lock()
-	text, markup := searchPage(q, st.items, 1, st.tmdbPages < st.totalPages)
-	b.mu.Unlock()
-	b.reply(ctx, chatID, text, markup)
+	return st
 }
 
-// fetchPage appends TMDB page n to st (no-op if already fetched). Caller must
-// not hold b.mu; st fields are written under it.
-func (b *Bot) fetchPage(ctx context.Context, st *chatState, n int) error {
+func (b *Bot) listingOf(chatID, msgID int64) *listing {
 	b.mu.Lock()
-	done := n <= st.tmdbPages
-	b.mu.Unlock()
-	if done {
-		return nil
+	defer b.mu.Unlock()
+	if st := b.chats[chatID]; st != nil {
+		return st.lists[msgID]
 	}
-	res, err := b.catalog.Search(ctx, st.q, searchLang, n)
-	if err != nil {
-		return err
-	}
-	b.mu.Lock()
-	st.items = append(st.items, res.Items...)
-	st.tmdbPages, st.totalPages = n, res.TotalPages
-	b.mu.Unlock()
 	return nil
 }
 
+func (b *Bot) remember(chatID, msgID int64, l *listing) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	st := b.state(chatID)
+	if _, ok := st.lists[msgID]; !ok {
+		st.order = append(st.order, msgID)
+		for len(st.order) > maxListings {
+			delete(st.lists, st.order[0])
+			st.order = st.order[1:]
+		}
+	}
+	st.lists[msgID] = l
+}
+
+// bookmarkSet is the user's bookmarks keyed by bmKey.
+func (b *Bot) bookmarkSet(userID int64) map[string]bool {
+	set := map[string]bool{}
+	bms, err := b.sync.ListBookmarks(userID)
+	if err != nil {
+		b.log.Warn("telegram: list bookmarks failed", "error", err)
+	}
+	for _, bm := range bms {
+		set[bmKey(bm.MediaType, int(bm.TMDBID))] = true
+	}
+	return set
+}
+
+// card resolves a display card, cache first; a miss falls back to "#id".
+func (b *Bot) card(ctx context.Context, mediaType string, tmdbID int, lang string) catalog.Title {
+	if t, ok := b.catalog.CardCached(mediaType, tmdbID, lang); ok {
+		return t
+	}
+	t, err := b.catalog.Card(ctx, mediaType, tmdbID, lang)
+	if err != nil {
+		b.log.Debug("telegram: card failed", "tmdb_id", tmdbID, "error", err)
+		return catalog.Title{TMDBID: tmdbID, Type: mediaType}
+	}
+	return t
+}
+
+// resolve fills the names of page's items (bookmarks are stored as bare ids).
+func (b *Bot) resolve(ctx context.Context, l *listing, page int, lang string) {
+	start, slice := l.slice(page)
+	for i := range slice {
+		if slice[i].Title == "" {
+			l.items[start+i] = b.card(ctx, slice[i].Type, slice[i].TMDBID, lang)
+		}
+	}
+}
+
+// show sends (msgID 0) or edits a listing page and remembers it by message.
+func (b *Bot) show(ctx context.Context, chatID, userID, msgID int64, lang string, l *listing, page int) {
+	b.resolve(ctx, l, page, lang)
+	text, kb := renderList(lang, l, page, b.bookmarkSet(userID))
+	if msgID == 0 {
+		id, err := b.api.SendMessage(ctx, chatID, text, kb)
+		if err != nil {
+			b.log.Warn("telegram: send failed", "error", err)
+			return
+		}
+		msgID = id
+	} else if err := b.api.EditMessage(ctx, chatID, msgID, text, kb); err != nil {
+		b.log.Debug("telegram: edit failed", "error", err)
+	}
+	b.remember(chatID, msgID, l)
+}
+
+func (b *Bot) search(ctx context.Context, chatID, userID int64, lang, q string) {
+	b.mu.Lock()
+	st := b.state(chatID)
+	if time.Since(st.lastSearch) < searchMinGap {
+		b.mu.Unlock()
+		b.reply(ctx, chatID, tr(lang, "search.slow"), nil)
+		return
+	}
+	st.lastSearch = time.Now()
+	b.mu.Unlock()
+
+	l := &listing{kind: "search", q: q}
+	if err := b.fetchPage(ctx, l, lang, 1); err != nil {
+		b.fail(ctx, chatID, lang, "search", err)
+		return
+	}
+	b.show(ctx, chatID, userID, 0, lang, l, 1)
+}
+
+// fetchPage appends TMDB page n to l (no-op if already fetched).
+func (b *Bot) fetchPage(ctx context.Context, l *listing, lang string, n int) error {
+	if n <= l.tmdbPages {
+		return nil
+	}
+	res, err := b.catalog.Search(ctx, l.q, lang, n)
+	if err != nil {
+		return err
+	}
+	l.items = append(l.items, res.Items...)
+	l.tmdbPages, l.totalPages = n, res.TotalPages
+	return nil
+}
+
+func (b *Bot) showContinue(ctx context.Context, chatID, userID int64, lang string) {
+	tcs, err := b.sync.ListContinueWatching(userID, continueLimit)
+	if err != nil {
+		b.fail(ctx, chatID, lang, "continue", err)
+		return
+	}
+	l := &listing{kind: "continue", tcs: tcs}
+	for _, tc := range tcs {
+		l.items = append(l.items, b.card(ctx, tc.MediaType, int(tc.TMDBID), lang))
+	}
+	b.show(ctx, chatID, userID, 0, lang, l, 1)
+}
+
+func (b *Bot) showBookmarks(ctx context.Context, chatID, userID int64, lang string) {
+	bms, err := b.sync.ListBookmarks(userID)
+	if err != nil {
+		b.fail(ctx, chatID, lang, "bookmarks", err)
+		return
+	}
+	l := &listing{kind: "bookmarks"}
+	for _, bm := range bms {
+		l.items = append(l.items, catalog.Title{TMDBID: int(bm.TMDBID), Type: bm.MediaType})
+	}
+	b.show(ctx, chatID, userID, 0, lang, l, 1)
+}
+
+// --- callbacks ------------------------------------------------------------------
+
 func (b *Bot) handleCallback(ctx context.Context, cq *CallbackQuery) {
-	chatID := cq.Message.Chat.ID
+	chatID, msgID := cq.Message.Chat.ID, cq.Message.MessageID
 	cb, err := parseCallback(cq.Data)
 	if err != nil {
-		_ = b.api.AnswerCallback(ctx, cq.ID, "Незрозуміла кнопка")
+		_ = b.api.AnswerCallback(ctx, cq.ID, tr(defaultLang, "err.button"))
 		return
 	}
 	userID, err := b.repo.UserByChat(chatID)
 	if err != nil {
-		_ = b.api.AnswerCallback(ctx, cq.ID, "Спочатку прив'яжи чат до Promin")
+		_ = b.api.AnswerCallback(ctx, cq.ID, tr(defaultLang, "err.notlinked"))
 		return
+	}
+	lang := b.langOf(userID)
+	answer := func(text string) { _ = b.api.AnswerCallback(ctx, cq.ID, text) }
+	edit := func(text string, kb *InlineKeyboardMarkup) {
+		if err := b.api.EditMessage(ctx, chatID, msgID, text, kb); err != nil {
+			b.log.Debug("telegram: edit failed", "error", err)
+		}
 	}
 
 	switch cb.Kind {
 	case "page":
-		b.mu.Lock()
-		st := b.chats[chatID]
-		stale := st == nil || queryHash(st.q) != cb.QueryHash
-		b.mu.Unlock()
-		if stale {
-			_ = b.api.AnswerCallback(ctx, cq.ID, "Цей пошук застарів — надішли запит ще раз")
+		l := b.listingOf(chatID, msgID)
+		if l == nil {
+			answer(tr(lang, "stale"))
 			return
 		}
-		need := cb.Page * pageSize
-		b.mu.Lock()
-		next := st.tmdbPages + 1
-		more := len(st.items) < need && st.tmdbPages < st.totalPages
-		b.mu.Unlock()
-		if more {
-			if err := b.fetchPage(ctx, st, next); err != nil {
-				_ = b.api.AnswerCallback(ctx, cq.ID, "Каталог недоступний, спробуй пізніше")
+		if len(l.items) < cb.Page*pageSize && l.hasMore() {
+			if err := b.fetchPage(ctx, l, lang, l.tmdbPages+1); err != nil {
+				answer(tr(lang, "err.catalog"))
 				return
 			}
 		}
-		b.mu.Lock()
-		text, markup := searchPage(st.q, st.items, cb.Page, st.tmdbPages < st.totalPages)
-		b.mu.Unlock()
-		_ = b.api.AnswerCallback(ctx, cq.ID, "")
-		if err := b.api.EditMessage(ctx, chatID, cq.Message.MessageID, text, markup); err != nil {
-			b.log.Debug("telegram: edit failed", "error", err)
+		answer("")
+		b.show(ctx, chatID, userID, msgID, lang, l, cb.Page)
+
+	case "bm":
+		l := b.listingOf(chatID, msgID)
+		key := bmKey(cb.MediaType, cb.TMDBID)
+		if (l != nil && l.kind == "bookmarks") || b.bookmarkSet(userID)[key] {
+			err = b.sync.RemoveBookmark(userID, int64(cb.TMDBID), cb.MediaType)
+			answer(tr(lang, "bm.removed"))
+			if l != nil && l.kind == "bookmarks" {
+				l.items = deleteTitle(l.items, cb.TMDBID, cb.MediaType)
+			}
+		} else {
+			_, _, err = b.sync.AddBookmark(userID, int64(cb.TMDBID), cb.MediaType)
+			answer(tr(lang, "bm.added"))
+		}
+		if err != nil {
+			b.log.Warn("telegram: bookmark toggle failed", "error", err)
+			return
+		}
+		if l != nil {
+			b.show(ctx, chatID, userID, msgID, lang, l, cb.Page)
 		}
 
 	case "open":
-		target, text, markup := openReply(b.hub.OnlineDevices(userID), cb.TMDBID, cb.MediaType)
-		if target != nil {
-			b.publishOpen(userID, chatID, *target, cb.TMDBID, cb.MediaType)
-		}
-		_ = b.api.AnswerCallback(ctx, cq.ID, "")
-		b.reply(ctx, chatID, text, markup)
-
-	case "dev":
-		var target *promsync.DeviceInfo
-		for _, d := range b.hub.OnlineDevices(userID) {
-			if d.ID == cb.DeviceID {
-				target = &d
-				break
+		act := &action{kind: "open", tmdbID: cb.TMDBID, mediaType: cb.MediaType, resume: cb.Resume}
+		if l := b.listingOf(chatID, msgID); l != nil {
+			for _, t := range l.items {
+				if t.TMDBID == cb.TMDBID && t.Type == cb.MediaType {
+					act.title = t.Title
+				}
 			}
 		}
-		if target == nil {
-			_ = b.api.AnswerCallback(ctx, cq.ID, "Пристрій уже офлайн")
+		b.dispatch(ctx, cq, userID, lang, act)
+
+	case "rc":
+		if _, ok := remotePayload("", cb.Arg); !ok {
+			answer(tr(lang, "err.button"))
 			return
 		}
-		b.publishOpen(userID, chatID, *target, cb.TMDBID, cb.MediaType)
-		_ = b.api.AnswerCallback(ctx, cq.ID, "")
-		// Replace the chooser (and its keyboard) with the outcome.
-		if err := b.api.EditMessage(ctx, chatID, cq.Message.MessageID, "Відкрито на "+deviceLabel(*target), nil); err != nil {
-			b.reply(ctx, chatID, "Відкрито на "+deviceLabel(*target))
-		}
-	}
-}
+		b.dispatch(ctx, cq, userID, lang, &action{kind: "remote", remote: cb.Arg})
 
-func (b *Bot) publishOpen(userID, chatID int64, dev promsync.DeviceInfo, tmdbID int, mediaType string) {
-	b.mu.Lock()
-	title := ""
-	if st := b.chats[chatID]; st != nil {
-		for _, t := range st.items {
-			if t.TMDBID == tmdbID && t.Type == mediaType {
-				title = t.Title
-				break
+	case "dev":
+		b.mu.Lock()
+		st := b.state(chatID)
+		act := st.pending
+		st.pending = nil
+		b.mu.Unlock()
+		dev := b.online(userID, cb.Arg)
+		if dev == nil {
+			answer(tr(lang, "open.offline"))
+			return
+		}
+		if act == nil {
+			answer(tr(lang, "stale"))
+			return
+		}
+		b.mu.Lock()
+		st.lastDev, st.lastDevAt = dev.ID, time.Now()
+		b.mu.Unlock()
+		b.publish(userID, *dev, act)
+		answer(tr(lang, "remote.sent"))
+		edit(b.doneText(lang, *dev, act), nil)
+
+	case "home":
+		home, err := b.catalog.Home(ctx, lang)
+		if err != nil {
+			answer(tr(lang, "err.catalog"))
+			return
+		}
+		for _, r := range home.Rows {
+			if r.ID == cb.Arg {
+				answer("")
+				b.show(ctx, chatID, userID, msgID, lang, &listing{kind: "home", rowTitle: r.Title, items: r.Items}, 1)
+				return
 			}
 		}
+		answer(tr(lang, "stale"))
+
+	case "lang":
+		code := normLang(cb.Arg)
+		if err := b.sync.SetSetting(userID, "lang", code); err != nil {
+			answer(tr(lang, "err.generic"))
+			return
+		}
+		answer("")
+		edit(tr(code, "settings.header"), settingsKeyboard(code))
+		b.reply(ctx, chatID, tr(code, "lang.set"), mainMenu(code))
+
+	case "unlink":
+		switch cb.Arg {
+		case "ask":
+			answer("")
+			edit(tr(lang, "unlink.confirm"), unlinkConfirm(lang))
+		case "yes":
+			if err := b.repo.UnlinkChat(chatID); err != nil {
+				answer(tr(lang, "err.generic"))
+				return
+			}
+			b.mu.Lock()
+			delete(b.chats, chatID)
+			b.mu.Unlock()
+			answer("")
+			edit(tr(lang, "unlink.done"), nil)
+			b.reply(ctx, chatID, tr(lang, "unlinked"), &ReplyKeyboardRemove{RemoveKeyboard: true})
+		default:
+			answer("")
+			edit(tr(lang, "unlink.cancel"), nil)
+		}
 	}
-	b.mu.Unlock()
-	b.hub.Publish(userID, promsync.EventOpenTitle, OpenTitlePayload{TMDBID: tmdbID, MediaType: mediaType, DeviceID: dev.ID, Title: title})
-	b.log.Info("telegram: open title", "user_id", userID, "tmdb_id", tmdbID, "media_type", mediaType, "device", dev.Name)
 }
 
-func (b *Bot) forget(chatID int64) {
-	b.mu.Lock()
-	delete(b.chats, chatID)
-	b.mu.Unlock()
+func deleteTitle(items []catalog.Title, tmdbID int, mediaType string) []catalog.Title {
+	out := items[:0]
+	for _, t := range items {
+		if t.TMDBID != tmdbID || t.Type != mediaType {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
-func (b *Bot) reply(ctx context.Context, chatID int64, text string, markup ...*InlineKeyboardMarkup) {
-	var m *InlineKeyboardMarkup
-	if len(markup) > 0 {
-		m = markup[0]
+// online returns the user's online device with id, or nil.
+func (b *Bot) online(userID int64, id string) *promsync.DeviceInfo {
+	for _, d := range b.hub.OnlineDevices(userID) {
+		if d.ID == id {
+			return &d
+		}
 	}
-	if err := b.api.SendMessage(ctx, chatID, text, m); err != nil {
+	return nil
+}
+
+// dispatch sends act to a device: the only one online, or the one picked
+// recently; otherwise it asks (storing act as pending for the dev: callback).
+func (b *Bot) dispatch(ctx context.Context, cq *CallbackQuery, userID int64, lang string, act *action) {
+	chatID := cq.Message.Chat.ID
+	devs := b.hub.OnlineDevices(userID)
+	if len(devs) == 0 {
+		_ = b.api.AnswerCallback(ctx, cq.ID, tr(lang, "open.none"))
+		return
+	}
+	var target *promsync.DeviceInfo
+	if len(devs) == 1 {
+		target = &devs[0]
+	} else {
+		b.mu.Lock()
+		st := b.state(chatID)
+		if time.Since(st.lastDevAt) < deviceMemory {
+			target = b.online(userID, st.lastDev)
+		}
+		if target == nil {
+			st.pending = act
+		}
+		b.mu.Unlock()
+	}
+	if target == nil {
+		_ = b.api.AnswerCallback(ctx, cq.ID, "")
+		b.reply(ctx, chatID, tr(lang, "open.pick"), devicePicker(devs, lang))
+		return
+	}
+	b.publish(userID, *target, act)
+	if act.kind == "remote" {
+		_ = b.api.AnswerCallback(ctx, cq.ID, tr(lang, "remote.sent"))
+		return
+	}
+	_ = b.api.AnswerCallback(ctx, cq.ID, "")
+	b.reply(ctx, chatID, b.doneText(lang, *target, act), nil)
+}
+
+func (b *Bot) doneText(lang string, dev promsync.DeviceInfo, act *action) string {
+	if act.kind == "remote" {
+		return tr(lang, "remote.sent")
+	}
+	return tr(lang, "open.done", html.EscapeString(deviceLabel(dev, lang)))
+}
+
+func (b *Bot) publish(userID int64, dev promsync.DeviceInfo, act *action) {
+	if act.kind == "remote" {
+		p, _ := remotePayload(dev.ID, act.remote)
+		b.hub.Publish(userID, promsync.EventRemote, p)
+		b.log.Info("telegram: remote", "user_id", userID, "action", p.Action, "device", dev.Name)
+		return
+	}
+	b.hub.Publish(userID, promsync.EventOpenTitle, OpenTitlePayload{TMDBID: act.tmdbID, MediaType: act.mediaType, DeviceID: dev.ID, Title: act.title, Resume: act.resume})
+	b.log.Info("telegram: open title", "user_id", userID, "tmdb_id", act.tmdbID, "media_type", act.mediaType, "resume", act.resume, "device", dev.Name)
+}
+
+func (b *Bot) reply(ctx context.Context, chatID int64, text string, markup any) {
+	if _, err := b.api.SendMessage(ctx, chatID, text, markup); err != nil {
 		b.log.Warn("telegram: send failed", "error", err)
 	}
 }
 
-func (b *Bot) fail(ctx context.Context, chatID int64, what string, err error) {
+func (b *Bot) fail(ctx context.Context, chatID int64, lang, what string, err error) {
 	b.log.Warn("telegram: "+what+" failed", "error", err)
-	b.reply(ctx, chatID, "Щось пішло не так, спробуй ще раз пізніше.")
+	b.reply(ctx, chatID, tr(lang, "err.generic"), nil)
 }

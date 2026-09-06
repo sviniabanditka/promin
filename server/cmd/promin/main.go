@@ -218,7 +218,7 @@ func main() {
 	// Telegram companion bot: long polling, only when the token is set.
 	var tgBot *telegram.Bot
 	if cfg.TelegramBotToken != "" {
-		tgBot = telegram.New(telegram.NewClient(cfg.TelegramAPIBaseURL, cfg.TelegramBotToken), db.Telegram, catalogSvc, hub, logger)
+		tgBot = telegram.New(telegram.NewClient(cfg.TelegramAPIBaseURL, cfg.TelegramBotToken), db.Telegram, catalogSvc, syncSvc, logger)
 		go tgBot.Run(ctx)
 	}
 

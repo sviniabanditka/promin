@@ -28,6 +28,35 @@ Endpoints (bearer): `GET /api/v1/telegram/status` → `{enabled, linked,
 bot_username}`; `POST /api/v1/telegram/link` → `{code, deep_link, expires_at}`;
 `DELETE /api/v1/telegram/link`. `503 telegram_disabled` when the bot is off.
 
+## Menu
+
+After linking the bot shows a persistent reply keyboard, so nothing has to be
+typed: 🔍 Search · ▶ Continue / ★ Bookmarks · 🔥 What to watch / 🎛 Remote ·
+⚙ Settings. Any other text is a title search. Every string comes from
+`server/internal/telegram/i18n.go` (uk/ru/en, key parity enforced by a test);
+the language is the profile's synced `lang` setting, so the bot and the TV
+always speak the same language.
+
+- **Search** — five results per page, per result "Open on TV" and a ★/☆
+  bookmark toggle, ◀ ▶ paging edits the same message.
+- **Continue** — the profile's continue-watching list (`ListContinueWatching`)
+  with season/episode and position; "Open on TV" sends `open_title` with
+  `resume: true`, and the TV continues from the saved position.
+- **Bookmarks** — paginated list with "Open on TV" and "✕ remove".
+- **What to watch** — the rows of the TV home screen (`catalog.Home`), then
+  five items per page with the same buttons.
+- **Remote** — ⏪ 30 · ⏯ · ⏩ 30 / ⏮ · ⏭ / 🔇 · 🌙 Night · 😴 Sleep. Each press
+  publishes `remote {device_id, action, value}` (`toggle_play | seek ±30 |
+  prev | next | mute | night | sleep 30`); the TV's player consumes playback
+  actions (`web/src/core/player/remote.ts`), night mode toggles on any screen,
+  and a TV without an open player shows a toast instead.
+- **Settings** — language (🇺🇦 🇷🇺 🇬🇧; writes the synced `lang`, the TV repaints
+  live through `settings_updated`) and Unlink with a confirm step.
+
+Listings are kept per (chat, message) in memory; after a restart an old message
+answers "stale — press the menu button again". The device picked for "Open on
+TV" or the remote is reused for five minutes while it stays online.
+
 ## Search and open
 
 Any text from a linked chat is a TMDB search (`catalog.Search`, Ukrainian).
