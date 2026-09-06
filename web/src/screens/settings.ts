@@ -165,19 +165,21 @@ export function mountSettings(container: HTMLElement): ScreenInstance {
   function openTelegramLink(): void {
     const overlay = el('div', 'settings-modal');
     const box = el('div', 'settings-modal__box tg-box');
-    box.appendChild(el('div', 'settings-modal__title', t('telegram.link_title')));
     const qr = document.createElement('img');
     qr.className = 'tg-qr hide';
     qr.alt = '';
     box.appendChild(qr);
+    const side = el('div', 'tg-side');
+    side.appendChild(el('div', 'settings-modal__title', t('telegram.link_title')));
     const codeEl = el('div', 'tg-code', '······');
     const hint = el('div', 'tg-hint', t('telegram.link_hint', { bot: tgStatus && tgStatus.bot_username ? '@' + tgStatus.bot_username : t('telegram.the_bot') }));
     const link = el('div', 'tg-link', '');
-    box.appendChild(codeEl);
-    box.appendChild(hint);
-    box.appendChild(link);
+    side.appendChild(codeEl);
+    side.appendChild(hint);
+    side.appendChild(link);
     const close = el('div', 'button selector tg-close', t('action.cancel'));
-    box.appendChild(close);
+    side.appendChild(close);
+    box.appendChild(side);
     overlay.appendChild(box);
     container.appendChild(overlay);
     modal = overlay;

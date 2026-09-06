@@ -54,8 +54,13 @@ func (h *telegramHandlers) link(w http.ResponseWriter, r *http.Request) {
 	// webview shows it with a plain <img> (no inline SVG quirks on old engines).
 	qr := ""
 	if deepLink != "" {
-		if png, err := qrcode.Encode(deepLink, qrcode.Medium, 480); err == nil {
-			qr = "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
+		// No library border: the client draws the quiet zone as padding, so the
+		// code itself fills the white square (readable from the sofa).
+		if q, err := qrcode.New(deepLink, qrcode.Medium); err == nil {
+			q.DisableBorder = true
+			if png, err := q.PNG(1000); err == nil {
+				qr = "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
+			}
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"code": code, "deep_link": deepLink, "expires_at": expires.Unix(), "qr": qr})
