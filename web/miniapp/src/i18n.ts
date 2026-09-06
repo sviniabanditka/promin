@@ -91,6 +91,9 @@ const D: Record<string, Entry> = {
   'set.this_device': ['цей пристрій', 'это устройство', 'this device'],
   'set.revoke': ['Вийти', 'Выйти', 'Sign out'],
   'set.revoke_confirm': ['Завершити сеанс «{name}»?', 'Завершить сеанс «{name}»?', 'Sign out “{name}”?'],
+  'set.revoke_others': ['Вийти на всіх інших пристроях', 'Выйти на всех других устройствах', 'Sign out other devices'],
+  'set.revoke_others_confirm': ['Завершити всі сеанси, крім цього телефона? ТВ попросять PIN знову.', 'Завершить все сеансы, кроме этого телефона? ТВ снова спросят PIN.', 'Sign out every device except this phone? TVs will ask for the PIN again.'],
+  'set.revoke_others_done': ['Завершено сеансів: {n}', 'Завершено сеансов: {n}', 'Signed out: {n}'],
   'set.telegram': ['Telegram', 'Telegram', 'Telegram'],
   'set.unlink': ['Відв’язати Telegram', 'Отвязать Telegram', 'Unlink Telegram'],
   'set.unlink_confirm': [

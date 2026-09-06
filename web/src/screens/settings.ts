@@ -11,7 +11,16 @@ import Controller, { on } from '../core/controller';
 import { Scroll } from '../core/scroll';
 import { t, getLang, Lang } from '../core/i18n';
 import { ScreenInstance } from '../core/activity';
-import { getPing, clearMyHistory, deleteMyData, getTelegramStatus, createTelegramLink, unlinkTelegram, TelegramStatus } from '../core/api';
+import {
+  getPing,
+  clearMyHistory,
+  deleteMyData,
+  getTelegramStatus,
+  createTelegramLink,
+  unlinkTelegram,
+  TelegramStatus,
+  revokeOtherDevices,
+} from '../core/api';
 import * as router from '../core/router';
 import * as sync from '../core/sync';
 import { isLogged, getUser, logout as authLogout, clearLocal as authClearLocal } from '../core/auth';
@@ -342,6 +351,24 @@ export function mountSettings(container: HTMLElement): ScreenInstance {
       if (u) addRow('profile.signed_in', u.login, null);
       addRow('devices.open', '', function () {
         openDevices();
+      });
+      addRow('devices.revoke_others', '', function () {
+        openConfirm(container, {
+          text: t('devices.revoke_others_confirm'),
+          yesLabel: t('devices.revoke_others_yes'),
+          mode: 'settings_devices',
+          onYes: function () {
+            Controller.toggle('content');
+            revokeOtherDevices().then(
+              function (r) {
+                toast({ kind: 'success', icon: '✓', title: t('devices.revoke_others_done'), text: String(r && r.revoked != null ? r.revoked : '') });
+              },
+              function () {
+                toast({ kind: 'error', title: t('error.load'), text: t('toast.try_again') });
+              }
+            );
+          },
+        });
       });
       const tgVal = addRow('telegram.row', tgStatus ? tgLabel(tgStatus) : '…', function () {
         if (!tgStatus) return;

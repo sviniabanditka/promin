@@ -83,7 +83,7 @@ from there (SPA fallback to `index.html`). `index.html` loads
 
 ## Screens (Preact, hash router)
 
-- **Home** — target-TV chip (hidden with one device), "Now playing" card with
+- **Home** — target-TV chip listing only devices that are online now (hidden with one device), "Now playing" card with
   a live progress bar and ⏯, "Continue" row (`GET /api/v1/sync/bootstrap` /
   timecodes), search field, rows from `GET /api/v1/catalog/home`.
 - **Search** — `GET /api/v1/catalog/search?q=` with posters.

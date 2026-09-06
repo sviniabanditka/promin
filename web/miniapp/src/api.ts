@@ -285,6 +285,7 @@ export const putSetting = (key: string, value: string) => put<{ key: string; val
 
 export const getAuthDevices = () => get<{ devices: AuthDevice[] }>('/auth/devices');
 export const revokeDevice = (token_id: string) => del<void>('/auth/devices/' + encodeURIComponent(token_id));
+export const revokeOtherDevices = () => del<{ revoked: number }>('/auth/devices');
 export const unlinkTelegram = () => del<void>('/telegram/link');
 
 export function wsUrl(): string {

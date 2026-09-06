@@ -223,3 +223,5 @@ Sync event `open_title` (`{tmdb_id, media_type, device_id, title}`) is delivered
 | POST | `/api/v1/player/state` | bearer | TV reports `{tmdb_id, media_type, title, season, episode, position_sec, duration_sec, paused, voice}` or `{closed:true}`; kept per device in memory, published as sync event `player_state` (≤1/s per device). 204 |
 
 Sync events added: `player_state` (`PlayerState` + `device_id`, or `{device_id, closed:true}`); `open_title` gained optional `season`/`episode`; `remote` gained action `seek_to` (absolute seconds).
+
+| DELETE | `/api/v1/auth/devices` | bearer | Signs out every session of the profile except the caller's: `{revoked: n}` |

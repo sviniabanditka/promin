@@ -149,6 +149,7 @@ func NewServer(
 	mux.HandleFunc("POST /api/v1/auth/logout", requireAuth(authSvc, authH.logout))
 	mux.HandleFunc("GET /api/v1/auth/devices", requireAuth(authSvc, authH.listDevices))
 	mux.HandleFunc("DELETE /api/v1/auth/devices/{token_id}", requireAuth(authSvc, authH.revokeDevice))
+	mux.HandleFunc("DELETE /api/v1/auth/devices", requireAuth(authSvc, authH.revokeOthers))
 
 	syncH := &syncHandlers{svc: syncSvc}
 	mux.HandleFunc("GET /api/v1/bookmarks", requireAuth(authSvc, syncH.listBookmarks))

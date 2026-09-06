@@ -200,6 +200,26 @@ func (s *Service) ListDevices(userID int64, currentToken string) ([]Device, erro
 // RevokeDevice implements DELETE /api/v1/auth/devices/{token_id}. Revoking
 // the caller's own current session requires force=true (guard against an
 // accidental self-lockout, docs/api.md).
+// RevokeOthers signs out every session of the user except the current one
+// (Settings → devices → "sign out other devices"). Returns how many were revoked.
+func (s *Service) RevokeOthers(userID int64, currentToken string) (int, error) {
+	sessions, err := s.sessions.ListByUser(userID)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, sess := range sessions {
+		if sess.Token == currentToken {
+			continue
+		}
+		if err := s.sessions.Delete(sess.Token); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, nil
+}
+
 func (s *Service) RevokeDevice(userID int64, tokenIDStr, currentToken string, force bool) error {
 	sessions, err := s.sessions.ListByUser(userID)
 	if err != nil {

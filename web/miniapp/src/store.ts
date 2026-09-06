@@ -82,8 +82,10 @@ export function useStore(): State {
 
 // ---- devices -----------------------------------------------------------------
 
+// Only devices that are online right now: the profile accumulates sessions from
+// every browser ever used, and a picker full of dead entries helps nobody.
 export function visibleDevices(s: State): Device[] {
-  return s.devices.filter((d) => !s.hiddenIds.includes(d.id));
+  return s.devices.filter((d) => d.online && !s.hiddenIds.includes(d.id));
 }
 
 // Chosen device if it is online; otherwise the first online one; otherwise the

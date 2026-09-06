@@ -975,3 +975,8 @@ export interface PlayerStateReport {
 export function postPlayerState(state: PlayerStateReport): Promise<void> {
   return post<void>('/player/state', state, undefined, 5000);
 }
+
+// Sign out every other device of the profile (Settings → account).
+export function revokeOtherDevices(): Promise<{ revoked: number }> {
+  return del<{ revoked: number }>('/auth/devices');
+}

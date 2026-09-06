@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { getAuthDevices, putSetting, revokeDevice, unlinkTelegram, type AuthDevice } from '../api';
+import { getAuthDevices, putSetting, revokeDevice, revokeOtherDevices, unlinkTelegram, type AuthDevice } from '../api';
 import { fmtDate, LANGS, t, type Lang } from '../i18n';
 import { setLang, setState, toast, useStore } from '../store';
 import { confirmDialog, haptic } from '../tg';
@@ -35,6 +35,17 @@ export function Settings() {
     }
   };
 
+  const revokeOthers = async () => {
+    if (!(await confirmDialog(t('set.revoke_others_confirm')))) return;
+    try {
+      const r = await revokeOtherDevices();
+      haptic('ok');
+      toast(t('set.revoke_others_done', { n: String(r.revoked) }));
+      load();
+    } catch {
+      toast(t('common.error'));
+    }
+  };
   const revoke = async (d: AuthDevice) => {
     if (!(await confirmDialog(t('set.revoke_confirm', { name: d.device_name })))) return;
     try {
@@ -65,6 +76,9 @@ export function Settings() {
 
       <section class="group">
         <h2 class="group-title">{t('set.devices')}</h2>
+        <button class="btn btn-small btn-ghost" style="margin: 0 16px 8px" onClick={revokeOthers}>
+          {t('set.revoke_others')}
+        </button>
         <div class="list">
           {devices === undefined ? (
             <>

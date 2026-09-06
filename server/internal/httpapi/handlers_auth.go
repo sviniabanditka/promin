@@ -192,3 +192,18 @@ func clientIP(r *http.Request) string {
 	}
 	return host
 }
+
+// revokeOthers: DELETE /api/v1/auth/devices — every session but the caller's.
+func (h *authHandlers) revokeOthers(w http.ResponseWriter, r *http.Request) {
+	info, ok := authFrom(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "потрібна авторизація")
+		return
+	}
+	n, err := h.svc.RevokeOthers(info.User.ID, info.Session.Token)
+	if err != nil {
+		writeInternal(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"revoked": n})
+}
