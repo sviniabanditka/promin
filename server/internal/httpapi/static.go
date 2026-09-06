@@ -26,23 +26,30 @@ func webRoot() fs.FS {
 
 // staticHandler serves the embedded web bundle, falling back to
 // index.html for any path that isn't a real file (SPA client-side
-// routing, e.g. "/title/123").
+// routing, e.g. "/title/123"). The Telegram Mini App lives under /tg/ as a
+// second SPA (webdist/tg/, docs/miniapp.md) with its own index fallback.
 func staticHandler() http.Handler {
-	root := webRoot()
+	return spaHandler(webRoot())
+}
 
+func spaHandler(root fs.FS) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reqPath := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
-		if reqPath == "" || reqPath == "." {
-			reqPath = "index.html"
-		}
-		// The precompressed siblings are an implementation detail, never a URL.
-		if strings.HasSuffix(reqPath, ".gz") {
-			serveFile(w, r, root, "index.html")
+		if r.URL.Path == "/tg" { // relative asset URLs in the Mini App need the slash
+			http.Redirect(w, r, "/tg/", http.StatusMovedPermanently)
 			return
 		}
-		if !fsExists(root, reqPath) {
-			// No such file: SPA fallback to index.html.
-			serveFile(w, r, root, "index.html")
+		reqPath := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
+		index := "index.html"
+		if (reqPath == "tg" || strings.HasPrefix(reqPath, "tg/")) && fsExists(root, "tg/index.html") {
+			index = "tg/index.html"
+		}
+		if reqPath == "" || reqPath == "." {
+			reqPath = index
+		}
+		// The precompressed siblings are an implementation detail, never a URL.
+		if strings.HasSuffix(reqPath, ".gz") || !fsExists(root, reqPath) {
+			// No such file: SPA fallback to the section's index.html.
+			serveFile(w, r, root, index)
 			return
 		}
 		serveFile(w, r, root, reqPath)
@@ -79,7 +86,7 @@ func serveFile(w http.ResponseWriter, r *http.Request, root fs.FS, name string) 
 
 	v := r.URL.Query().Get("v")
 	switch {
-	case name == "index.html":
+	case path.Base(name) == "index.html":
 		w.Header().Set("Cache-Control", "no-cache")
 	case v != "":
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")

@@ -108,6 +108,20 @@ func (s *Service) newSession(user store.User, deviceName, deviceType string) (st
 	return token, nil
 }
 
+// LoginTelegram issues a session for the Mini App (POST /api/v1/tg/auth):
+// the Telegram user was already verified and mapped to userID by the bot.
+func (s *Service) LoginTelegram(userID int64, deviceName string) (AuthResult, error) {
+	user, err := s.users.GetByID(userID)
+	if err != nil {
+		return AuthResult{}, err
+	}
+	token, err := s.newSession(user, deviceName, "telegram")
+	if err != nil {
+		return AuthResult{}, err
+	}
+	return AuthResult{Token: token, User: user}, nil
+}
+
 // RevokeAll signs the user out of every device (Danger zone → delete all data).
 func (s *Service) RevokeAll(userID int64) error {
 	return s.sessions.DeleteByUser(userID)

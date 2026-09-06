@@ -248,9 +248,9 @@ func homeMenu(rows []catalog.Row) *InlineKeyboardMarkup {
 
 // RemotePayload is the sync.EventRemote payload.
 type RemotePayload struct {
-	DeviceID string `json:"device_id"`
-	Action   string `json:"action"` // toggle_play | seek | prev | next | mute | night | sleep
-	Value    int    `json:"value"`  // seek: seconds (±30); sleep: minutes
+	DeviceID string  `json:"device_id"`
+	Action   string  `json:"action"` // toggle_play | seek | seek_to | prev | next | mute | night | sleep
+	Value    float64 `json:"value"`  // seek: seconds (±30); seek_to: absolute seconds; sleep: minutes
 }
 
 // remoteActions maps rc:<key> to the published action/value.

@@ -37,9 +37,13 @@ const (
 	// user receives it and only the device whose id matches acts.
 	EventOpenTitle = "open_title"
 	// EventRemote is a playback command for ONE device (Telegram remote).
-	// Payload {device_id, action, value}: action toggle_play|seek|prev|next|
-	// mute|night|sleep; value is seconds for seek (±30), minutes for sleep.
+	// Payload {device_id, action, value}: action toggle_play|seek|seek_to|
+	// prev|next|mute|night|sleep; value is seconds for seek (±30) and
+	// seek_to (absolute), minutes for sleep.
 	EventRemote = "remote"
+	// EventPlayerState is a TV's "now playing" report for the Mini App
+	// (docs/miniapp.md). Payload PlayerStatePayload (player_state.go).
+	EventPlayerState = "player_state"
 )
 
 // DeviceInfo identifies a connected device: ID is auth.TokenID of its
@@ -69,13 +73,18 @@ type Hub struct {
 	nextID int64
 	log    map[int64][]Event // userID -> events, newest last
 	subs   map[int64]map[chan Event]DeviceInfo
+	// players: userID -> deviceID -> last reported player state (player_state.go).
+	players map[int64]map[string]*playerEntry
+	now     func() time.Time
 }
 
 // NewHub builds an empty Hub.
 func NewHub() *Hub {
 	return &Hub{
-		log:  map[int64][]Event{},
-		subs: map[int64]map[chan Event]DeviceInfo{},
+		log:     map[int64][]Event{},
+		subs:    map[int64]map[chan Event]DeviceInfo{},
+		players: map[int64]map[string]*playerEntry{},
+		now:     time.Now,
 	}
 }
 

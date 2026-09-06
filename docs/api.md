@@ -212,3 +212,14 @@ Event `type` values: `bookmark_added`, `bookmark_removed` (payload: bookmark),
 | DELETE | `/api/v1/telegram/link` | bearer | Unlinks every chat of the profile. 204 |
 
 Sync event `open_title` (`{tmdb_id, media_type, device_id, title}`) is delivered to all sockets of the user; only the device whose token prefix equals `device_id` acts. See docs/telegram.md.
+
+## Telegram Mini App (docs/miniapp.md)
+
+| Method | Path | Auth | Effect |
+|---|---|---|---|
+| POST | `/api/v1/tg/auth` | none | `{init_data, platform?}` → validates Telegram initData (HMAC, 24 h), finds the linked profile, issues a session of type `telegram`: `{token, user}`. `401 tg_invalid`, `403 tg_not_linked`, `503 telegram_disabled` |
+| GET | `/api/v1/tg/devices` | bearer | `{devices:[{id, name, type, current, online, state}]}` — `online` = live sync socket, `state` = last `PlayerState` (null when idle or older than 60 s) |
+| POST | `/api/v1/tg/send` | bearer | `{device_id, open:{tmdb_id, media_type, season?, episode?, resume?}}` or `{device_id, remote:{action, value?}}` → publishes `open_title` / `remote` to that device. 204; `404 device_offline` |
+| POST | `/api/v1/player/state` | bearer | TV reports `{tmdb_id, media_type, title, season, episode, position_sec, duration_sec, paused, voice}` or `{closed:true}`; kept per device in memory, published as sync event `player_state` (≤1/s per device). 204 |
+
+Sync events added: `player_state` (`PlayerState` + `device_id`, or `{device_id, closed:true}`); `open_title` gained optional `season`/`episode`; `remote` gained action `seek_to` (absolute seconds).

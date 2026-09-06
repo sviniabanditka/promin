@@ -55,6 +55,8 @@ type OpenTitlePayload struct {
 	DeviceID  string `json:"device_id"`
 	Title     string `json:"title"`
 	Resume    bool   `json:"resume,omitempty"` // continue from the saved timecode
+	Season    int    `json:"season,omitempty"` // Mini App: start this episode
+	Episode   int    `json:"episode,omitempty"`
 }
 
 // Bot is the long-polling Telegram companion. Nil-safe getters let httpapi
@@ -67,18 +69,25 @@ type Bot struct {
 	sync    *promsync.Service
 	hub     *promsync.Hub
 	log     *slog.Logger
+	appURL  string // Mini App URL for the chat menu button ("" = no button)
 
 	mu       sync.Mutex
 	username string
 	chats    map[int64]*chatState
 }
 
-// New builds a Bot. The username is learned from getMe inside Run.
-func New(api *Client, repo *store.TelegramRepo, cat *catalog.Service, syncSvc *promsync.Service, logger *slog.Logger) *Bot {
-	return &Bot{
+// New builds a Bot. The username is learned from getMe inside Run. mainHost
+// (PROMIN_MAIN_HOST) places the Mini App at https://<mainHost>/tg/; empty
+// leaves the chat menu button alone.
+func New(api *Client, repo *store.TelegramRepo, cat *catalog.Service, syncSvc *promsync.Service, mainHost string, logger *slog.Logger) *Bot {
+	b := &Bot{
 		api: api, links: NewLinks(nil), repo: repo, catalog: cat, sync: syncSvc, hub: syncSvc.Hub(), log: logger,
 		chats: map[int64]*chatState{},
 	}
+	if mainHost != "" {
+		b.appURL = "https://" + mainHost + "/tg/"
+	}
+	return b
 }
 
 // Username is the bot's @name ("" until getMe succeeded).
@@ -122,6 +131,15 @@ func (b *Bot) Run(ctx context.Context) {
 	for _, l := range append([]string{""}, langs...) {
 		if err := b.api.SetMyCommands(ctx, botCommands(normLang(l)), l); err != nil {
 			b.log.Warn("telegram: setMyCommands failed", "lang", l, "error", err)
+		}
+	}
+	// Chat menu button opens the Mini App. The default button is global, so
+	// it carries the default language (Telegram has no per-language variant).
+	if b.appURL != "" {
+		if err := b.api.SetChatMenuButton(ctx, tr(defaultLang, "menu.app"), b.appURL); err != nil {
+			b.log.Warn("telegram: setChatMenuButton failed", "error", err)
+		} else {
+			b.log.Info("telegram: mini app menu button set", "url", b.appURL)
 		}
 	}
 

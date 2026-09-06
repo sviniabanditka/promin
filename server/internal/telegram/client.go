@@ -186,6 +186,13 @@ func (c *Client) SetMyCommands(ctx context.Context, cmds []BotCommand, langCode 
 	return c.call(ctx, "setMyCommands", p, nil)
 }
 
+// SetChatMenuButton makes the default chat menu button open the Mini App at url.
+func (c *Client) SetChatMenuButton(ctx context.Context, text, url string) error {
+	return c.call(ctx, "setChatMenuButton", map[string]any{
+		"menu_button": map[string]any{"type": "web_app", "text": text, "web_app": map[string]string{"url": url}},
+	}, nil)
+}
+
 // EditMessage replaces text and keyboard of an existing message in one call
 // (editMessageText accepts reply_markup, so a separate
 // editMessageReplyMarkup is not needed).

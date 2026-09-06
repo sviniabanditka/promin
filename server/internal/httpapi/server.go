@@ -188,6 +188,15 @@ func NewServer(
 	mux.HandleFunc("POST /api/v1/telegram/link", requireAuth(authSvc, tgH.link))
 	mux.HandleFunc("DELETE /api/v1/telegram/link", requireAuth(authSvc, tgH.unlink))
 
+	// Telegram Mini App (docs/miniapp.md): initData login, devices + player
+	// state, send-to-TV. The TV reports its player via /player/state.
+	tgApp := &tgAppHandlers{bot: tgBot, auth: authSvc, sync: syncSvc, cat: catalogSvc}
+	mux.HandleFunc("POST /api/v1/tg/auth", tgApp.login) // open pre-gate: initData is the credential
+	mux.HandleFunc("GET /api/v1/tg/devices", requireAuth(authSvc, tgApp.devices))
+	mux.HandleFunc("POST /api/v1/tg/send", requireAuth(authSvc, tgApp.send))
+	ps := &playerStateHandlers{hub: syncSvc.Hub()}
+	mux.HandleFunc("POST /api/v1/player/state", requireAuth(authSvc, ps.set))
+
 	ws := &wsHandlers{syncSvc: syncSvc, logger: logger}
 	mux.HandleFunc("GET /api/v1/ws", requireAuthMedia(authSvc, ws.serve))
 
@@ -330,7 +339,7 @@ func withLogging(logger *slog.Logger, next http.Handler) http.Handler {
 		p := r.URL.Path
 		attrs := []any{"method", r.Method, "path", p, "status", sw.status, "ms", time.Since(start).Milliseconds()}
 		if strings.HasPrefix(p, "/img") || strings.HasPrefix(p, "/stream") || p == "/healthz" ||
-			p == "/api/v1/sync/events" || p == "/api/v1/timecodes" ||
+			p == "/api/v1/sync/events" || p == "/api/v1/timecodes" || p == "/api/v1/player/state" ||
 			strings.HasPrefix(p, "/remux") && strings.Contains(p, "/seg-") {
 			logger.Debug("http request", attrs...)
 		} else {

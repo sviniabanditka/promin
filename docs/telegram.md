@@ -78,3 +78,7 @@ prefix, pushes the title page and shows an "Opened from Telegram" toast.
 
 Limits: one search per two seconds per chat; group chats are ignored; the bot
 token is never logged.
+
+## Mini App
+
+The chat menu button opens the Telegram Mini App at `https://<PROMIN_MAIN_HOST>/tg/` — a phone-first remote and browser for the same profile. See docs/miniapp.md.

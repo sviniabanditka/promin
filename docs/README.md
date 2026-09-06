@@ -17,6 +17,7 @@ kept here; open work lives in [backlog.md](backlog.md).
 | [auth.md](auth.md) | PIN profiles, tokens, media token, devices, admin, sync |
 | [deployment.md](deployment.md) | docker-compose + Caddy and k3s, secrets, env table, CI/CD, backups, rollback |
 | [telegram.md](telegram.md) | Companion bot: linking, search from the phone, "open on TV", device selection |
+| [miniapp.md](miniapp.md) | Telegram Mini App: auth by initData, devices and player state, send-to-TV, screens |
 | [diagnostics.md](diagnostics.md) | Diagnostics mode, `/api/v1/diag`, reading logs, verifying a deploy |
 | [backlog.md](backlog.md) | Open work and unplanned ideas |
 
