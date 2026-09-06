@@ -1,0 +1,101 @@
+name: backup
+
+# Off-site copy of the Promin database.
+#
+# The app already writes nightly SQLite snapshots to its own PVC
+# (internal/store/backup.go). That survives app-level damage — a bad migration,
+# an accidental delete — but NOT loss of the volume or the node. This job pulls
+# the newest snapshot off the box on a schedule and keeps it here as a workflow
+# artifact, i.e. in a different failure domain, using the SSH key this repo
+# already has. No new vendor, no new account.
+#
+# The snapshot contains real user data (profiles, watch history), so it is
+# ENCRYPTED before it ever leaves the server. Add the passphrase once:
+#
+#   gh secret set BACKUP_PASSPHRASE     # then paste a long random passphrase
+#
+# Keep that passphrase in your password manager: without it the artifact is
+# unrecoverable, which is the entire point. Without the secret set, this job
+# exits cleanly instead of uploading anything in the clear.
+#
+# Restore:
+#   openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+#     -in promin-<ts>.db.enc -out promin.db -pass pass:'<passphrase>'
+#   # then stop the pod and put promin.db in place of /data/promin.db
+
+on:
+  schedule:
+    - cron: '17 3 * * *' # 03:17 UTC daily, off the hour to avoid the rush
+  workflow_dispatch: {} # and on demand
+
+permissions:
+  contents: read
+
+jobs:
+  pull-snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check passphrase is configured
+        id: gate
+        env:
+          PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          if [ -z "$PASSPHRASE" ]; then
+            echo "BACKUP_PASSPHRASE is not set — skipping (never upload plaintext user data)."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup SSH
+        if: steps.gate.outputs.ready == 'true'
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+
+      # The snapshot streams straight into openssl on the runner, so the
+      # plaintext is never WRITTEN to disk anywhere outside the server — only
+      # the ciphertext becomes a file.
+      - name: Pull + encrypt newest snapshot
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          STAMP=$(date -u +%Y%m%d-%H%M%S)
+          # Newest snapshot inside the running pod's volume. Fall back to a
+          # fresh VACUUM INTO if the scheduled one has not landed yet (e.g. the
+          # pod restarted recently).
+          ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=accept-new \
+            root@ssh.sviniabanditka.com \
+            'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+             POD=$(kubectl -n promin get pods -l app=promin -o jsonpath="{.items[0].metadata.name}")
+             SNAP=$(kubectl -n promin exec "$POD" -- sh -c "ls -1t /data/backups/promin-*.db 2>/dev/null | head -1")
+             if [ -z "$SNAP" ]; then
+               echo "no snapshot yet, taking one now" >&2
+               SNAP=/data/backups/manual-$(date -u +%Y%m%d-%H%M%S).db
+               kubectl -n promin exec "$POD" -- sh -c "cp /data/promin.db $SNAP"
+             fi
+             echo "using $SNAP" >&2
+             kubectl -n promin exec "$POD" -- cat "$SNAP"' \
+          | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+              -pass env:PASSPHRASE -out "promin-${STAMP}.db.enc"
+
+          ls -la promin-*.db.enc
+          # A truncated/empty pull is worse than none: fail loudly.
+          SIZE=$(stat -c%s promin-*.db.enc)
+          if [ "$SIZE" -lt 10240 ]; then
+            echo "encrypted backup is only ${SIZE} bytes — refusing to publish it"
+            exit 1
+          fi
+          echo "stamp=$STAMP" >> "$GITHUB_ENV"
+
+      - name: Upload encrypted backup
+        if: steps.gate.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: promin-db-${{ env.stamp }}
+          path: promin-*.db.enc
+          retention-days: 90
+          if-no-files-found: error

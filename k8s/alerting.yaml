@@ -1,0 +1,41 @@
+# Alert routing for the cluster's Alertmanager (kube-prometheus-stack): every
+# firing alert goes to Telegram. Used as the GLOBAL Alertmanager configuration
+# (Helm value alertmanager.alertmanagerSpec.alertmanagerConfiguration.name =
+# promin-alerts), so the namespace matcher the operator adds to ordinary
+# AlertmanagerConfig objects does not apply. The bot token lives in secret
+# monitoring/alertmanager-telegram (key token) — never in git.
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: promin-alerts
+  namespace: monitoring
+spec:
+  route:
+    receiver: telegram
+    groupBy: ["alertname", "instance"]
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 4h
+    routes:
+      # The stack's heartbeat alert is always firing by design — keep it quiet.
+      - receiver: "null"
+        matchers: [{ name: alertname, value: Watchdog }]
+      # Noise from the stack about itself is not worth a phone buzz.
+      - receiver: "null"
+        matchers: [{ name: alertname, value: InfoInhibitor }]
+      # k3s runs scheduler/controller-manager/kube-proxy inside the server
+      # process without metrics endpoints — these are permanently "down".
+      - receiver: "null"
+        matchers: [{ name: alertname, matchType: "=~", value: "KubeSchedulerDown|KubeControllerManagerDown|KubeProxyDown" }]
+  receivers:
+    - name: "null"
+    - name: telegram
+      telegramConfigs:
+        - chatID: 191575239
+          botToken: { name: alertmanager-telegram, key: token }
+          parseMode: HTML
+          sendResolved: true
+          message: |-
+            {{ if eq .Status "firing" }}🔴{{ else }}🟢{{ end }} <b>{{ .CommonLabels.alertname }}</b> ({{ .Status }})
+            {{ range .Alerts }}{{ if .Annotations.summary }}{{ .Annotations.summary }}{{ end }}{{ if .Labels.instance }} — {{ .Labels.instance }}{{ end }}
+            {{ end }}

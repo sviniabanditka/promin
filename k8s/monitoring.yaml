@@ -1,0 +1,198 @@
+# Monitoring of Promin through the cluster's kube-prometheus-stack (ns monitoring,
+# Helm release "kube-prometheus"; Grafana at grafana.sviniabanditka.com).
+#
+# - blackbox-exporter: the stack ships without one; probes the public URLs the
+#   TVs actually use (through Cloudflare / the h1 host), not the pod directly.
+# - Probe: picked up by Prometheus via label release=kube-prometheus.
+# - PrometheusRule: alerts (Alertmanager has only the "null" receiver until a
+#   real one is configured — see docs/deployment.md "Monitoring").
+# - ConfigMap grafana_dashboard=1: auto-provisioned dashboard "Promin".
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blackbox-exporter
+  namespace: monitoring
+  labels: { app: blackbox-exporter }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: blackbox-exporter } }
+  template:
+    metadata: { labels: { app: blackbox-exporter } }
+    spec:
+      containers:
+        - name: blackbox-exporter
+          image: quay.io/prometheus/blackbox-exporter:v0.25.0
+          args: ["--config.file=/etc/blackbox/blackbox.yml"]
+          ports: [{ name: http, containerPort: 9115 }]
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          volumeMounts: [{ name: config, mountPath: /etc/blackbox }]
+      volumes:
+        - name: config
+          configMap: { name: blackbox-exporter }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: blackbox-exporter
+  namespace: monitoring
+data:
+  blackbox.yml: |
+    modules:
+      http_2xx:
+        prober: http
+        timeout: 10s
+        http:
+          preferred_ip_protocol: ip4
+          valid_status_codes: [200]
+          follow_redirects: true
+      # Old-Samsung path must stay HTTP/1.1-only: fail the probe if h2 is negotiated.
+      http_2xx_h1:
+        prober: http
+        timeout: 10s
+        http:
+          preferred_ip_protocol: ip4
+          valid_status_codes: [200]
+          valid_http_versions: ["HTTP/1.1"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: blackbox-exporter
+  namespace: monitoring
+  labels: { app: blackbox-exporter }
+spec:
+  selector: { app: blackbox-exporter }
+  ports: [{ name: http, port: 9115, targetPort: http }]
+---
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: promin-public
+  namespace: monitoring
+  labels: { release: kube-prometheus }
+spec:
+  jobName: promin-public
+  interval: 60s
+  module: http_2xx
+  prober: { url: blackbox-exporter.monitoring.svc:9115 }
+  targets:
+    staticConfig:
+      static:
+        - https://promin.club/healthz
+        - https://promin.club/api/v1/ping
+---
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: promin-h1
+  namespace: monitoring
+  labels: { release: kube-prometheus }
+spec:
+  jobName: promin-h1
+  interval: 60s
+  module: http_2xx_h1
+  prober: { url: blackbox-exporter.monitoring.svc:9115 }
+  targets:
+    staticConfig:
+      static:
+        - https://h1.promin.club/healthz
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: promin
+  namespace: monitoring
+  labels: { release: kube-prometheus }
+spec:
+  groups:
+    - name: promin
+      rules:
+        - alert: ProminDown
+          expr: probe_success{job=~"promin-public|promin-h1"} == 0
+          for: 3m
+          labels: { severity: critical }
+          annotations:
+            summary: "Promin unreachable: {{ $labels.instance }}"
+            description: "Blackbox probe has failed for 3 minutes."
+        - alert: ProminSlow
+          expr: probe_duration_seconds{job="promin-public"} > 3
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "Promin responds slowly: {{ $labels.instance }}"
+        - alert: ProminPodRestarting
+          expr: increase(kube_pod_container_status_restarts_total{namespace="promin", container="promin"}[30m]) > 2
+          labels: { severity: warning }
+          annotations:
+            summary: "promin pod restarted more than twice in 30 minutes"
+        - alert: ProminMemoryHigh
+          expr: container_memory_working_set_bytes{namespace="promin", container="promin"} > 1.7e9
+          for: 15m
+          labels: { severity: warning }
+          annotations:
+            summary: "promin container near its 2Gi memory limit"
+        - alert: ProminDataDiskFilling
+          expr: kubelet_volume_stats_available_bytes{namespace="promin", persistentvolumeclaim="promin-data"} / kubelet_volume_stats_capacity_bytes{namespace="promin", persistentvolumeclaim="promin-data"} < 0.1
+          for: 30m
+          labels: { severity: warning }
+          annotations:
+            summary: "promin data volume under 10% free"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-promin
+  namespace: monitoring
+  labels: { grafana_dashboard: "1" }
+data:
+  promin.json: |
+    {
+      "uid": "promin",
+      "title": "Promin",
+      "tags": ["promin"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "refresh": "1m",
+      "time": { "from": "now-24h", "to": "now" },
+      "panels": [
+        { "id": 1, "type": "stat", "title": "Availability (24h)", "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+          "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1,
+            "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "orange", "value": 0.99 }, { "color": "green", "value": 0.999 } ] } } },
+          "targets": [ { "expr": "avg_over_time(probe_success{job=\"promin-public\", instance=\"https://promin.club/healthz\"}[24h])", "legendFormat": "promin.club" } ] },
+        { "id": 2, "type": "stat", "title": "Up now", "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+          "fieldConfig": { "defaults": { "mappings": [ { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } } ], "color": { "mode": "thresholds" } } },
+          "options": { "colorMode": "background", "textMode": "value_and_name" },
+          "targets": [ { "expr": "probe_success{job=~\"promin-public|promin-h1\"}", "legendFormat": "{{instance}}" } ] },
+        { "id": 3, "type": "stat", "title": "Deployed version", "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+          "options": { "textMode": "name", "colorMode": "none" },
+          "targets": [ { "expr": "kube_pod_container_info{namespace=\"promin\", container=\"promin\"}", "legendFormat": "{{image}}" } ] },
+        { "id": 4, "type": "stat", "title": "Restarts (24h)", "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+          "targets": [ { "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=\"promin\", container=\"promin\"}[24h]))" } ] },
+        { "id": 5, "type": "timeseries", "title": "Probe duration", "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+          "fieldConfig": { "defaults": { "unit": "s" } },
+          "targets": [ { "expr": "probe_duration_seconds{job=~\"promin-public|promin-h1\"}", "legendFormat": "{{instance}}" } ] },
+        { "id": 6, "type": "timeseries", "title": "Memory (working set)", "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+          "fieldConfig": { "defaults": { "unit": "bytes" } },
+          "targets": [
+            { "expr": "container_memory_working_set_bytes{namespace=\"promin\", container=\"promin\"}", "legendFormat": "used" },
+            { "expr": "kube_pod_container_resource_limits{namespace=\"promin\", container=\"promin\", resource=\"memory\"}", "legendFormat": "limit" } ] },
+        { "id": 7, "type": "timeseries", "title": "CPU (cores)", "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+          "targets": [ { "expr": "rate(container_cpu_usage_seconds_total{namespace=\"promin\", container=\"promin\"}[5m])", "legendFormat": "cpu" } ] },
+        { "id": 8, "type": "timeseries", "title": "Data volume used", "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+          "fieldConfig": { "defaults": { "unit": "bytes" } },
+          "targets": [
+            { "expr": "kubelet_volume_stats_used_bytes{namespace=\"promin\", persistentvolumeclaim=\"promin-data\"}", "legendFormat": "used" },
+            { "expr": "kubelet_volume_stats_capacity_bytes{namespace=\"promin\", persistentvolumeclaim=\"promin-data\"}", "legendFormat": "capacity" } ] },
+        { "id": 9, "type": "timeseries", "title": "Network (pod)", "gridPos": { "x": 0, "y": 20, "w": 24, "h": 8 },
+          "fieldConfig": { "defaults": { "unit": "Bps" } },
+          "targets": [
+            { "expr": "sum(rate(container_network_transmit_bytes_total{namespace=\"promin\"}[5m]))", "legendFormat": "tx" },
+            { "expr": "sum(rate(container_network_receive_bytes_total{namespace=\"promin\"}[5m]))", "legendFormat": "rx" } ] }
+      ]
+    }

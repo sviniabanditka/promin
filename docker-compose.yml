@@ -1,0 +1,56 @@
+# Promin stack — see docs/deployment.md
+services:
+  promin:
+    image: ghcr.io/sviniabanditka/promin:latest
+    build:
+      context: .
+      args:
+        # GO_TAGS=providers needs the private submodule server/providers checked out.
+        GO_TAGS: "${GO_TAGS:-}"
+    restart: unless-stopped
+    environment:
+      - PROMIN_HTTP_ADDR=:8080
+      - PROMIN_DATA_DIR=/data
+      - PROMIN_TMDB_API_KEY=${TMDB_API_KEY:?set TMDB_API_KEY in .env}
+      - PROMIN_OMDB_KEY=${OMDB_KEY:-}
+      - PROMIN_ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+    volumes:
+      - promin_data:/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits: { cpus: "2.0", memory: 4G }
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [promin]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+      - "8443:8443"
+    environment:
+      - DOMAIN=${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [internal]
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 512M }
+
+networks:
+  internal:
+
+volumes:
+  promin_data:
+  caddy_data:
+  caddy_config:

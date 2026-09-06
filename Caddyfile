@@ -1,0 +1,16 @@
+# Promin edge — see docs/deployment.md
+# The global block must come first and be the only one.
+# :8443 is forced to HTTP/1.1 (old Samsung Tizen breaks on h2 during sustained media).
+{
+	servers :8443 {
+		protocols h1
+	}
+}
+
+{$DOMAIN} {
+	reverse_proxy promin:8080
+}
+
+{$DOMAIN}:8443 {
+	reverse_proxy promin:8080
+}

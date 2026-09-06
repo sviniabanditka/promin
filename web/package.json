@@ -1,0 +1,20 @@
+{
+  "name": "promin-web",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Promin TV frontend (vanilla TS, ES5 output for old Tizen/webOS webviews)",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "node scripts/build.js && node -e \"require('fs').writeFileSync('../server/webdist/.gitkeep','')\"",
+    "check:es5": "es-check es5 ../server/webdist/app.js"
+  },
+  "dependencies": {
+    "whatwg-fetch": "^3.6.20"
+  },
+  "devDependencies": {
+    "@swc/core": "^1.7.26",
+    "es-check": "^7.2.1",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.3"
+  }
+}

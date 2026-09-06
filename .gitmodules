@@ -1,0 +1,3 @@
+[submodule "server/providers"]
+	path = server/providers
+	url = https://github.com/sviniabanditka/promin-providers.git

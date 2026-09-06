@@ -1,0 +1,3740 @@
+/* Promin — Lampa-style visual pass on top of the Phase 0 skeleton.
+ *
+ * Targets old Tizen/webOS Chromium (~47): no CSS Grid, no
+ * backdrop-filter/blur, no CSS custom properties (var() landed in
+ * Chrome 49). Flexbox only. Transitions are restricted to
+ * transform/opacity to avoid layout thrashing on weak TV GPUs. Shadows
+ * are flat (no blur radius) or omitted entirely.
+ * 1rem == 10px at the 1280x720 baseline; app.ts rescales the root
+ * font-size for other resolutions.
+ */
+
+/* Design tokens. Old Tizen (Chromium ~47) can't run var() at runtime, so
+ * scripts/build.js inlines this :root block to static literals at build time —
+ * source stays maintainable, shipped CSS is plain values. Add/adjust a palette
+ * value HERE, not scattered across rules. Use only the flat token-reference
+ * form with no runtime fallback — the inliner rejects fallbacks. */
+:root {
+  /* Minimal-clean dark (redesign variation B). Deeper near-black ground,
+     restrained cool accent used only on chrome/focus, hairline dividers. */
+  --bg: #0a0c10;          /* app ground (deep near-black) */
+  --surface: #14171e;     /* raised list/section */
+  --surface-2: #1b1f28;   /* focused row / nested */
+  --panel: #0f1319;       /* modal panel */
+  --line: rgba(255, 255, 255, 0.09);  /* hairline divider */
+  --line-2: rgba(255, 255, 255, 0.16); /* stronger hairline / control border */
+  --ink: #f3f5f9;         /* primary text */
+  --ink-2: #c3cad6;       /* secondary text */
+  --muted: #8b93a3;       /* labels / meta */
+  --faint: #6b7382;       /* placeholder / disabled (≥3.5:1 on --bg; 5c6472 sank on TV gamma) */
+  --accent: #7ca8ff;      /* cool accent (chrome/focus only) */
+  --accent-soft: rgba(124, 168, 255, 0.16);
+  --focus: #ffffff;       /* focus ring — white, no color (variation B) */
+  --good: #5ecb76;        /* success */
+  --warn: #f2c14e;        /* warning / rating */
+  --danger: #ff8f8f;      /* destructive text */
+  --danger-fill: #d06060; /* destructive focus fill */
+  --radius: 1.4rem;       /* default corner */
+  --radius-sm: 1rem;
+  --radius-xs: 0.8rem;    /* chips, badges, small controls */
+  --pad-screen: 3.2rem;   /* screen field padding (single grid) */
+}
+
+html {
+  font-size: 10px;
+  /* Android WebView "font boosting"/system text scale must not inflate rem
+   * text — it pushed the title-screen action row below the fold. */
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: Arial, Helvetica, sans-serif;
+  overflow: hidden;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.activity {
+  width: 100%;
+  height: 100%;
+}
+
+/* ---------------------------------------------------------------- */
+/* Home screen shell                                                 */
+/* ---------------------------------------------------------------- */
+
+.home-screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------- */
+/* Scroll: translate3d lanes (ported from Lampa scroll.scss).        */
+/* The inner __body is moved with transform; NEVER native scroll —   */
+/* old Tizen/webOS choke on scroll-behavior/scrollLeft transitions   */
+/* but handle translate3d fine.                                      */
+/* ---------------------------------------------------------------- */
+
+.scroll {
+  display: flex;
+}
+
+.scroll--over {
+  overflow: hidden;
+}
+
+.scroll__content {
+  width: 100%;
+}
+
+.scroll__body {
+  transition: transform 0.3s;
+}
+.scroll--horizontal .scroll__body {
+  will-change: transform; /* lanes only: a whole vertical grid as one GPU layer OOMs old Tizen */
+}
+
+.scroll__body.notransition {
+  transition: none;
+}
+
+/* Horizontal lane: cards laid out in a row inside __body. */
+.scroll--horizontal .scroll__body {
+  display: flex;
+  flex-direction: row;
+}
+
+/* Focus-driven backdrop: two stacked layers cross-fade via opacity only
+   (see styles.css header note + src/screens/home.ts). */
+.background {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 0;
+  overflow: hidden;
+  background-color: var(--bg);
+}
+
+.background__layer {
+  position: absolute;
+  top: -8%;
+  left: -8%;
+  right: -8%;
+  bottom: -8%;
+  opacity: 0;
+  background-size: cover;
+  background-position: center top;
+  background-repeat: no-repeat;
+  transition: opacity 0.6s ease-out;
+  will-change: opacity;
+}
+
+.background__layer.visible {
+  opacity: 1;
+}
+
+.background__shade {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* Two scrims so the bottom-left hero text (title, year·genre, description)
+     stays readable over a bright backdrop while the top-right keeps showing the
+     image: a vertical darken + a left→right darken. Only the title page shows a
+     backdrop now, so this is effectively the title hero scrim. */
+  background-image:
+    linear-gradient(180deg, rgba(10, 12, 16, 0.5) 0%, rgba(10, 12, 16, 0.55) 45%, var(--bg) 100%),
+    linear-gradient(90deg, rgba(10, 12, 16, 0.8) 0%, rgba(10, 12, 16, 0.4) 42%, rgba(10, 12, 16, 0) 72%);
+}
+
+/* ---------------------------------------------------------------- */
+/* Left icon rail                                                    */
+/* ---------------------------------------------------------------- */
+
+.menu {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 8.4rem;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 3.2rem;
+}
+
+.menu__list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.menu__item {
+  position: relative;
+  width: 5.6rem;
+  height: 5.6rem;
+  border-radius: 1.6rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.4rem;
+  color: var(--faint); /* inactive = dim outline icon */
+  background-color: transparent; /* rail carries no chrome — icons only */
+}
+
+/* Text label to the right of the icon, revealed only on focus. Absolute so it
+   overlays the content edge and never shifts the rail/content. */
+.menu__label {
+  position: absolute;
+  left: 6.8rem;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 5.6rem;
+  display: none;
+  align-items: center;
+  padding: 0 2rem;
+  white-space: nowrap;
+  font-size: 1.8rem;
+  color: #ffffff;
+  background-color: rgba(20, 24, 32, 0.96);
+  border-radius: 2.8rem;
+  z-index: 21;
+  pointer-events: none;
+}
+.menu__item.selector.focus .menu__label { display: flex; }
+/* Mouse affordance: hovering a rail icon reveals its label (and a soft ring)
+   WITHOUT moving Controller focus — the pointer layer deliberately never yanks
+   focus across regions, so this is CSS-only. Suppressed on phones below
+   (touch-sticky :hover would leave a label stuck). */
+.menu__item.selector:hover .menu__label { display: flex; }
+.menu__item.selector:hover { box-shadow: inset 0 0 0 0.2rem rgba(255, 255, 255, 0.35); }
+
+.menu__ico {
+  width: 2.4rem;
+  height: 2.4rem;
+  display: flex;
+}
+
+.menu__ico svg {
+  width: 100%;
+  height: 100%;
+}
+
+.menu__item--current {
+  color: var(--ink); /* active = bright, filled icon (set in menu.ts) */
+}
+
+.menu__item.selector.focus {
+  color: var(--ink);
+  background-color: var(--surface-2);
+  box-shadow: inset 0 0 0 0.2rem var(--focus); /* clear focus cue (fill alone is near-invisible on the dark rail) */
+}
+
+/* ---------------------------------------------------------------- */
+/* Top bar                                                           */
+/* ---------------------------------------------------------------- */
+
+.head {
+  position: fixed;
+  top: 0;
+  left: 0; /* full width so the top shade is even — no seam at the rail edge */
+  right: 0;
+  height: 7.2rem;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  padding: 0 3.2rem 0 11.6rem; /* clear the rail (8.4rem) + gap for logo/clock */
+  background-image: linear-gradient(180deg, rgba(15, 16, 20, 0.9) 0%, rgba(15, 16, 20, 0) 100%);
+}
+
+.head__logo {
+  font-size: 2.2rem;
+  font-weight: bold;
+  letter-spacing: 0.2rem;
+  color: #ffffff;
+  margin-right: auto;
+}
+
+.head__time {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.head__time-now {
+  font-size: 2.2rem;
+  font-weight: bold;
+  line-height: 1;
+  color: #ffffff;
+}
+
+.head__time-date {
+  font-size: 1.6rem;
+  color: var(--muted);
+  margin-top: 0.4rem;
+}
+
+/* ---------------------------------------------------------------- */
+/* Content: ribbons of cards                                         */
+/* ---------------------------------------------------------------- */
+
+/* Main vertical scroll area: everything below the head, right of the menu.
+   Bounded height so the translate math (maxOffset uses .scroll.offsetHeight)
+   clips correctly. */
+.content {
+  position: fixed;
+  z-index: 1;
+  left: 8.4rem;
+  right: 0;
+  top: 7.2rem;
+  bottom: 0;
+  overflow: hidden;
+}
+
+.content > .scroll {
+  width: 100%;
+  height: 100%;
+}
+
+/* Center the error/empty state block in the (fixed, full-height) content area. */
+.content__center {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Direct child only — a descendant selector also hit every horizontal lane's
+   own .scroll__content, indenting posters 3.2rem past their title and bloating
+   the vertical rhythm (only ~1.5 lanes fit at 720p). */
+.content > .scroll > .scroll__content {
+  padding: 3.2rem 3.2rem 6rem 3.2rem;
+}
+
+/* Match the loaded lanes' padding so the skeleton→content swap doesn't jump. */
+.content__skeleton {
+  padding: 3.2rem 3.2rem 6rem 3.2rem;
+}
+
+/* A little vertical room inside each lane so the focused card's lift/ring isn't
+   clipped by the lane scroll's overflow:hidden (this used to ride on the leaked
+   descendant padding above). */
+.items-line__body > .scroll > .scroll__content {
+  padding: 0.6rem 0;
+}
+
+.items-line {
+  margin-bottom: 3.6rem;
+}
+
+.items-line__title {
+  font-size: 2rem;
+  font-weight: bold;
+  color: #ffffff;
+  margin-bottom: 1.4rem;
+}
+
+/* Horizontal lane viewport: clips the translated card strip. */
+.items-line__body {
+  position: relative;
+  width: 100%;
+}
+
+.items-line__body > .scroll {
+  width: 100%;
+  overflow: hidden;
+}
+
+.card {
+  flex: 0 0 auto;
+  width: 15.6rem;
+  margin-right: 1.6rem;
+}
+
+.card:last-child {
+  margin-right: 0;
+}
+
+/* card__view is the poster frame; the focus ring is drawn on ::after,
+   extending 0.5rem beyond it — exactly Lampa's card.scss (border ring,
+   no scale). */
+.card__view {
+  position: relative;
+  width: 100%;
+  padding-bottom: 150%;
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-2);
+  margin-bottom: 0.9rem;
+  transition: transform 0.12s ease-out;
+}
+.card.focus .card__view {
+  transform: translateY(-0.4rem);
+  box-shadow: 0 0.6rem 0 rgba(0, 0, 0, 0.35); /* flat: blur repaints cost on TV GPUs */
+}
+
+.card__img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--radius-xs);
+}
+
+.card__vote {
+  position: absolute;
+  right: 0.7rem;
+  bottom: 0.7rem;
+  background-color: rgba(0, 0, 0, 0.55);
+  color: #ffffff;
+  font-size: 1.5rem;
+  font-weight: bold;
+  padding: 0.3rem 0.8rem;
+  border-radius: 1rem;
+  display: flex;
+  align-items: center;
+}
+
+.card__vote-icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  margin-right: 0.4rem;
+  color: var(--warn);
+  display: flex;
+}
+
+.card__vote-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.card--skeleton .card__title, .card--skeleton .card__year { min-height: 0; }
+
+.card__title {
+  font-size: 1.6rem;
+  line-height: 1.25;
+  color: #ffffff;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  min-height: 4rem;
+}
+
+.card__year {
+  font-size: 1.5rem;
+  color: var(--muted);
+  margin-top: 0.3rem;
+}
+
+/* "More" tile at the tail of a home lane: same poster frame, a big centred
+   label + arrow instead of an image. Opens the full category catalog. */
+.card__more-view {
+  background-color: #21242c;
+}
+
+.card__more-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+  font-weight: bold;
+  color: #cfd6e4;
+}
+
+.card__more-label::before {
+  content: "\203A"; /* › */
+  font-size: 3.2rem;
+  line-height: 1;
+  margin-right: 0.8rem;
+  color: #ffffff;
+}
+
+/* Playlist tile in the Library "Плейлисти" lane: same dark frame as the More
+   tile, name + item count stacked and centred. */
+.card--playlist .card__view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1.2rem;
+}
+.card__pl-name {
+  font-size: 1.9rem;
+  font-weight: bold;
+  color: #eef2f8;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.card__pl-count {
+  font-size: 1.5rem;
+  color: var(--muted);
+  margin-top: 0.6rem;
+}
+
+/* Focus ring drawn ON the poster edge (inset), not 0.5rem outside it: an outset
+   ring is clipped by the grid scroll's overflow:hidden on the top/edge rows
+   (the "рамки обрезаются" issue). Inset never clips. */
+.card.focus .card__view::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border: 0.3rem solid var(--focus);
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+}
+
+/* ---- cast lane card (title screen "Актори"): round photo + name + role ---- */
+.card--actor .card__view--actor {
+  padding-bottom: 100%; /* square → circle */
+  border-radius: 50%;
+  overflow: hidden;
+  background-color: #262931;
+}
+
+.card--actor .card__view--actor .card__img {
+  border-radius: 50%;
+}
+
+.card__actor-initial {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 4rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.card--actor .card__title,
+.card--actor .card__year {
+  text-align: center;
+}
+
+.card--actor.focus .card__view::after {
+  border-radius: 50%;
+}
+
+/* ---------------------------------------------------------------- */
+/* Footer hints + toast                                              */
+/* ---------------------------------------------------------------- */
+
+.footer {
+  position: fixed;
+  left: 8.4rem;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: row;
+  padding: 1.2rem 3.2rem;
+  background-image: linear-gradient(0deg, rgba(15, 16, 20, 0.9) 0%, rgba(15, 16, 20, 0) 100%);
+}
+
+.hint {
+  font-size: 1.6rem;
+  color: var(--muted);
+  margin-right: 3.2rem;
+}
+
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: 6rem;
+  transform: translateX(-50%) translateY(0.8rem);
+  opacity: 0;
+  background: #1a2030;
+  color: #ffffff;
+  border: 0.1rem solid #323b4d;
+  border-radius: var(--radius-xs);
+  padding: 1.2rem 2.4rem;
+  font-size: 1.8rem;
+  transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+  white-space: normal;
+  max-width: 80vw;
+  /* Above the player (z50), modals (z40-45) and trailer (z60) — the player is
+     an opaque black surface, so a z30 toast was invisible and every playback
+     error was silent. Below the screensaver (z9999). */
+  z-index: 9998;
+}
+
+.toast-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ================================================================ */
+/* Shared: buttons, state messages, skeletons                        */
+/* ================================================================ */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 5rem;
+  padding: 0 2.6rem;
+  border-radius: 999px;
+  background-color: transparent;
+  border: 0.1rem solid var(--line-2);
+  color: var(--ink);
+  font-size: 1.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.button--accent {
+  background-color: var(--focus);
+  border-color: var(--focus);
+  color: var(--bg);
+}
+
+/* Inset ring, not an outset outline: an outset ring is clipped by the
+   scroll's overflow:hidden when the button sits at the edge (e.g. the first
+   "Создать плейлист" row), which read as a broken/half ring. Inset draws inside
+   the border box → always full and even, never clipped. */
+.button.selector.focus {
+  border-color: var(--focus);
+  box-shadow: inset 0 0 0 0.2rem var(--focus);
+}
+/* Accent (primary) is white-filled, so a white inset ring is invisible — give
+   it a dark inset ring instead. */
+.button--accent.selector.focus {
+  background-color: var(--focus);
+  color: var(--bg);
+  box-shadow: inset 0 0 0 0.2rem var(--bg);
+}
+
+/* Unified state block (ui/state.ts) — empty / error / loading, centered.
+   Replaces the four divergent per-screen looks. */
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-height: 24rem;
+  padding: 4rem 3.2rem;
+}
+.state > * + * { margin-top: 2rem; }
+.state__spinner {
+  width: 5.6rem;
+  height: 5.6rem;
+  border: 0.5rem solid rgba(255, 255, 255, 0.16);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: player-spin 0.9s linear infinite;
+}
+.state__text {
+  font-size: 2rem;
+  color: var(--ink-2);
+  max-width: 46rem;
+}
+.state--error .state__text { color: var(--ink); }
+.state__retry { margin-top: 0.4rem; }
+
+/* Inline pagination "loading more" strip at the grid tail. */
+.catalog-loading-more {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 2.4rem 0 3.2rem;
+}
+.catalog-loading-more > * + * { margin-left: 1.4rem; }
+.catalog-loading-more .state__spinner { width: 3rem; height: 3rem; border-width: 0.35rem; }
+.catalog-loading-more__text { font-size: 1.6rem; color: var(--muted); }
+
+.state-message {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 4rem 0;
+}
+
+.state-message--soft {
+  align-items: center;
+  color: var(--muted);
+}
+
+.state-message__text {
+  font-size: 2rem;
+  color: var(--ink-2);
+  margin-bottom: 2rem;
+}
+
+/* Skeleton placeholders — flat pulse via opacity (no blur/box-shadow). */
+.skeleton-box,
+.skeleton-line {
+  background-color: #262931;
+  border-radius: var(--radius-xs);
+  animation: skeleton-pulse 1.2s ease-in-out infinite;
+}
+
+.skeleton-line {
+  height: 1.4rem;
+  margin-top: 0.6rem;
+}
+
+.skeleton-line--short {
+  width: 50%;
+}
+
+@keyframes skeleton-pulse {
+  0% { opacity: 0.5; }
+  50% { opacity: 1; }
+  100% { opacity: 0.5; }
+}
+
+.card--skeleton .card__view {
+  padding-bottom: 150%;
+}
+
+.skeleton-strip {
+  display: flex;
+  flex-direction: row;
+}
+
+.skeleton-strip .card {
+  width: 15.6rem;
+}
+
+.content__skeleton .items-line__title.skeleton-line {
+  width: 22rem;
+  height: 2rem;
+}
+
+/* Card fallbacks */
+.card__noimg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.8rem;
+  text-align: center;
+  font-size: 1.6rem;
+  color: var(--muted);
+  border-radius: var(--radius-xs);
+}
+
+.card__progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0.5rem;
+  background-color: rgba(0, 0, 0, 0.5);
+  border-bottom-left-radius: 0.8rem;
+  border-bottom-right-radius: 0.8rem;
+  overflow: hidden;
+}
+
+.card__progress-fill {
+  height: 100%;
+  background-color: var(--warn);
+}
+
+/* ================================================================ */
+/* Title screen                                                      */
+/* ================================================================ */
+
+.title-screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--bg); /* opaque — no home rail can bleed through under it */
+}
+
+.title-page {
+  position: relative;
+  width: 100%;
+  /* 72rem, not 100vh: the root font tracks the viewport WIDTH (128rem = width),
+   * so on a 16:9 TV 72rem is exactly the screen height — while an Android TV
+   * WebView (MSX) reports a vh taller than what's visible and pushed the
+   * bottom-anchored hero (and its action row) below the screen edge. */
+  height: 72rem;
+  overflow: hidden;
+  font-size: 1.6rem; /* em context for the Lampa full-start/season-episode ports */
+}
+
+/* PAGE 1 — the full-start card, vertically centred inside the viewport. */
+.title-page--info {
+  display: flex;
+  align-items: flex-end;
+}
+
+.title-page__inner {
+  width: 100%;
+  padding: 0 6rem 6rem 11.6rem; /* bottom-left hero; left clears the rail */
+}
+
+/* Page 1 as a single vertical scroll (Lampa full: info on top, content lanes
+   below). Overrides the centred flex layout used for the skeleton/error state. */
+.title-page--scroll {
+  display: block;
+}
+
+.title-page--scroll .title-page__inner {
+  height: 100%;
+  padding: 0;
+}
+
+.title-page__scroll {
+  width: 100%;
+  height: 100%;
+}
+
+.title-page__scroll > .scroll__content {
+  padding: 4rem 6rem 4rem 11.6rem;
+}
+
+/* ---------------------------------------------------------------- */
+/* Full screen — ported 1:1 from Lampa src/sass/components/full/     */
+/* start_new.scss + start.scss (buttons/rate). em-based off 1.6rem.  */
+/* ---------------------------------------------------------------- */
+/* Bottom-anchor the hero over the backdrop (was top-anchored → ~45% dead black
+   at the bottom where the scrim is strongest). Fill most of the first screen and
+   push the info block to the bottom-left. */
+.full-start-new {
+  min-height: 59rem; /* 82% of the 72rem screen; see .title-page */
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding-bottom: 2em;
+}
+
+.full-start-new__body {
+  display: flex;
+  align-items: flex-end;
+}
+
+.full-start-new__right {
+  flex-grow: 1;
+  /* No max-width/overflow clip on the column itself — that cut off the action
+     buttons on the right. Readable line length is capped on the text elements
+     instead (below), so the button row can use the full hero width. */
+  min-width: 0;
+}
+
+.full-start-new__head {
+  color: var(--ink-2); /* brighter than --muted so year·genre reads over the backdrop */
+  font-size: 1.15em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 0.7em;
+}
+
+/* Cap readable line length on the text blocks (was the column max-width, which
+   also clipped the buttons). */
+.full-start-new__title,
+.full-start-new__tagline,
+.full-start-new__description {
+  max-width: 24em;
+}
+
+.full-start-new__title {
+  font-size: 3.2em;
+  font-weight: 600;
+  margin-bottom: 0.2em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  margin-left: -0.03em;
+  line-height: 1.25;
+}
+
+.full-start-new__tagline {
+  font-size: 1.8em;
+  line-height: 1.2;
+  margin-bottom: 1em;
+  margin-top: -0.3em;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.full-start-new__rate-line {
+  display: flex;
+  margin-bottom: 2.2em;
+  align-items: center;
+}
+
+.full-start-new__rate-line > * {
+  margin-right: 1em !important;
+}
+
+.full-start-new__split {
+  font-size: 1.1em;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.full-start-new__description {
+  font-size: 1.2em;
+  font-weight: 300;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  width: 100%;
+  margin-bottom: 1.6em;
+}
+
+.full-start-new__buttons {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+.full-start-new__buttons > * + * { margin-left: 1rem; }
+
+/* full-start__rate — the TMDB rating pill (full/start.scss). */
+.full-start__rate {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 0.3em;
+  display: flex;
+  align-items: center;
+  font-size: 1.45em;
+}
+
+.full-start__rate > div:first-child {
+  width: 1.8em;
+  height: 1.5em;
+  flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 0.3em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.full-start__rate > div:last-child {
+  font-size: 0.7em;
+  padding: 0 0.5em;
+}
+
+/* IMDB rating pill — same layout as TMDB, gold-accented number box. */
+.full-start__rate--imdb > div:first-child {
+  background: #f5c518;
+  color: #000;
+  font-weight: 600;
+}
+
+.full-start__pg {
+  font-size: 1.2em;
+  border: 1px solid #fff;
+  border-radius: 0.2em;
+  padding: 0.3em;
+}
+
+/* full-start__button (full/start.scss) — icon pill; label appears on focus. */
+.full-start__button {
+  font-size: 1.25em;
+  background-color: transparent;
+  border: 0.06em solid var(--line-2);
+  padding: 0 1.4em;
+  display: flex;
+  border-radius: 999px;
+  align-items: center;
+  height: 2.9em;
+  flex-shrink: 0;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.full-start__button-ico {
+  width: 1.5em;
+  height: 1.5em;
+  flex-shrink: 0;
+  display: flex;
+}
+
+.full-start__button-ico svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Label gap only — the icon wrapper is ALSO a <span>, so an unscoped
+   `.full-start__button span` margin-left pushed the icon right and left a gap on
+   icon-only buttons. Exclude the icon. */
+.full-start__button span:not(.full-start__button-ico) {
+  margin-left: 0.75em;
+  margin-top: -0.2em;
+  white-space: nowrap;
+}
+
+/* Collapsed icon-only look — only the focused button shows its text label; the
+   rest are just icons. The icon wrapper is itself a <span class=...-ico>, so the
+   :not(...ico) guard keeps it from being hidden by this rule. */
+.full-start__button:not(.focus) span:not(.full-start__button-ico) {
+  display: none;
+}
+
+/* Focused button = inset ring + label (unified focus idiom, B44). Text stays
+   light — the old white fill + light text made the label invisible. */
+.full-start__button.selector.focus {
+  background-color: var(--surface-2);
+  box-shadow: inset 0 0 0 0.2rem var(--focus);
+  border-color: var(--focus);
+  color: var(--ink);
+}
+/* "Смотреть" (button--active) uses the SAME focus as the rest — no divergent
+   white/black pill. */
+.full-start__button.button--active.focus {
+  background-color: var(--surface-2);
+  box-shadow: inset 0 0 0 0.2rem var(--focus);
+  color: var(--ink);
+}
+
+/* ---------------------------------------------------------------- */
+/* Episode list — ported 1:1 from Lampa src/sass/components/         */
+/* episode.scss (.season-episode). em-based off the scroll content.  */
+/* ---------------------------------------------------------------- */
+.full-episodes {
+  display: flex;
+  flex-direction: column;
+}
+
+.season-episode {
+  position: relative;
+  border-radius: 0.3em;
+  background-color: rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-shrink: 0;
+  margin-bottom: 1.5em;
+}
+
+.season-episode__body {
+  padding: 1.2em;
+  line-height: 1.3;
+  flex-grow: 1;
+  position: relative;
+}
+
+.season-episode__img {
+  position: relative;
+  width: 13em;
+  flex-shrink: 0;
+  min-height: 8.2em;
+  background-color: rgba(0, 0, 0, 0.3);
+  border-radius: 0.3em;
+}
+
+.season-episode__img > img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 0.3em;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.season-episode__img--loaded > img {
+  opacity: 1;
+}
+
+.season-episode__episode-number {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2em;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.season-episode__img--loaded .season-episode__episode-number {
+  display: none;
+}
+
+.season-episode__viewed {
+  position: absolute;
+  top: 1em;
+  left: 1em;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 100%;
+  padding: 0.4em;
+  font-size: 0.76em;
+  z-index: 2;
+  color: #fff;
+}
+
+.season-episode__viewed svg {
+  width: 1.5em;
+  height: 1.5em;
+}
+
+.season-episode__head,
+.season-episode__footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Full-width watched bar along the whole episode item's bottom edge:
+   100% width == fully watched. Sits under both the still and the body. */
+.season-episode__progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0.45em;
+  background-color: rgba(255, 255, 255, 0.15);
+  border-radius: 0 0 0.3em 0.3em;
+  overflow: hidden;
+}
+
+.season-episode__progress-fill {
+  height: 100%;
+  background-color: #3ea6ff;
+}
+
+/* Watched episodes dim down so unwatched ones stand out; the focused row
+   (even if watched) stays fully lit so it's readable. */
+.season-episode--viewed {
+  opacity: 0.5;
+}
+
+.season-episode--viewed.focus {
+  opacity: 1;
+}
+
+.season-episode__title {
+  font-size: 1.7em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+}
+
+.season-episode__time {
+  padding-left: 2em;
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.season-episode__info {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.season-episode__quality {
+  padding-left: 1em;
+  white-space: nowrap;
+}
+
+.season-episode__vote {
+  color: #f5c518;
+  font-weight: 600;
+}
+
+/* Inset ring (was -0.6em outset) so the episode scroll's overflow:hidden can't
+   clip the top row's frame — same fix as the other list rows. */
+.season-episode.focus::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 0.5em;
+  border: solid 0.3em #fff;
+  pointer-events: none;
+}
+
+/* Match the loaded hero: bottom-anchored, poster-less, so there's no jump. */
+.title-skeleton {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 59rem;
+  padding-bottom: 2em;
+}
+
+.title-skeleton__info {
+  max-width: 60rem;
+}
+
+.title-skeleton__info .skeleton-line {
+  height: 2.4rem;
+  margin-bottom: 1.4rem;
+}
+
+/* ================================================================ */
+/* Catalog screen                                                    */
+/* ================================================================ */
+
+.catalog-screen { position: relative; width: 100%; height: 100%; overflow: hidden; }
+
+.filter-bar {
+  position: fixed;
+  z-index: 15;
+  left: 0; /* full width so the top shade is even — no seam at the rail edge */
+  right: 0;
+  top: 0;
+  height: 8.4rem;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 0 3.2rem 0 11.6rem; /* clear the rail (8.4rem) + gap */
+  background-image: linear-gradient(180deg, rgba(15, 16, 20, 0.95) 0%, rgba(15, 16, 20, 0) 100%);
+}
+
+.filter-btn {
+  min-width: 15rem;
+  height: 5rem;
+  padding: 0 1.6rem;
+  border-radius: var(--radius-sm);
+  background-color: var(--surface);
+  border: 0.1rem solid var(--line);
+  margin-right: 1rem;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+/* flex gap is a no-op on Chromium ~47 → explicit margin between label & value
+   (the chevron is pushed right by margin-left:auto, needs no gap). */
+.filter-btn__label { margin-right: 0.8rem; }
+/* Down chevron — marks it as a dropdown (unified with the redesign). */
+.filter-btn::after {
+  content: "";
+  width: 0.9rem;
+  height: 0.9rem;
+  margin-left: auto;
+  border-right: 0.2rem solid var(--muted);
+  border-bottom: 0.2rem solid var(--muted);
+  transform: rotate(45deg) translateY(-0.15rem);
+  flex: none;
+}
+
+.filter-btn.focus {
+  border-color: var(--focus);
+  box-shadow: inset 0 0 0 0.2rem var(--focus);
+}
+
+.filter-btn__label {
+  font-size: 1.5rem;
+  color: var(--muted);
+}
+
+.filter-btn__value {
+  font-size: 1.6rem;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.catalog-grid {
+  position: fixed;
+  z-index: 1;
+  left: 8.4rem;
+  right: 0;
+  top: 8.4rem;
+  bottom: 0;
+  overflow: hidden;
+}
+
+.catalog-grid > .scroll { width: 100%; height: 100%; }
+
+.catalog-grid__body {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  padding: 2.4rem 3.2rem 6rem 3.2rem;
+}
+
+.catalog-grid__body .card {
+  width: 15.6rem;
+  margin-right: 1.6rem;
+  margin-bottom: 2.4rem;
+}
+
+.catalog-grid__skeleton {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+.catalog-grid__skeleton .card {
+  width: 15.6rem;
+  margin-right: 1.6rem;
+  margin-bottom: 2.4rem;
+}
+
+/* Modal select (remote-driven) */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 40;
+  background-color: rgba(10, 11, 14, 0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-overlay--top { z-index: 41; } /* lang-choice over the trailers action-sheet (also z40) */
+
+.modal {
+  width: 46rem;
+  max-height: 70%;
+  background-color: var(--panel);
+  border: 0.1rem solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The inner translate-Scroll IS the bounded viewport: it grows with content
+   up to max-height, then clips (.scroll--over → overflow:hidden) so its
+   offsetHeight caps at the viewport. That is exactly what Scroll.maxOffset
+   reads, so a long list clamps and Controller.autoScrollTo follows focus
+   (a short list stays content-sized and never scrolls). max-height must live
+   on .scroll itself — capping .modal/.modal__list instead leaves .scroll at
+   full content height and the maxOffset clamp evaluates to 0 (no scroll).
+   Padding moves to .scroll__content so it scrolls with the rows. */
+.modal__list {
+  overflow: hidden;
+}
+
+.modal__list > .scroll {
+  width: 100%;
+  max-height: 60vh;
+}
+
+.modal__list .scroll__content {
+  padding: 1rem 0;
+}
+
+.modal__item {
+  padding: 1.4rem 2.4rem;
+  font-size: 1.9rem;
+  color: var(--ink-2);
+}
+
+.modal__item--current { color: #ffffff; }
+
+.modal__item--current::before {
+  content: "\2022";
+  margin-right: 1rem;
+  color: var(--warn);
+}
+
+.modal__item.focus {
+  background-color: var(--surface-2);
+  box-shadow: inset 0 0 0 0.2rem var(--focus);
+  color: var(--ink);
+}
+
+.modal__item.focus::before { color: var(--ink); }
+
+/* Optional heading above a dropdown list (title-screen online picker). */
+.modal__title {
+  font-size: 1.6rem;
+  font-weight: bold;
+  color: var(--muted);
+  padding: 1.4rem 2.4rem 0.4rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ================================================================ */
+/* Title screen — online picker (page 2 dropdown header + streams)   */
+/* ================================================================ */
+
+/* Filter row inside the watch/torrents modal head (one static set of dropdown
+   buttons; the head never re-measures). */
+.watch-filters {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 1.6rem;
+}
+/* gap is a no-op on Chromium ~47. Horizontal spacing already comes from
+   .filter-btn{margin-right:1rem}; add vertical spacing for wrapped rows. */
+.watch-filters > * { margin-bottom: 1rem; }
+
+/* Resolved quality/stream rows (movies) under the dropdown header. */
+.online-quality {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 1.4rem 1.6rem;
+  margin-bottom: 0.8rem;
+  border-radius: 1.2rem;
+  background-color: rgba(255, 255, 255, 0.04);
+}
+.online-quality > * + * { margin-left: 1.6rem; }
+
+.online-quality.focus {
+  background-color: var(--surface-2);
+  box-shadow: inset 0 0 0 0.2rem var(--focus);
+}
+
+.online-quality__ico {
+  flex: none;
+  width: 4.4rem;
+  height: 4.4rem;
+  border-radius: 1rem;
+  background-color: rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-2);
+}
+
+.online-quality__ico svg { width: 2rem; height: 2rem; }
+
+.online-quality__body { flex: 1; min-width: 0; }
+
+.online-quality__label {
+  font-size: 1.9rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.online-quality__meta {
+  display: flex;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+.online-quality__meta > * + * { margin-left: 0.8rem; }
+
+/* Quality/resolution pill — unified across online + torrent rows. */
+.q-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border-radius: 0.5rem;
+  padding: 0.2rem 0.7rem;
+  color: var(--accent);
+  background-color: var(--accent-soft);
+}
+
+.q-badge--sd { color: var(--muted); background-color: rgba(255, 255, 255, 0.1); }
+
+/* ================================================================ */
+/* Search screen                                                     */
+/* ================================================================ */
+
+.search-screen { position: relative; width: 100%; height: 100%; overflow: hidden; }
+
+.search-panel {
+  position: fixed;
+  z-index: 1;
+  left: 8.4rem;
+  right: 0;
+  top: 7.2rem;
+  bottom: 0;
+  padding: 3.2rem;
+  display: flex;
+  flex-direction: column;
+}
+
+@keyframes spin { 100% { transform: rotate(360deg); } }
+
+/* One full-width search bar at the top (icon · input · spinner), results below.
+   The bar is the D-pad focusable; the native <input> inside pops the system IME
+   on OK and shows the typed value — no separate query display. */
+.search-bar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: 6.4rem;
+  padding: 0 2rem;
+  margin-bottom: 2.8rem;
+  max-width: 92rem;
+  border-radius: 1.2rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 0.2rem solid rgba(255, 255, 255, 0.12);
+}
+.search-bar > * + * { margin-left: 1.4rem; }
+
+.search-bar.selector.focus {
+  border-color: #ffffff;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 0 0 0.2rem #ffffff;
+}
+
+.search-bar__ico {
+  flex: 0 0 auto;
+  width: 2.6rem;
+  height: 2.6rem;
+  color: var(--muted);
+  display: flex;
+}
+.search-bar__ico svg { width: 100%; height: 100%; }
+
+.search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  font-size: 2.4rem;
+  color: #ffffff;
+  background: transparent;
+  border: 0;
+  outline: none;
+}
+.search-input::placeholder { color: var(--muted); }
+.search-input::-webkit-input-placeholder { color: var(--muted); } /* Chromium 47: unprefixed ::placeholder is Chrome 57+ */
+
+.search-bar__spinner {
+  flex: 0 0 auto;
+  width: 2.4rem;
+  height: 2.4rem;
+  border: 0.3rem solid rgba(255, 255, 255, 0.2);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  opacity: 0;
+}
+.search-bar__spinner.is-active {
+  opacity: 1;
+  animation: spin 0.8s linear infinite;
+}
+
+.keyboard {
+  flex: 0 0 auto;
+  width: 54rem;
+  margin-right: 3.2rem;
+}
+
+.keyboard__grid {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+/* Буквенные ряды ЙЦУКЕН/QWERTY: до 12 клавиш в ряд, чуть компактнее. */
+.keyboard__row {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+}
+
+.keyboard__row .key {
+  width: 3.9rem;
+  height: 4.2rem;
+  margin: 0.25rem;
+  font-size: 1.8rem;
+}
+
+.keyboard__grid--digits { margin-top: 1rem; }
+.keyboard__grid--controls { margin-top: 1rem; }
+
+.key {
+  width: 4.4rem;
+  height: 4.4rem;
+  margin: 0.4rem;
+  border-radius: var(--radius-xs);
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  font-size: 1.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.1s ease-out;
+}
+
+.key.focus {
+  background-color: #ffffff;
+  color: var(--bg);
+  transform: scale(1.08);
+}
+
+/* Selector matches .keyboard__row .key specificity (0,2,0) so the wide/space
+   width wins over the per-row 3.9rem rule (which otherwise clipped the control
+   labels: "Пробел"/"Очистить" overflowed a 39px key). */
+.keyboard__row .key--wide { width: 8rem; font-size: 1.4rem; }
+.keyboard__row .key--space { width: 14rem; font-size: 1.5rem; }
+.key--wide { width: 8rem; font-size: 1.4rem; }
+.key--space { width: 14rem; font-size: 1.5rem; }
+
+.search-results {
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.search-results > .scroll { width: 100%; height: 100%; }
+
+.search-results__body {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+.search-results__body .card {
+  width: 15.6rem;
+  margin-right: 1.4rem;
+  margin-bottom: 2rem;
+}
+
+/* History + suggestions occupy a full row in the flex-wrap body, so the card
+   grid wraps beneath them. */
+.search-history,
+.search-suggest {
+  flex: 0 0 100%;
+  width: 100%;
+}
+
+.search-history__head {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.4rem;
+}
+
+.search-history__title,
+.search-suggest__title {
+  font-size: 2rem;
+  font-weight: bold;
+  color: var(--ink-2);
+}
+
+.search-history__clear {
+  font-size: 1.6rem;
+  color: var(--muted);
+  padding: 0.6rem 1.4rem;
+  border-radius: var(--radius-xs);
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+.search-history__list {
+  display: flex;
+  flex-direction: column;
+}
+
+.search-history__item {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  margin-bottom: 0.8rem;
+}
+
+.search-history__label {
+  flex: 1 1 auto;
+  font-size: 2rem;
+  color: #ffffff;
+  padding: 1rem 1.6rem;
+  border-radius: var(--radius-xs);
+  background-color: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-history__del {
+  flex: 0 0 auto;
+  width: 4.4rem;
+  margin-left: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+  color: var(--muted);
+  border-radius: var(--radius-xs);
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+.search-history__clear.focus,
+.search-history__label.focus,
+.search-history__del.focus,
+.search-suggest__chip.focus {
+  background-color: var(--surface-2);
+  box-shadow: inset 0 0 0 0.2rem var(--focus);
+  color: var(--ink);
+}
+
+.search-suggest {
+  margin-bottom: 1.6rem;
+}
+
+.search-suggest__title {
+  margin-bottom: 1rem;
+}
+
+.search-suggest__chips {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+.search-suggest__chip {
+  font-size: 1.8rem;
+  color: #ffffff;
+  padding: 0.8rem 1.6rem;
+  margin: 0 0.8rem 0.8rem 0;
+  border-radius: 2rem;
+  background-color: rgba(255, 255, 255, 0.08);
+  max-width: 30rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ================================================================ */
+/* Source selection (screens/sources.ts)                             */
+/* ================================================================ */
+
+.sources-overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.55);
+  /* Above the watch modal (.action-sheet-overlay z-index 40) so the resolving/
+     adding spinner covers it while a source resolves or a torrent is added. */
+  z-index: 45;
+}
+
+.sources-overlay__text {
+  margin-top: 2rem;
+  font-size: 1.9rem;
+  color: var(--ink);
+}
+
+/* ---- trailer overlay (YouTube iframe embed, fullscreen) ---- */
+.trailer-overlay {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #000000;
+  z-index: 60;
+}
+
+.trailer-overlay__frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.trailer-overlay__iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.trailer-overlay__fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.trailer-overlay__message {
+  font-size: 2.2rem;
+  color: var(--ink);
+  margin-bottom: 2.4rem;
+}
+
+/* ---- torrents tab: Lampa-style "folder" cards ---- */
+.torrent-folder {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 1.4rem 2rem;
+  margin-bottom: 1.2rem;
+  border-radius: 1rem;
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.torrent-folder.focus {
+  background-color: var(--surface-2);
+  box-shadow: inset 0 0 0 0.2rem var(--focus);
+}
+
+.torrent-folder__icon {
+  flex-shrink: 0;
+  width: 4.4rem;
+  height: 4.4rem;
+  margin-right: 1.6rem;
+  border-radius: 1rem;
+  background-color: rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-2);
+}
+
+.torrent-folder__icon-svg {
+  display: flex;
+}
+
+.torrent-folder__icon-svg svg {
+  display: block;
+  width: 2.4rem;
+  height: 2.1rem;
+}
+
+.torrent-folder__body {
+  flex-grow: 1;
+  overflow: hidden;
+}
+
+.torrent-folder__title {
+  font-size: 1.9rem;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.torrent-folder__meta {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 0.7rem;
+}
+
+.torrent-folder__metatext {
+  font-size: 1.6rem;
+  color: var(--muted);
+  margin-right: 1.4rem;
+}
+
+/* seed/quality/cached badges */
+.torrent-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 1.5rem;
+  font-weight: bold;
+  border-radius: 0.5rem;
+  padding: 0.3rem 0.9rem;
+  margin-right: 1.4rem;
+}
+
+.torrent-badge__dot {
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 50%;
+  margin-right: 0.7rem;
+  background-color: currentColor;
+}
+
+.torrent-badge--seeds-high {
+  color: var(--good);
+  background-color: rgba(87, 198, 106, 0.16);
+}
+
+.torrent-badge--seeds-mid {
+  color: #e0b23c;
+  background-color: rgba(224, 178, 60, 0.16);
+}
+
+.torrent-badge--seeds-low {
+  color: var(--danger-fill);
+  background-color: rgba(208, 96, 96, 0.16);
+}
+
+.torrent-badge--quality {
+  color: var(--ink-2);
+  background-color: rgba(255, 255, 255, 0.12);
+}
+
+.torrent-badge--cached {
+  color: var(--good);
+  background-color: rgba(87, 198, 106, 0.16);
+}
+
+/* ---- torrent file picker (packs) ---- */
+.torrent-files__hint {
+  font-size: 1.7rem;
+  color: var(--muted);
+  margin-bottom: 1.4rem;
+}
+
+.torrent-file {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.6rem 2.4rem;
+  margin-bottom: 1rem;
+  border-radius: 1rem;
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.torrent-file.focus {
+  background-color: var(--surface-2);
+  box-shadow: inset 0 0 0 0.2rem var(--focus);
+}
+
+.torrent-file__name {
+  font-size: 1.9rem;
+  color: #eef1f6;
+  word-break: break-word;
+  max-height: 5.2rem;
+  overflow: hidden;
+}
+
+.torrent-file__size {
+  font-size: 1.6rem;
+  color: var(--muted);
+  margin-left: 2rem;
+  white-space: nowrap;
+}
+
+.torrent-file.focus .torrent-file__name,
+.torrent-file.focus .torrent-file__size {
+  color: var(--ink);
+}
+
+/* ================================================================ */
+/* My torrents screen (screens/torrents)                             */
+/* ================================================================ */
+
+.torrents-screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.torrents-wrap {
+  position: fixed;
+  left: 8.4rem;
+  right: 0;
+  top: 7.2rem;
+  bottom: 0;
+  padding: 3.2rem 4rem;
+  overflow: hidden;
+}
+
+.torrents-wrap > .scroll { width: 100%; height: 100%; }
+
+.torrent-item {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  margin-bottom: 1.2rem;
+}
+
+.torrent-item__main {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  padding: 1.8rem 2.4rem;
+  border-radius: 1rem 0 0 1rem;
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.torrent-item__main.focus {
+  background-color: var(--surface-2);
+  box-shadow: inset 0 0 0 0.2rem var(--focus);
+}
+
+.torrent-item__name {
+  font-size: 2rem;
+  font-weight: bold;
+  color: #eef1f6;
+  word-break: break-word;
+  max-height: 5.2rem;
+  overflow: hidden;
+}
+
+.torrent-item__main.focus .torrent-item__name,
+.torrent-item__main.focus .torrent-item__size,
+.torrent-item__main.focus .torrent-item__pct {
+  color: var(--ink);
+}
+
+.torrent-item__meta {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 0.8rem;
+}
+
+.torrent-item__size {
+  font-size: 1.6rem;
+  color: var(--ink-2);
+  margin-right: 1.4rem;
+}
+
+.torrent-item__pct {
+  font-size: 1.5rem;
+  color: var(--muted);
+  margin-right: 1.4rem;
+}
+
+.torrent-progress {
+  height: 0.5rem;
+  border-radius: 0.25rem;
+  background-color: rgba(255, 255, 255, 0.14);
+  margin-top: 1rem;
+  overflow: hidden;
+}
+
+.torrent-item__main.focus .torrent-progress {
+  background-color: rgba(0, 0, 0, 0.12);
+}
+
+.torrent-progress__fill {
+  height: 100%;
+  background-color: var(--good);
+}
+
+.torrent-item__del {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 12rem;
+  font-size: 1.7rem;
+  font-weight: bold;
+  color: #d0d6e2;
+  border-radius: 0 1rem 1rem 0;
+  margin-left: 0.4rem;
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.torrent-item__del.focus {
+  background-color: var(--danger-fill);
+  color: #ffffff;
+}
+
+/* ================================================================ */
+/* Player (core/player)                                              */
+/* ================================================================ */
+
+/* Player — DOM/classes/sizing ported 1:1 from Lampa src/sass/components/
+ * player.scss + player/{video,panel,info}.scss. SCSS $vars are substituted:
+ * $offset -> 1.5em, $speed -> 0.2s, media vars -> px. Lampa is em-based, so
+ * `.player` sets the em context (1em = 1.9rem = 19px at the 720p baseline).
+ * backdrop-filter/blur are dropped (old Tizen) — Lampa's non-glass fallback
+ * background rgba(0,0,0,0.6) is used verbatim. */
+.player-screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #000000;
+}
+
+.player {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #000;
+  z-index: 50;
+  font-size: 1.9rem;
+}
+
+.player-video__video {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* ---- video overlay: loader + big pause glyph (player/video.scss) ---- */
+.player-video__loader,
+.player-video__paused {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: 8em;
+  height: 8em;
+  border-radius: 100%;
+  padding: 2em;
+  background-color: rgba(0, 0, 0, 0.6);
+  margin-left: -4em;
+  margin-top: -4em;
+}
+
+.player-video__loader {
+  display: none;
+  padding: 0;
+}
+
+.player-video__loader::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 4.8em;
+  height: 4.8em;
+  margin: -2.4em 0 0 -2.4em;
+  box-sizing: border-box; /* `* { box-sizing }` does not reach pseudo-elements: without this the 0.35em border pushed the ring right/down */
+  border: 0.35em solid rgba(255, 255, 255, 0.18);
+  border-top-color: #fff;
+  border-radius: 100%;
+  animation: player-spin 0.9s linear infinite;
+}
+
+.player-video.video--load .player-video__loader {
+  display: block;
+}
+
+@keyframes player-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Shared loading spinner used by overlay screens (login/devices/sources/…). */
+.player__spinner-ring {
+  width: 6rem;
+  height: 6rem;
+  border: 0.5rem solid rgba(255, 255, 255, 0.18);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: player-spin 0.9s linear infinite;
+}
+
+.player-video__paused {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+}
+
+.player-video__paused svg {
+  width: 2.6em;
+  height: 2.6em;
+}
+
+.player-video__paused.hide {
+  display: flex;
+  opacity: 0;
+  transform: scale(0.85);
+}
+
+/* ---- subtitles (own renderer, docs/player.md) ----
+ * Chosen TextTracks stay mode=hidden; the player paints their active cues
+ * here. Gives size (settings), a plate, and a lift above the panel — none of
+ * which ::cue allows on Chromium 47. */
+.player__subs {
+  position: fixed;
+  left: 10%;
+  right: 10%;
+  bottom: 3em;
+  text-align: center;
+  font-size: 1.7em;
+  line-height: 1.3;
+  color: #ffffff;
+  text-shadow: 0 0 0.15em #000, 0 0.05em 0.2em rgba(0, 0, 0, 0.9);
+  white-space: pre-line;
+  pointer-events: none;
+  z-index: 9;
+  transition: bottom 0.3s;
+}
+.player__subs:empty { display: none; }
+.player__subs > span {
+  display: inline-block;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 0.2em;
+  padding: 0.1em 0.5em;
+}
+.player--subs-small .player__subs { font-size: 1.3em; }
+.player--subs-large .player__subs { font-size: 2.2em; }
+.player--panel-visible .player__subs { bottom: 11em; }
+
+/* Framing: letterboxed 2.35:1 on a 16:9 panel → fill (crop the bars). */
+.player--fill .player-video__video { object-fit: cover; }
+
+/* ---- top info bar (player/info.scss) ---- */
+.player-info {
+  position: fixed;
+  top: 1.5em;
+  left: 1.5em;
+  right: 1.5em;
+  background-color: rgba(0, 0, 0, 0.6);
+  transform: translateY(-150%);
+  transition: transform 0.3s, opacity 0.3s;
+  border-radius: 0.5em;
+  z-index: 10;
+}
+
+.player-info__body {
+  padding: 1.5em;
+}
+
+.player-info.info--visible {
+  transform: translateY(0);
+}
+
+.player-info__name {
+  font-size: 1.5em;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.player-info__line {
+  display: flex;
+  align-items: flex-start;
+}
+
+/* Poster thumb + two-line text column + right column (clock, stats). */
+.player-info__poster {
+  width: 3.4em;
+  height: 4.8em;
+  border-radius: 0.3em;
+  overflow: hidden;
+  margin-right: 0.9em;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.08);
+}
+.player-info__poster:empty { display: none; }
+.player-info__poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.player-info__text {
+  flex: 1;
+  min-width: 0;
+  align-self: center;
+}
+.player-info__sub {
+  font-size: 1.05em;
+  color: rgba(255, 255, 255, 0.72);
+  margin-top: 0.25em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.player-info__sub:empty { display: none; }
+.player-info__right {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding-left: 1em;
+  text-align: right;
+}
+
+/* Back chevron before the title (info.scss HeadBackward). */
+.player-info__back {
+  width: 1.5em;
+  height: 1.5em;
+  margin-right: 0.6em;
+  flex-shrink: 0;
+  color: #fff;
+  border-radius: 100%;
+  padding: 0.15em;
+}
+.player-info__back svg { width: 100%; height: 100%; }
+.player-info__back.selector.focus {
+  background-color: #fff;
+  color: #000;
+}
+
+/* Wall clock, top of the right column. */
+.player-info__time {
+  font-size: 1.5em;
+  line-height: 1.2;
+}
+
+/* Under the clock: resolution badge + channel/bitrate/buffer stats. */
+.player-info__values {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 0.4em;
+  flex-wrap: wrap;
+}
+.player-info__values > div { margin-left: 1em; }
+.player-info__values span {
+  font-size: 1.3em;
+  font-weight: 300;
+}
+.player-info__values .value--size span {
+  background: rgba(255, 255, 255, 0.18);
+  padding: 0.1em 0.5em;
+  border-radius: 0.3em;
+}
+/* Hide the whole stats line while the source is still loading. */
+.player.player--loading .player-info__values { display: none; }
+
+/* ---- bottom panel (player/panel.scss) ---- */
+.player-panel {
+  position: fixed;
+  left: 1.5em;
+  bottom: 1.5em;
+  right: 1.5em;
+  background-color: rgba(0, 0, 0, 0.6);
+  transform: translateY(150%);
+  transition: transform 0.3s, opacity 0.3s;
+  border-radius: 0.5em;
+  z-index: 10;
+}
+
+.player-panel.panel--visible {
+  transform: translateY(0);
+}
+
+.player-panel__body {
+  padding: 1.5em;
+  position: relative;
+}
+
+.player-panel__timeline {
+  position: relative;
+  height: 0.4em;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 2em;
+  margin-bottom: 0.6em;
+}
+
+.player-panel__peding,
+.player-panel__position {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  border-radius: 5em;
+}
+
+.player-panel__peding {
+  background-color: rgba(255, 255, 255, 0.3);
+}
+
+.player-panel__position {
+  background-color: #fff;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.player-panel__position > div {
+  position: relative;
+}
+
+.player-panel__position > div::after {
+  position: absolute;
+  content: "";
+  display: block;
+  width: 1em;
+  height: 1em;
+  border-radius: 100%;
+  flex-shrink: 0;
+  background-color: #fff;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%) translateX(50%);
+  font-size: 0.8em;
+  z-index: 1;
+  transition: transform 0.12s ease-out;
+}
+
+.player--rewind .player-panel__position > div::after {
+  transform: translateY(-50%) translateX(50%) scale(1.5);
+}
+
+.player-panel__time {
+  position: absolute;
+  bottom: 100%;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 0.3em;
+  transform: translateX(-50%);
+  margin-bottom: 0.5em;
+  padding: 0.4em 0.6em;
+  font-size: 1.2em;
+  font-weight: 600;
+}
+
+.player-panel__line {
+  display: flex;
+  align-items: center;
+}
+
+.player-panel__line + .player-panel__line {
+  margin-top: 1em;
+}
+
+.player-panel__timeend {
+  margin-left: auto;
+}
+
+/* Footer row: flexible side groups (captioned pills need room at 720p), the
+ * transport stays centred at its natural width. */
+.player-panel__left,
+.player-panel__right {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.player-panel__center {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0 1em;
+}
+
+.player-panel__right {
+  justify-content: flex-end;
+}
+
+.player-panel__left .button + .button {
+  margin-left: 1em;
+}
+
+/* Next-episode label next to the prev/next buttons. */
+.player-panel__next-episode-name {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 0.85em;
+  opacity: 0.75;
+  align-self: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-left: 1em;
+}
+
+.player-panel .button {
+  width: 2em;
+  height: 2em;
+  border-radius: 100%;
+  padding: 0.4em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #fff;
+}
+
+.player-panel .button svg {
+  width: 100%;
+  height: 100%;
+}
+
+.player-panel .button.selector.focus {
+  background-color: #fff;
+  color: #000;
+}
+
+/* Icon + caption pills (left group). */
+.player-panel .button--labeled {
+  width: auto;
+  height: 2em;
+  border-radius: 1em;
+  padding: 0.3em 0.9em 0.3em 0.7em;
+}
+.player-panel .button--labeled svg {
+  width: 1.2em;
+  height: 1.2em;
+  flex-shrink: 0;
+}
+.player-panel .button__label {
+  margin-left: 0.45em;
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+.player-panel .button__value {
+  margin-left: 0.45em;
+  font-size: 0.72em;
+  opacity: 0.7;
+  white-space: nowrap;
+  max-width: 7em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.player-panel .button__value:empty { display: none; }
+.player-panel__left .button + .button { margin-left: 0.6em; }
+
+/* Name of the focused control, floating above it (icons alone don't say
+ * "episodes" or "framing"). */
+.player-panel .button[data-label].selector.focus::after {
+  content: attr(data-label);
+  position: absolute;
+  bottom: 120%;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-size: 0.75em;
+  font-weight: normal;
+  text-transform: none;
+  padding: 0.3em 0.7em;
+  border-radius: 0.3em;
+  pointer-events: none;
+}
+.player-panel .button { position: relative; }
+.player-panel__left .button[data-label].selector.focus::after { left: 0; transform: none; }
+.player-panel__right .button[data-label].selector.focus::after { left: auto; right: 0; transform: none; }
+
+.player-panel__right .button + .button {
+  margin-left: 1em;
+}
+
+.player-panel__playpause {
+  font-size: 1.4em;
+  margin: 0 1em;
+}
+
+.player-panel__playpause > div:first-child {
+  display: none;
+}
+
+.player-panel__playpause > div {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.player-panel.panel--paused .player-panel__playpause > div:first-child {
+  display: flex;
+}
+
+.player-panel.panel--paused .player-panel__playpause > div:last-child {
+  display: none;
+}
+
+.player-panel__quality {
+  width: auto !important;
+  padding: 0.1em 0.5em !important;
+  border-radius: 0.2em !important;
+  text-transform: uppercase;
+  font-weight: bold;
+  font-size: 0.9em;
+}
+
+.player-panel__subs {
+  padding: 0.45em !important;
+}
+
+/* Speed pill — same shape as the quality pill, dimmed at 1× so the eye is
+ * only drawn to it when playback is actually sped up / slowed down. */
+.player-panel__speed {
+  width: auto !important;
+  padding: 0.1em 0.5em !important;
+  border-radius: 0.2em !important;
+  font-weight: bold;
+  font-size: 0.9em;
+}
+.player-panel__speed.is-normal {
+  opacity: 0.6;
+}
+.player-info__values .value--speed span {
+  font-weight: bold;
+}
+
+/* Per-icon padding tuning (panel.scss). */
+.player-panel__prev,
+.player-panel__next {
+  padding: 0.55em !important;
+}
+.player-panel__tracks {
+  padding: 0.5em !important;
+}
+.player-panel__settings {
+  padding: 0.35em !important;
+}
+.player-panel__tstart {
+  margin-right: 1em;
+}
+.player-panel__tend {
+  margin-left: 1em;
+}
+.player-panel__volume.is-muted {
+  opacity: 0.55;
+}
+
+/* Timeline focus ring + enlarged knob when the scrub ring holds focus. */
+.player-panel__timeline.selector.focus {
+  box-shadow: 0 0 0 0.2em #fff;
+}
+.player-panel__timeline.selector.focus .player-panel__position > div::after {
+  transform: translateY(-50%) translateX(50%) scale(1.5);
+}
+
+/* Hidden until any key reveals it (player.scss). */
+.player:not(.player--panel-visible) .player-panel,
+.player:not(.player--panel-visible) .player-info {
+  visibility: hidden;
+}
+
+/* TV layout: no center timeline duplicate, right group pushed right. */
+.player.tv .player-panel__right {
+  margin-left: auto;
+}
+
+/* Loading: hide progress/knob, scan-animate the timeline (player/panel.scss). */
+.player.player--loading .player-panel__peding,
+.player.player--loading .player-panel__position {
+  display: none;
+}
+
+.player.player--loading .player-panel__timeline::after {
+  content: "";
+  display: block;
+  background-color: #fff;
+  position: absolute;
+  left: 0;
+  height: 100%;
+  width: 20%;
+  border-radius: 5em;
+  animation-duration: 1s;
+  animation-name: scan;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+  animation-timing-function: linear;
+}
+
+@keyframes scan {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(400%); } /* 20% wide → 80% travel; transform, not left: no layout per frame */
+}
+
+/* Bottom sheet above the panel (quality / audio / subtitles / more / episodes). */
+.player__popup {
+  position: absolute;
+  left: 1.5em;
+  right: 1.5em;
+  bottom: 11.5em;
+  max-height: 55%;
+  background-color: rgba(0, 0, 0, 0.78);
+  border-radius: 0.5em;
+  padding: 1em 1.4em 1.2em;
+  z-index: 18;
+  overflow-y: auto; /* long voice/subtitle/audio lists must scroll — focused item was landing off-screen */
+}
+.player__popup--strip { overflow: hidden; }
+.player__popup-viewport { overflow: hidden; }
+
+/* Episode strip: cards slide horizontally (transform), focused one centred. */
+.player__popup-list { position: relative; } /* offsetLeft of cards relative to the list */
+.player__popup--strip .player__popup-list {
+  flex-direction: row;
+  transition: transform 0.25s ease-out;
+  will-change: transform;
+}
+.player__ep {
+  flex: 0 0 auto;
+  width: 14em;
+  margin-right: 0.8em;
+  padding: 0.35em;
+  border-radius: 0.5em;
+  color: rgba(255, 255, 255, 0.8);
+}
+.player__ep-thumb {
+  position: relative;
+  width: 100%;
+  height: 7.6em;
+  border-radius: 0.4em;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+}
+.player__ep-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.player__ep-num {
+  position: absolute;
+  left: 0.4em;
+  top: 0.4em;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 0.3em;
+  padding: 0.05em 0.5em;
+  font-weight: bold;
+  font-size: 0.95em;
+}
+.player__ep-done {
+  position: absolute;
+  right: 0.4em;
+  top: 0.4em;
+  width: 1.4em;
+  height: 1.4em;
+  border-radius: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  text-align: center;
+  line-height: 1.4em;
+  font-weight: bold;
+}
+.player__ep-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0.3em;
+  background: rgba(255, 255, 255, 0.25);
+}
+.player__ep-progress > div { height: 100%; background: #fff; }
+.player__ep-name {
+  margin-top: 0.45em;
+  font-size: 0.95em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.player__ep-sub {
+  font-size: 0.75em;
+  opacity: 0.7;
+  margin-top: 0.1em;
+}
+.player__ep.is-done { opacity: 0.65; }
+.player__ep.is-active .player__ep-name { color: #fff; font-weight: bold; }
+.player__ep.selector.focus {
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 0 0 0.15em #fff;
+  color: #fff;
+  opacity: 1;
+}
+
+/* "▲ Next episode" prompt (last 90s), above the panel when it's open. */
+.player__skip {
+  position: fixed;
+  right: 1.5em;
+  bottom: 3em;
+  background: rgba(0, 0, 0, 0.7);
+  border: 0.1em solid rgba(255, 255, 255, 0.85);
+  border-radius: 0.4em;
+  padding: 0.4em 1em;
+  font-weight: bold;
+  z-index: 11;
+  transition: bottom 0.3s;
+}
+.player--panel-visible .player__skip { display: none; }
+
+/* Seek OSD (centre of the picture while scrubbing). */
+.player__osd {
+  position: fixed;
+  left: 50%;
+  top: 42%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 0.6em;
+  padding: 0.5em 1.4em 0.6em;
+  z-index: 12;
+  pointer-events: none;
+}
+.player__osd-delta { font-size: 2.2em; font-weight: bold; line-height: 1.1; }
+.player__osd-time { font-size: 1.15em; opacity: 0.8; margin-top: 0.2em; }
+
+.player__popup-title {
+  font-size: 2.6rem;
+  font-weight: bold;
+  color: #ffffff;
+  margin-bottom: 1.2rem;
+}
+
+.player__popup-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.player__popup-item {
+  font-size: 2.4rem;
+  color: var(--ink-2);
+  padding: 1.4rem 1.8rem;
+  border-radius: 0.7rem;
+}
+
+.player__popup-item.is-active {
+  color: #ffffff;
+}
+
+/* Section header inside a popup (merged audio menu: in-stream / from source). */
+.player__popup-head {
+  font-size: 1.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.5);
+  padding: 1.2rem 1.8rem 0.4rem;
+}
+
+/* Second line on a list row ("Sound · On"). */
+.player__popup-item__sub {
+  display: block;
+  font-size: 0.75em;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 0.3rem;
+}
+.player__popup-item.is-active .player__popup-item__sub,
+.player__popup-item.selector.focus .player__popup-item__sub {
+  color: inherit;
+  opacity: 0.8;
+}
+
+/* A stream this device can't decode (HEVC without a decoder): listed so the
+ * user sees it exists, but not a .selector — the D-pad skips it. */
+.player__popup-item.is-disabled {
+  opacity: 0.4;
+}
+
+.player__popup-item.is-active::before {
+  content: "\2713\00a0";
+}
+
+.player__popup-item.selector.focus {
+  background-color: var(--surface-2);
+  box-shadow: inset 0 0 0 0.2rem var(--focus);
+  color: var(--ink);
+}
+
+/* Error overlay */
+.player__error {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 60rem;
+  max-width: 80%;
+  background-color: var(--panel);
+  border: 0.1rem solid var(--line);
+  border-radius: var(--radius);
+  padding: 3.2rem;
+  text-align: center;
+  z-index: 18;
+}
+
+.player__error-text {
+  font-size: 2.2rem;
+  color: var(--ink);
+  margin-bottom: 2.4rem;
+}
+
+.player__error-actions {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+}
+
+.player__error-actions .button {
+  margin: 0 0.8rem;
+}
+
+/* Exit confirmation */
+.player__confirm {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 52rem;
+  max-width: 80%;
+  background-color: var(--panel);
+  border: 0.1rem solid var(--line);
+  border-radius: var(--radius);
+  padding: 3.2rem;
+  text-align: center;
+  z-index: 20;
+}
+
+.player__confirm-sub {
+  font-size: 1.8rem;
+  color: var(--ink-2);
+  margin: -1.2rem 0 2.4rem;
+}
+
+.player__confirm-text {
+  font-size: 2.2rem;
+  color: var(--ink);
+  margin-bottom: 2.4rem;
+}
+
+.player__confirm-actions {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+}
+
+.player__confirm-actions .button {
+  margin: 0 0.8rem;
+}
+
+/* ================================================================ */
+/* Phase 3: auth / bookmarks / profile / card bookmark marker       */
+/* ================================================================ */
+
+.hide { display: none !important; }
+
+/* ---- card bookmark marker ---- */
+.card__bookmark {
+  position: absolute;
+  top: 0.6rem;
+  left: 0.6rem;
+  width: 2.2rem;
+  height: 2.2rem;
+  color: #ffd23f;
+}
+.card__bookmark svg { width: 100%; height: 100%; }
+
+/* ---- active (toggled-on) action button ---- */
+.button.button--active {
+  background-color: rgba(255, 210, 63, 0.18);
+  color: #ffd23f;
+}
+.button.button--active.selector.focus {
+  background-color: #ffd23f;
+  color: var(--bg); /* dark text on the gold fill — B44 blanket flip made it invisible */
+}
+
+/* ---- bookmarks grid (reuses card styles) ---- */
+.bookmarks-screen { position: relative; width: 100%; height: 100%; overflow: hidden; }
+
+.bookmarks-grid {
+  position: fixed;
+  left: 8.4rem;
+  right: 0;
+  top: 7.2rem;
+  bottom: 0;
+  padding: 3.2rem;
+  overflow: hidden;
+}
+
+.bookmarks-grid > .scroll { width: 100%; height: 100%; }
+
+.bookmarks-grid__body {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+.bookmarks-grid__body .state { width: 100%; }
+
+.bookmarks-grid__body .card {
+  width: 15.6rem;
+  margin-right: 1.6rem;
+  margin-bottom: 2.4rem;
+}
+
+/* ================================================================ */
+/* Settings screen                                                   */
+/* ================================================================ */
+
+.settings-screen { position: relative; width: 100%; height: 100%; overflow: hidden; background: var(--bg); }
+
+.settings-wrap {
+  position: fixed;
+  left: 8.4rem;
+  right: 0;
+  top: 7.2rem;
+  bottom: 0;
+  padding: 3.2rem 4rem;
+  overflow: hidden;
+}
+
+.settings-wrap > .scroll { width: 100%; height: 100%; }
+
+.settings-body { max-width: 72rem; }
+
+.settings-title {
+  font-size: 3.2rem;
+  font-weight: bold;
+  color: #ffffff;
+  margin-bottom: 2.4rem;
+}
+
+.settings-section {
+  font-size: 1.5rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 2.4rem 0 1rem;
+}
+
+.settings-section:first-child { margin-top: 0; }
+
+/* Non-interactive rows (e.g. version) — flat, no pill, so they don't read as
+   focusable controls. */
+.settings-row--static {
+  background-color: transparent;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.settings-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.6rem 2rem;
+  border-radius: var(--radius-xs);
+  margin-bottom: 0.8rem;
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.settings-row__label { font-size: 1.9rem; color: #ffffff; }
+.settings-row__value { font-size: 1.7rem; color: var(--muted); font-weight: bold; }
+
+.settings-row.selector.focus {
+  background-color: var(--surface-2);
+  box-shadow: inset 0 0 0 0.2rem var(--focus);
+}
+.settings-row.selector.focus .settings-row__label,
+.settings-row.selector.focus .settings-row__value {
+  color: var(--ink);
+}
+
+/* value-picker modal (also reused by devices/playlists/title confirms) */
+.settings-modal {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(10, 11, 14, 0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+}
+
+.settings-modal__box {
+  min-width: 34rem;
+  max-width: 48rem;
+  max-height: 80%;
+  overflow: hidden;
+  background-color: var(--panel);
+  border-radius: var(--radius);
+  padding: 2.4rem;
+  border: 0.1rem solid var(--line);
+}
+
+.settings-modal__title {
+  font-size: 2rem;
+  font-weight: bold;
+  color: #ffffff;
+  margin-bottom: 1.6rem;
+}
+
+.settings-modal__list { display: flex; flex-direction: column; }
+
+.settings-modal__empty {
+  font-size: 1.7rem;
+  color: var(--muted);
+  padding: 1.2rem 1.6rem;
+}
+
+.settings-opt {
+  font-size: 1.8rem;
+  color: var(--ink-2);
+  padding: 1.2rem 1.6rem;
+  border-radius: var(--radius-xs);
+}
+
+/* Reserve the checkmark gutter on every option so the active row doesn't
+   shift ~1 char to the right relative to the rest. */
+.settings-opt::before { content: '\2713\00a0'; visibility: hidden; }
+.settings-opt.is-active { color: #ffffff; font-weight: bold; }
+.settings-opt.is-active::before { visibility: visible; }
+
+.settings-opt.selector.focus {
+  background-color: var(--surface-2);
+  box-shadow: inset 0 0 0 0.2rem var(--focus);
+  color: var(--ink);
+}
+
+/* ================================================================ */
+/* Devices screen                                                    */
+/* ================================================================ */
+
+.devices-screen { position: relative; width: 100%; height: 100%; overflow: hidden; background: var(--bg); }
+
+.devices-header { padding: 3.2rem 4rem 0; }
+.devices-header__title { font-size: 3.2rem; font-weight: bold; color: #ffffff; }
+
+.devices-wrap {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 8.4rem;
+  bottom: 0;
+  padding: 1.6rem 4rem 3.2rem;
+  overflow: hidden;
+}
+.devices-wrap > .scroll { width: 100%; height: 100%; }
+.devices-body { max-width: 80rem; }
+
+.device-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.6rem 2rem;
+  border-radius: var(--radius-xs);
+  margin-bottom: 1rem;
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.device-row__name { font-size: 1.9rem; color: #ffffff; }
+.device-row__meta { margin-top: 0.6rem; }
+.device-row__type {
+  font-size: 1.6rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-right: 1.2rem;
+}
+.device-row__seen { font-size: 1.4rem; color: var(--muted); }
+
+.device-row__badge {
+  font-size: 1.6rem;
+  color: #9fe8b0;
+  font-weight: bold;
+}
+.device-row__action { font-size: 1.6rem; color: var(--danger); font-weight: bold; }
+
+.device-row.selector.focus {
+  background-color: var(--surface-2);
+  box-shadow: inset 0 0 0 0.2rem var(--focus);
+}
+.device-row.selector.focus .device-row__name,
+.device-row.selector.focus .device-row__meta,
+.device-row.selector.focus .device-row__type,
+.device-row.selector.focus .device-row__seen,
+.device-row.selector.focus .device-row__badge,
+.device-row.selector.focus .device-row__action {
+  color: var(--ink);
+}
+
+/* ================================================================ */
+/* Playlists screen                                                  */
+/* ================================================================ */
+
+.playlists-screen { position: relative; width: 100%; height: 100%; overflow: hidden; background: var(--bg); }
+
+.playlists-wrap {
+  position: fixed;
+  left: 8.4rem;
+  right: 0;
+  top: 7.2rem;
+  bottom: 0;
+  padding: 3.2rem 4rem;
+  overflow: hidden;
+}
+.playlists-wrap > .scroll { width: 100%; height: 100%; }
+.playlists-body { max-width: 84rem; }
+
+.pl-create { margin-bottom: 2rem; }
+
+.playlists-empty { font-size: 1.9rem; color: var(--muted); padding: 2rem 0; }
+
+.pl-row {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  margin-bottom: 1rem;
+}
+
+.pl-row__main {
+  flex: 1 1 auto;
+  padding: 1.4rem 2rem;
+  border-radius: var(--radius-xs);
+  background-color: rgba(255, 255, 255, 0.05);
+}
+.pl-row__name { font-size: 1.9rem; color: #ffffff; }
+.pl-row__count { font-size: 1.6rem; color: var(--muted); margin-top: 0.4rem; }
+.pl-row__main.selector.focus { background-color: var(--surface-2); box-shadow: inset 0 0 0 0.2rem var(--focus); }
+.pl-row__main.selector.focus .pl-row__name,
+.pl-row__main.selector.focus .pl-row__count { color: var(--ink); }
+
+.pl-row__act {
+  display: flex;
+  align-items: center;
+  padding: 0 1.8rem;
+  margin-left: 1rem;
+  border-radius: var(--radius-xs);
+  background-color: rgba(255, 255, 255, 0.05);
+  font-size: 1.5rem;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.pl-row__act--del { color: var(--danger); }
+.pl-row__act.selector.focus { background-color: var(--surface-2); box-shadow: inset 0 0 0 0.2rem var(--focus); }
+
+/* name-entry modal (keyboard + save) */
+.pl-name__box {
+  min-width: 46rem;
+  background-color: var(--panel);
+  border: 0.1rem solid var(--line);
+  border-radius: var(--radius);
+  padding: 2.4rem;
+}
+.pl-name__title { font-size: 2rem; font-weight: bold; color: #ffffff; margin-bottom: 1.2rem; }
+.pl-name__value {
+  min-height: 3rem;
+  font-size: 2rem;
+  color: #ffffff;
+  padding: 0.8rem 1.2rem;
+  margin-bottom: 1.6rem;
+  border-radius: var(--radius-xs);
+  background-color: rgba(255, 255, 255, 0.08);
+}
+.pl-name__actions { display: flex; flex-direction: row; justify-content: flex-end; margin-top: 1.6rem; }
+
+/* ---- playlist items ---- */
+.pl-items-wrap {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 8.4rem;
+  bottom: 0;
+  padding: 1.6rem 4rem 3.2rem;
+  overflow: hidden;
+}
+.pl-items-wrap > .scroll { width: 100%; height: 100%; }
+.pl-items-body { max-width: 84rem; }
+
+.pl-item {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  margin-bottom: 1rem;
+}
+.pl-item__main {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 1rem 1.4rem;
+  border-radius: var(--radius-xs);
+  background-color: rgba(255, 255, 255, 0.05);
+}
+.pl-item__thumb {
+  width: 5.4rem;
+  height: 8.1rem;
+  flex: 0 0 auto;
+  margin-right: 1.6rem;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background-color: #262931;
+}
+.pl-item__img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pl-item__name { font-size: 1.9rem; color: #ffffff; }
+.pl-item__meta { font-size: 1.5rem; color: var(--muted); margin-top: 0.4rem; }
+.pl-item__main.selector.focus { background-color: var(--surface-2); box-shadow: inset 0 0 0 0.2rem var(--focus); }
+.pl-item__main.selector.focus .pl-item__name,
+.pl-item__main.selector.focus .pl-item__meta { color: var(--ink); }
+
+.pl-item__act {
+  display: flex;
+  align-items: center;
+  padding: 0 1.8rem;
+  margin-left: 1rem;
+  border-radius: var(--radius-xs);
+  background-color: rgba(255, 255, 255, 0.05);
+  font-size: 1.5rem;
+  color: var(--danger);
+  white-space: nowrap;
+}
+.pl-item__act.selector.focus { background-color: var(--surface-2); box-shadow: inset 0 0 0 0.2rem var(--focus); }
+
+/* ================================================================ */
+/* Reduce motion: drop transitions/animations for weak firmwares      */
+/* ================================================================ */
+
+body.reduce-motion * {
+  transition: none !important;
+  animation: none !important;
+}
+body.reduce-motion .card.focus .card__view::after { transition: none !important; }
+/* ...but keep spinners spinning — a frozen loader reads as a hang. */
+body.reduce-motion .state__spinner,
+body.reduce-motion .player__spinner-ring {
+  animation: player-spin 0.9s linear infinite !important;
+}
+body.reduce-motion .search-bar__spinner.is-active {
+  animation: spin 0.8s linear infinite !important;
+}
+
+/* ============ Action sheet (unified modal: trailers, and later watch/torrents) ============ */
+.action-sheet-overlay {
+  position: fixed;
+  left: 0; top: 0; right: 0; bottom: 0;
+  background-color: rgba(6, 8, 11, 0.66);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+}
+.action-sheet {
+  display: flex;
+  flex-direction: column;
+  width: 64%;
+  max-width: 82rem;
+  height: 78%;
+  background: var(--panel);
+  border: 0.1rem solid var(--line-2);
+  border-radius: var(--radius);
+  box-shadow: 0 0.8rem 0 rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+.action-sheet__head {
+  flex: none;
+  padding: 2.6rem 2.8rem 1.6rem;
+  border-bottom: 0.1rem solid var(--line);
+}
+.action-sheet__title {
+  font-size: 2.2rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+.action-sheet__sub {
+  font-size: 1.5rem;
+  color: var(--muted);
+  margin-top: 0.4rem;
+}
+.action-sheet__chips {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  margin-top: 1.6rem;
+}
+.action-sheet__chips > * { margin-right: 1rem; margin-bottom: 1rem; }
+
+.action-sheet__list { flex: 1; min-height: 0; position: relative; padding: 1rem 1.4rem 1.6rem; }
+.action-sheet__list > .scroll { width: 100%; height: 100%; }
+
+.trailer-card {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 1rem 1.2rem;
+  border-radius: var(--radius-sm);
+}
+.trailer-card > * + * { margin-left: 1.6rem; }
+.trailer-card + .trailer-card { margin-top: 0.4rem; }
+.trailer-card.focus { background-color: var(--surface-2); box-shadow: inset 0 0 0 0.2rem var(--focus); }
+.trailer-card__thumb {
+  position: relative;
+  width: 16rem;
+  height: 9rem;
+  flex: none;
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+  background: var(--surface-2);
+}
+.trailer-card__img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.trailer-card__play {
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 2.2rem;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 0.2rem 0.6rem rgba(0, 0, 0, 0.6);
+}
+.trailer-card__info { flex: 1; min-width: 0; }
+.trailer-card__name {
+  font-size: 1.8rem;
+  color: var(--ink);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.trailer-card__meta { font-size: 1.6rem; color: var(--muted); margin-top: 0.4rem; }
+
+/* ================================================================ */
+/* Touch input mode (any device driven by a finger)                 */
+/* ================================================================ */
+
+/* Kill the 300ms tap delay on old mobile engines; harmless on TV/desktop. */
+html { touch-action: manipulation; }
+/* Phone: no browser zoom gestures at all (double-tap zoom made the UI jump). */
+html.is-phone, html.is-phone body { touch-action: pan-x pan-y; }
+/* Our lists scroll via transform; pointer-driven drags need the browser not to
+   take the pan (pointercancel would end the gesture). */
+.scroll__body { touch-action: none; }
+
+/* Remote-key hints are meaningless under touch. */
+[data-input="touch"] .footer { display: none; }
+
+/* Mouse mode: focusables look clickable. */
+[data-input="point"] .selector { cursor: pointer; }
+
+/* ================================================================ */
+/* Phone layout (portrait) — gated on .is-phone (added in app.ts only  */
+/* on a real touch phone), so the TV/desktop bundle never sees these.  */
+/* Plain class, not @media, so it's orientation-independent. No grid/   */
+/* gap/sticky/var() — Chromium-47-legal.                               */
+/* ================================================================ */
+
+/* Rail → bottom tab bar. */
+.is-phone .menu {
+  top: auto;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 5.6rem;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  padding-top: 0;
+  background-color: rgba(15, 16, 20, 0.98);
+  border-top: 0.1rem solid var(--line);
+}
+.is-phone .menu__list { flex-direction: row; }
+.is-phone .menu__item { margin-bottom: 0; }
+.is-phone .menu__list > * + * { margin-left: 1.2rem; }
+/* No room for the side label in a bottom bar. */
+.is-phone .menu__label,
+.is-phone .menu__item.selector:hover .menu__label,
+.is-phone .menu__item.selector.focus .menu__label { display: none; }
+.is-phone .menu__item.selector:hover { box-shadow: none; }
+
+/* Every full-height screen container is fixed at left:8.4rem (the rail) with
+   bottom:0. On phone: drop the left inset and lift the bottom above the tab bar. */
+.is-phone .content,
+.is-phone .catalog-grid,
+.is-phone .search-panel,
+.is-phone .torrents-wrap,
+.is-phone .bookmarks-grid,
+.is-phone .profile-box,
+.is-phone .settings-wrap,
+.is-phone .playlists-wrap,
+.is-phone .devices-wrap {
+  left: 0;
+  bottom: 5.6rem;
+}
+
+/* Top bar + filter bar + hero no longer clear a left rail. */
+.is-phone .head { padding-left: 1.6rem; }
+.is-phone .filter-bar { padding-left: 1.6rem; }
+.is-phone .title-page__scroll > .scroll__content { padding-left: 1.6rem; padding-right: 1.6rem; }
+.is-phone .full-start-new { padding-left: 0; padding-right: 0; min-height: 82vh; }
+.is-phone .title-page { height: 100vh; }
+.is-phone .title-skeleton { min-height: 82vh; }
+
+/* Dropdowns / popups → bottom sheet. */
+.is-phone .modal-overlay { align-items: flex-end; }
+.is-phone .modal {
+  width: 100%;
+  max-width: 100%;
+  max-height: 70vh;
+  border-radius: 1.4rem 1.4rem 0 0;
+}
+.is-phone .player__popup {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: auto;
+  min-width: 0;
+  width: 100%;
+  max-height: 60%;
+  border-radius: 1.4rem 1.4rem 0 0;
+}
+/* Watch/trailers sheet + confirm modal → bottom sheet on phone (mirrors .modal). */
+.is-phone .action-sheet-overlay,
+.is-phone .action-modal-overlay { align-items: flex-end; }
+.is-phone .action-sheet,
+.is-phone .action-modal {
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  max-height: 82vh;
+  border-radius: 1.4rem 1.4rem 0 0;
+}
+
+/* ================================================================ */
+/* PIN gate                                                          */
+/* ================================================================ */
+.pin-screen {
+  position: fixed;
+  left: 0; top: 0; right: 0; bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  z-index: 30;
+}
+.pin-box { width: 30rem; max-width: 90%; text-align: center; }
+.pin-box--shake { animation: pin-shake 0.4s ease; }
+@keyframes pin-shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-1rem); }
+  40%, 80% { transform: translateX(1rem); }
+}
+.pin-title { font-size: 2.4rem; color: var(--ink); margin-bottom: 2.4rem; }
+.pin-dots { display: flex; flex-direction: row; justify-content: center; margin-bottom: 1.4rem; }
+.pin-dots > * + * { margin-left: 1.2rem; }
+.pin-dot { width: 1.4rem; height: 1.4rem; border-radius: 50%; border: 0.2rem solid var(--muted); }
+.pin-dot--on { background: var(--ink); border-color: var(--ink); }
+.pin-err { min-height: 2.4rem; font-size: 1.6rem; color: #ff6b6b; margin-bottom: 1.4rem; }
+.pin-pad { display: flex; flex-direction: row; flex-wrap: wrap; width: 24rem; margin: 0 auto; }
+.pin-cell {
+  width: 8rem; height: 6rem;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 2.8rem; color: var(--ink); border-radius: 1rem;
+}
+.pin-cell--gap { visibility: hidden; }
+.pin-cell.selector.focus {
+  background-color: var(--surface-2);
+  box-shadow: inset 0 0 0 0.2rem var(--focus);
+}
+
+.footer--empty { display: none; }
+
+/* ---- idle screensaver (core/screensaver.ts) -------------------------- */
+.screensaver {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  background-color: #000;
+  overflow: hidden;
+}
+
+.screensaver__bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0;
+  transition: opacity 1.2s ease;
+}
+
+.screensaver__bg.is-on {
+  opacity: 1;
+}
+
+/* Darken bottom/edges so the clock stays legible over any art. */
+.screensaver__scrim {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: linear-gradient(to top, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.15) 55%, rgba(0, 0, 0, 0.5));
+}
+
+.screensaver__info {
+  position: absolute;
+  left: 6rem;
+  bottom: 5rem;
+  color: #fff;
+  text-shadow: 0 0.2rem 1.2rem rgba(0, 0, 0, 0.8);
+}
+
+.screensaver__clock {
+  font-size: 14rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.screensaver__date {
+  font-size: 3rem;
+  margin-top: 0.6rem;
+  color: rgba(255, 255, 255, 0.88);
+  text-transform: capitalize;
+}
+
+/* ---- screensaver weather strip ---------------------------------------- */
+/* No fill on purpose: the backdrop must stay visible through it. A hairline
+   frame + text shadow give it shape without a panel. */
+/* Collapse the strip entirely while it has no children: an empty hairline box
+   floating above the clock looks like a rendering bug. */
+.screensaver__wx:empty {
+  display: none;
+}
+
+.screensaver__wx {
+  display: inline-block;
+  margin-bottom: 1.6rem;
+  padding: 1rem 1.8rem;
+  border: 0.1rem solid rgba(255, 255, 255, 0.28);
+  border-radius: 1rem;
+  color: #fff;
+  text-shadow: 0 0.2rem 1rem rgba(0, 0, 0, 0.85);
+}
+
+.screensaver__wx-now {
+  display: flex;
+  align-items: baseline;
+}
+
+.screensaver__wx-temp {
+  font-size: 4.2rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.screensaver__wx-desc {
+  font-size: 2rem;
+  margin-left: 1.2rem;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.screensaver__wx-place {
+  font-size: 1.8rem;
+  margin-left: 1.2rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.screensaver__wx-week {
+  display: flex;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 0.1rem solid rgba(255, 255, 255, 0.18);
+}
+
+.screensaver__wx-day {
+  min-width: 5.4rem;
+  text-align: center;
+}
+
+.screensaver__wx-dow {
+  font-size: 1.5rem;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 0.3rem;
+}
+
+.screensaver__wx-hi {
+  font-size: 1.9rem;
+  font-weight: 600;
+}
+
+.screensaver__wx-lo {
+  font-size: 1.6rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Caption naming the backdrop currently on screen. Bottom-RIGHT, and smaller
+   than the date line (3rem) on purpose: it should read as a quiet footnote,
+   not compete with the clock. */
+.screensaver__label {
+  position: absolute;
+  right: 6rem;
+  bottom: 5rem;
+  max-width: 45%;
+  font-size: 1.7rem;
+  text-align: right;
+  color: rgba(255, 255, 255, 0.72);
+  text-shadow: 0 0.2rem 1rem rgba(0, 0, 0, 0.9);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ================================================================ */
+/* Tall-viewport compensation (html.vp-tall, set by app.ts)          */
+/* ================================================================ */
+/* The webview says the viewport is taller than the 16:9 panel; confine the
+ * app to a 72rem stage and anchor every viewport-fixed layer to it. */
+.vp-tall #app {
+  position: relative;
+  height: 72rem;
+  overflow: hidden;
+}
+.vp-tall .action-sheet-overlay,
+.vp-tall .background,
+.vp-tall .bookmarks-grid,
+.vp-tall .bookmarks-screen,
+.vp-tall .catalog-grid,
+.vp-tall .catalog-screen,
+.vp-tall .content,
+.vp-tall .devices-header,
+.vp-tall .devices-header__title,
+.vp-tall .devices-screen,
+.vp-tall .devices-wrap,
+.vp-tall .filter-bar,
+.vp-tall .footer,
+.vp-tall .footer--empty,
+.vp-tall .head,
+.vp-tall .menu,
+.vp-tall .modal-overlay,
+.vp-tall .pin-screen,
+.vp-tall .pl-items-wrap,
+.vp-tall .pl-name__actions,
+.vp-tall .player,
+.vp-tall .player__osd,
+.vp-tall .player__skip,
+.vp-tall .player__subs,
+.vp-tall .player-info,
+.vp-tall .player-panel,
+.vp-tall .player-video__loader,
+.vp-tall .player-video__paused,
+.vp-tall .player-video__video,
+.vp-tall .playlists-screen,
+.vp-tall .playlists-wrap,
+.vp-tall .screensaver,
+.vp-tall .search-panel,
+.vp-tall .search-screen,
+.vp-tall .settings-modal,
+.vp-tall .settings-screen,
+.vp-tall .settings-wrap,
+.vp-tall .torrents-wrap,
+.vp-tall .trailer-overlay {
+  position: absolute;
+}
+/* Toast lives on <body> (100% = the inflated height): pin it to the stage. */
+.vp-tall .toast {
+  bottom: auto;
+  top: 62rem;
+}

@@ -1,0 +1,184 @@
+# Promin — деплой на существующий k3s.
+# ИЗОЛЯЦИЯ ОТ ПРОДА: отдельный namespace `promin`, пайплайн promin.yml трогает
+# Путь k8s/promin.yaml входит в paths-ignore deploy.yml — пуши сюда прод не дёргают.
+# Образ импортируется в containerd ноды из CI (docker save | ctr import), т.к. репо
+# приватный → анонимный pull из ghcr невозможен → imagePullPolicy: IfNotPresent.
+# Онлайн-источники — нативные провайдеры внутри promin (docs/sources.md); торренты — публичный
+# JacRed. Внешних сайдкаров нет (lampac снесён в Ф5, docs/streaming.md).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: promin
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: promin-data
+  namespace: promin
+spec:
+  accessModes: ["ReadWriteOnce"]
+  # local-path = hostPath на диске ноды (~200 GB), размер PVC номинальный; реальный
+  # потолок торрент-кэша задаёт PROMIN_TORRENT_CACHE_LIMIT_GB.
+  resources: { requests: { storage: 40Gi } }
+  storageClassName: local-path
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: promin
+  namespace: promin
+spec:
+  replicas: 1
+  strategy: { type: Recreate } # RWO PVC — один под за раз
+  revisionHistoryLimit: 3
+  selector: { matchLabels: { app: promin } }
+  template:
+    metadata: { labels: { app: promin } }
+    spec:
+      containers:
+        - name: promin
+          image: ghcr.io/sviniabanditka/promin:latest
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 8080 }]
+          env:
+            - { name: PROMIN_HTTP_ADDR, value: ":8080" }
+            - { name: PROMIN_DATA_DIR, value: "/data" }
+            # Единая ссылка promin.club для всех ТВ. Старый Samsung (Chromium ~47)
+            # ломает медиа поверх HTTP/2, а Cloudflare h2 не отключает. Устройство
+            # с включённым «Режимом старого ТВ» само переезжает на H1_HOST, где
+            # Traefik по SNI отдаёт ALPN http/1.1 (TLSOption ниже); с выключенным —
+            # возвращается на MAIN_HOST. Автоопределения по UA нет. docs/streaming.md
+            - { name: PROMIN_H1_HOST, value: "h1.promin.club" }
+            - { name: PROMIN_MAIN_HOST, value: "promin.club" }
+            # Онлайн-источники — только нативные провайдеры (docs/sources.md, docs/streaming.md); lampac снесён.
+            # Поиск торрентов — публичный JacRed.
+            - { name: PROMIN_JACRED_BASE_URL, value: "http://jac.red" }
+            # TMDB v3 key — только из секрета, в коде дефолта нет.
+            - name: PROMIN_TMDB_API_KEY
+              valueFrom:
+                secretKeyRef: { name: promin-secrets, key: tmdb-api-key }
+            # PIN-профили: пароль адмін-панелі (/admin) — з secret promin-secrets
+            # (не в git). Бутстрапить/скидає пароль user 1 на boot.
+            - name: PROMIN_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: promin-secrets
+                  key: admin-password
+            - { name: PROMIN_TORRENT_CACHE_LIMIT_GB, value: "80" }
+            # Держати максимум 3 торренти на диску (диск не безмежний). Понад
+            # ліміт — витісняється найстаріший неактивний + видаляються файли.
+            - { name: PROMIN_TORRENT_MAX_ACTIVE, value: "3" }
+            # 1 паралельний транскод: HEVC→H264 ≈ 2-3 ядра/джоба, дві з'їдять
+            # весь CPU-бюджет стека (~3 vCPU). Див. docs/streaming.md Т5.
+            - { name: PROMIN_REMUX_MAX_TRANSCODES, value: "1" }
+            # Пароль для /logs веб-морди (Basic Auth). Секрет promin-logs
+            # створюється поза git (kubectl create secret). optional:true — якщо
+            # секрету нема, /logs просто вимкнено, деплой не падає.
+            - name: PROMIN_LOGS_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: promin-logs, key: password, optional: true }
+            # OMDb публичный демо-ключ (IMDB-рейтинги). Лимит 1000/день, кэш 7д.
+            - { name: PROMIN_OMDB_KEY, value: "872408b" }
+            # Власні провайдери джерел.
+            # Вимкнені, поки не заданий базовий URL каталогу — сам хост живе
+            # в секреті promin-secrets, НЕ в git. optional:true — без секрету
+            # деплой не падає, просто джерел не буде.
+            - { name: PROMIN_NATIVE_SOURCES, value: "true" }
+            # Резидентный UA-прокси (secret lampac-proxy, имя историческое) — только для
+            # страниц каталогов, которые режут датацентровые IP.
+            - name: PROMIN_NATIVE_PROXY_URL
+              valueFrom:
+                secretKeyRef: { name: lampac-proxy, key: url, optional: true }
+            - name: PROMIN_NATIVE_SOURCE_BASE_URL
+              valueFrom:
+                secretKeyRef: { name: promin-secrets, key: native-source-base-url, optional: true }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits: { memory: "2Gi" } # торрент-буферы + ffmpeg remux
+      volumes:
+        - { name: data, persistentVolumeClaim: { claimName: promin-data } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: promin
+  namespace: promin
+spec:
+  selector: { app: promin }
+  ports: [{ port: 8080, targetPort: 8080 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: promin
+  namespace: promin
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  rules:
+    - host: promin.club
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: promin, port: { number: 8080 } } }
+  # Оба имени в одном сертификате (cert-manager берёт dnsNames отсюда); роутер
+  # для promin.sviniabanditka.com — в отдельном Ingress ниже с h1-only TLS.
+  tls:
+    - hosts: [promin.club, promin.sviniabanditka.com]
+      secretName: promin-tls
+---
+# HTTP/1.1-only TLS для хоста старого Samsung: Traefik выбирает TLSOption по
+# SNI, поэтому promin.club (h2) не затронут. h1.promin.club — A-запись DNS-only
+# (не через Cloudflare-прокси, иначе edge снова согласует h2). Свой сертификат
+# promin-h1-tls (cert-manager, HTTP-01). promin.sviniabanditka.com оставлен как
+# алиас на переход. Заменяет nginx :8444 (k8s/promin-h1.yaml) — тот удаляется
+# после проверки на ТВ.
+apiVersion: traefik.io/v1alpha1
+kind: TLSOption
+metadata:
+  name: h1only
+  namespace: promin
+spec:
+  alpnProtocols: ["http/1.1"]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: promin-h1only
+  namespace: promin
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # <namespace>-<name>@kubernetescrd
+    traefik.ingress.kubernetes.io/router.tls.options: promin-h1only@kubernetescrd
+spec:
+  rules:
+    - host: h1.promin.club
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: promin, port: { number: 8080 } } }
+    - host: promin.sviniabanditka.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: promin, port: { number: 8080 } } }
+  tls:
+    - hosts: [h1.promin.club, promin.sviniabanditka.com]
+      secretName: promin-h1-tls

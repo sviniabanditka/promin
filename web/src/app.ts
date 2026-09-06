@@ -1,0 +1,200 @@
+// Entry point. Polyfill first (bundled into app.js, not a separate <script>
+// tag). Only fetch: Promise is native from Chrome 32 and the floor is Chromium
+// 38 (webOS 3), so promise-polyfill was 4 KB of dead code.
+import 'whatwg-fetch';
+
+import Controller from './core/controller';
+import { initPointer } from './core/pointer';
+import * as router from './core/router';
+import { initI18n, t } from './core/i18n';
+import { toast } from './ui/toast';
+import { mountHome } from './screens/home';
+import { mountPinEntry } from './screens/pin';
+import { isLogged, clearLocal } from './core/auth';
+import { setDeadSessionHook } from './core/api';
+import * as sync from './core/sync';
+import * as screensaver from './core/screensaver';
+import { initSettings, syncFromServer } from './core/settings';
+import { steerHost } from './core/legacy';
+import { installGlobalHooks, report, viewportInfo } from './core/diag';
+
+const BASE_WIDTH = 1280;
+const BASE_ROOT_FONT_SIZE = 10; // px; 1rem == 10px at the 1280x720 baseline
+const PHONE_BASE = 390; // baseline width for phones (portrait)
+const PHONE_FLOOR = 0.75; // don't shrink below this scale (keeps 48px touch targets)
+
+// Physical phone detection: touch-capable AND the smaller screen dimension is
+// phone-sized. Uses screen.* (not innerWidth) so it's rotation-independent.
+function isPhone(): boolean {
+  const mtp = (navigator as unknown as { maxTouchPoints?: number }).maxTouchPoints || 0;
+  const touch = 'ontouchstart' in window || mtp > 0;
+  const minDim = Math.min(screen.width || BASE_WIDTH, screen.height || BASE_WIDTH);
+  return !!touch && minDim < 540;
+}
+
+// rem scaling. TV/desktop: linear off the 1280 baseline. Phone: scale off a
+// phone baseline using the STABLE min(w,h) so rotation doesn't reflow the rem,
+// with a floor so the rail/targets don't collapse at device-width.
+// Some TV webviews (Android TV via MSX on Xiaomi MiTV) honour the
+// <meta viewport width=1280> for LAYOUT but never zoom it to fit the panel:
+// the visible viewport stays device-width (960 CSS px at dpr 2) and the page is
+// shown 1:1, cropped on the right and bottom. Detected as innerWidth <
+// documentElement.clientWidth. Fix: hand the layout the device width too; the
+// whole UI is rem/%-based and re-scales from applyViewportScale.
+let viewportFixed = false;
+function fixCroppedViewport(): void {
+  if (viewportFixed) return;
+  const de = document.documentElement;
+  if (de.classList.contains('is-phone')) return;
+  const inner = window.innerWidth || 0;
+  const layout = de.clientWidth || 0;
+  if (!inner || !layout || inner >= layout - 2) return;
+  const vp = document.querySelector('meta[name=viewport]');
+  if (!vp) return;
+  viewportFixed = true;
+  vp.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no');
+  de.classList.add('vp-cropped');
+  report('viewport-fix', { inner: inner, layout: layout });
+}
+
+function applyViewportScale(): void {
+  fixCroppedViewport();
+  const phone = document.documentElement.classList.contains('is-phone');
+  if (phone) {
+    const dim = Math.min(window.innerWidth || PHONE_BASE, window.innerHeight || PHONE_BASE);
+    const scale = Math.max(dim / PHONE_BASE, PHONE_FLOOR);
+    document.documentElement.style.fontSize = BASE_ROOT_FONT_SIZE * scale + 'px';
+    return;
+  }
+  // LAYOUT viewport width, not window.innerWidth: the Android TV WebView (MSX,
+  // Xiaomi MiTV) lays the page out at the <meta viewport> 1280 but reports
+  // innerWidth = 960 (visual viewport at dpr 2). Scaling off 960 gave a 7.5px
+  // root font on a 1280-wide layout — everything 25% small and misplaced
+  // (diagnosed via the diag log: inner 960x540, doc 1280x720).
+  const de = document.documentElement;
+  const width = de.clientWidth || window.innerWidth || BASE_WIDTH;
+  const height = de.clientHeight || window.innerHeight || 0;
+  de.style.fontSize = BASE_ROOT_FONT_SIZE * (width / BASE_WIDTH) + 'px';
+  // A webview that reports a viewport TALLER than the 16:9 panel would push
+  // bottom-anchored layers (player panel, toasts, hero) below the visible
+  // edge. Flag it; CSS confines the app to a 72rem stage (= 16:9 height at
+  // 128rem width) and anchors fixed layers to that stage.
+  // Only a TV webview gets the 72rem stage: there the extra height is off the
+  // panel (Xiaomi/MSX overshoot). A desktop browser window at 16:10 is simply
+  // tall and everything visible — pinning it to 16:9 left a dead band below
+  // the player. Lampa does the same: layout fills the window, scale off width.
+  const ideal = width * (9 / 16);
+  const tall = !isDesktopBrowser() && (height || ideal) > ideal * 1.03;
+  if (tall) de.classList.add('vp-tall');
+  else de.classList.remove('vp-tall');
+}
+
+// A regular computer browser (laptop/desktop). TV webviews (Tizen, webOS,
+// Android TV/MSX) and phones never match. Layout-only heuristic — nothing
+// about playback routing depends on it (that is the manual "старый ТВ" switch).
+function isDesktopBrowser(): boolean {
+  const ua = navigator.userAgent || '';
+  if (/Android|Mobile|Tizen|Web0S|SMART-TV|SmartTV|BRAVIA|AFT|MSX/i.test(ua)) return false;
+  return /Windows NT|Macintosh|X11|CrOS/.test(ua);
+}
+
+function boot(): void {
+  initI18n();
+
+  // On a real phone, swap the TV canvas (width=1280) for the device width and
+  // flip on the responsive layout BEFORE the first rem scale is computed.
+  if (isPhone()) {
+    const vp = document.querySelector('meta[name=viewport]');
+    if (vp) vp.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no');
+    document.documentElement.classList.add('is-phone');
+    // No double-tap / pinch zoom: the UI is an app, not a page. iOS ignores
+    // user-scalable=no since iOS 10, so also veto its gesture events.
+    const veto = function (e: Event) {
+      if (e.preventDefault) e.preventDefault();
+    };
+    document.addEventListener('gesturestart', veto);
+    document.addEventListener('gesturechange', veto);
+    document.addEventListener('dblclick', veto);
+  }
+
+  applyViewportScale();
+  window.addEventListener('resize', applyViewportScale);
+
+
+  // Apply cached user settings (lang stays with i18n; quality/engine/legacy-tv)
+  // before the first screen renders. Server values sync in the background.
+  initSettings();
+
+  // "Режим старого ТВ" decides which host this device should live on
+  // (HTTP/1.1-only vs the Cloudflare one) — move if we're on the wrong one.
+  steerHost();
+
+  // Diagnostics mode: JS errors + a boot-time viewport snapshot to the server log.
+  installGlobalHooks();
+  report('boot', viewportInfo());
+
+  const rootEl = document.getElementById('app');
+  if (!rootEl) {
+    return;
+  }
+
+  // Wire remote/keyboard input into the Controller (arrows/enter/back with
+  // the 100ms key-repeat throttle) once, globally.
+  Controller.initInput();
+
+  // Mouse / touch input layer. Delegated on window; feeds the same Navigator/
+  // Controller entry points as the remote (docs/frontend.md).
+  initPointer();
+
+  // Any 401 on an authed surface → re-gate to the PIN screen.
+  setDeadSessionHook(gateToPin);
+
+  // Global router (activity stack). Back at the root shows an exit toast
+  // (real device-exit is handled by MSX/the platform, see docs/frontend.md).
+  router.init(rootEl, function () {
+    toast(t('toast.exit'));
+  });
+
+
+  // Idle screensaver (clock/date over rotating art). Global input listeners;
+  // disabled when the timeout setting is 0.
+  screensaver.init();
+
+  routeInitial();
+}
+
+// Login gate. If a token is stored we go straight to home and start the sync
+// client. Otherwise we probe the catalog: a 401 means the server requires auth
+// (PROMIN_REQUIRE_AUTH=true) → show login; anything else means guest browsing
+// is allowed → show home. This keeps the flow unchanged when auth is optional.
+function routeInitial(): void {
+  // Hard gate: no session → PIN entry. No guest browsing (the whole service is
+  // closed until a valid PIN is entered).
+  if (!isLogged()) {
+    router.replaceRoot(mountPinEntry);
+    return;
+  }
+  sync.start();
+  router.replaceRoot(mountHome);
+  // Pull server-side settings; re-paint home if the server's language wins.
+  syncFromServer(function () {
+    router.replaceRoot(mountHome);
+  });
+}
+
+// Bounce to the PIN screen (session died / logged out / switch profile). Wired
+// to core/api.ts's dead-session hook so any 401 on an authed surface re-gates.
+function gateToPin(): void {
+  sync.stop();
+  // Drop the token FIRST: api.ts only calls this hook while getToken() is truthy,
+  // so clearing it makes the N other in-flight 401s (home fires several requests
+  // at once) no-ops instead of N remounts of the PIN screen mid-typing.
+  clearLocal();
+  router.replaceRoot(mountPinEntry);
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
+}

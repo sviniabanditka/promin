@@ -1,0 +1,17 @@
+{
+  "jsc": {
+    "parser": {
+      "syntax": "typescript"
+    },
+    "target": "es5",
+    "loose": false,
+    "minify": {
+      "compress": true,
+      "mangle": true
+    }
+  },
+  "module": {
+    "type": "commonjs"
+  },
+  "minify": true
+}

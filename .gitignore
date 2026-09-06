@@ -1,0 +1,14 @@
+*.key
+*.pem
+id_*
+kubeconfig
+*.local
+.DS_Store
+
+# Promin
+web/node_modules/
+.env
+# webdist — собирается из web/, в git только embed.go + .gitkeep
+server/webdist/*
+!server/webdist/embed.go
+!server/webdist/.gitkeep

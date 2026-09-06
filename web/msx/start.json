@@ -1,0 +1,6 @@
+{
+	"name": "Promin",
+	"version": "latest",
+	"parameter": "content:https://promin.sviniabanditka.com/msx/start.json",
+	"action": "link:https://promin.sviniabanditka.com"
+}
