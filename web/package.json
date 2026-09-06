@@ -2,13 +2,16 @@
   "name": "promin-web",
   "private": true,
   "version": "0.1.0",
-  "description": "Promin TV frontend (vanilla TS, ES5 output for old Tizen/webOS webviews)",
+  "description": "Promin TV frontend (vanilla TS, ES5 output for old Tizen/webOS webviews) + Telegram Mini App (Preact, ES2020)",
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "typecheck:tg": "tsc -p miniapp/tsconfig.json",
     "build": "node scripts/build.js && node -e \"require('fs').writeFileSync('../server/webdist/.gitkeep','')\"",
+    "build:tg": "node scripts/build-tg.js",
     "check:es5": "es-check es5 ../server/webdist/app.js"
   },
   "dependencies": {
+    "preact": "^10.29.8",
     "whatwg-fetch": "^3.6.20"
   },
   "devDependencies": {

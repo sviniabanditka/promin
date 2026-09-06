@@ -29,7 +29,7 @@ jobs:
         with: { node-version: 22, cache: npm, cache-dependency-path: web/package-lock.json }
       - name: Web typecheck + ES5 bundle check
         working-directory: web
-        run: npm ci && npm run typecheck && npm run build && npm run check:es5
+        run: npm ci && npm run typecheck && npm run typecheck:tg && npm run build && npm run check:es5
 
   build-and-deploy:
     needs: check

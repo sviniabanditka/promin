@@ -135,3 +135,5 @@ function main() {
 }
 
 main();
+// 2nd bundle: Telegram Mini App -> server/webdist/tg/ (docs/miniapp.md).
+require('./build-tg').main();

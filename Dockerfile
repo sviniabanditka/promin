@@ -5,7 +5,7 @@ COPY web/package.json web/package-lock.json web/
 RUN cd web && npm ci
 COPY web/ web/
 # Gate the image build on typecheck + es5 (build.js already asserts 0 var()).
-RUN cd web && npm run typecheck && npm run build && npm run check:es5
+RUN cd web && npm run typecheck && npm run typecheck:tg && npm run build && npm run check:es5
 
 FROM golang:1.26-alpine AS build
 ARG VERSION=dev
