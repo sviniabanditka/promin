@@ -115,6 +115,27 @@ func (s *Service) LoginTelegram(userID int64, deviceName string) (AuthResult, er
 	if err != nil {
 		return AuthResult{}, err
 	}
+	// One session per Telegram identity: the Mini App re-authenticates on
+	// every open (sessionStorage dies with the webview), which used to mint a
+	// fresh device row each time. Reuse the existing telegram session with the
+	// same name and drop stray duplicates.
+	if sessions, err := s.sessions.ListByUser(user.ID); err == nil {
+		var keep string
+		for _, sess := range sessions {
+			if sess.DeviceType != "telegram" || sess.DeviceName != deviceName {
+				continue
+			}
+			if keep == "" {
+				keep = sess.Token
+				continue
+			}
+			_ = s.sessions.Delete(sess.Token)
+		}
+		if keep != "" {
+			_ = s.sessions.TouchLastSeen(keep, time.Now().Unix())
+			return AuthResult{Token: keep, User: user}, nil
+		}
+	}
 	token, err := s.newSession(user, deviceName, "telegram")
 	if err != nil {
 		return AuthResult{}, err

@@ -1,5 +1,6 @@
 // REST client for the Mini App (docs/api.md + docs/miniapp.md). Bearer token
-// lives in memory + sessionStorage (Telegram re-opens the webview often).
+// lives in memory + localStorage (Telegram re-opens the webview often; a
+// sessionStorage token died with it and forced a fresh auth every open).
 
 const BASE = '/api/v1';
 const TOKEN_KEY = 'promin_tg_token';
@@ -15,7 +16,7 @@ export class ApiError extends Error {
 
 let token: string | null = null;
 try {
-  token = sessionStorage.getItem(TOKEN_KEY);
+  token = localStorage.getItem(TOKEN_KEY);
 } catch {
   /* storage blocked */
 }
@@ -28,8 +29,8 @@ export function getToken(): string | null {
 export function setToken(t: string | null): void {
   token = t;
   try {
-    if (t) sessionStorage.setItem(TOKEN_KEY, t);
-    else sessionStorage.removeItem(TOKEN_KEY);
+    if (t) localStorage.setItem(TOKEN_KEY, t);
+    else localStorage.removeItem(TOKEN_KEY);
   } catch {
     /* storage blocked */
   }
