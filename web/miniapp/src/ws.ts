@@ -116,6 +116,9 @@ function handle(type: string, p: Record<string, any>): void {
         ),
       }));
       break;
+    case 'device_settings':
+      setState((s) => ({ devices: s.devices.map((d) => (d.id === p.device_id ? { ...d, settings: p.settings ?? {} } : d)) }));
+      break;
     case 'data_cleared':
       loadBootstrap();
       break;

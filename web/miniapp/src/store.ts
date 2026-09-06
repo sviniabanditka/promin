@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'preact/hooks';
 import * as api from './api';
-import type { Bookmark, Device, HistoryItem, HomeResponse, OpenCmd, PlayerState, Playlist, RemoteAction, TimecodeItem } from './api';
+import type { Bookmark, Device, HistoryItem, HomeResponse, LocalKey, OpenCmd, PlayerState, Playlist, RemoteAction, TimecodeItem } from './api';
 import { isLang, t, type Lang } from './i18n';
 import { haptic } from './tg';
 
@@ -171,6 +171,26 @@ export async function loadBootstrap(): Promise<void> {
   }
 }
 
+// Synced profile setting: optimistic, reverted on error. `lang` goes through setLang.
+export async function setSetting(key: string, value: string): Promise<void> {
+  const prev = state.settings[key];
+  const patch = (v: string | undefined) =>
+    setState((s) => {
+      const settings = { ...s.settings };
+      if (v === undefined) delete settings[key];
+      else settings[key] = v;
+      return { settings };
+    });
+  patch(value);
+  try {
+    await api.putSetting(key, value);
+  } catch {
+    patch(prev);
+    toast(t('common.error'));
+    haptic('err');
+  }
+}
+
 export async function loadHome(): Promise<void> {
   const res = await api.getHome();
   setState({ home: res });
@@ -247,4 +267,17 @@ export function sendRemote(action: RemoteAction, value?: number): Promise<boolea
     if (next) setState((s) => ({ states: { ...s.states, [dev.id]: next! } }));
   }
   return sendTo((device_id) => ({ device_id, remote: value == null ? { action } : { action, value } }));
+}
+
+// Device-local TV setting on the target device: optimistic, reverted on error.
+export async function sendLocal(key: LocalKey, on: boolean): Promise<void> {
+  haptic('select');
+  const dev = targetDevice(state);
+  if (!dev) return;
+  const patch = (v: string | undefined) =>
+    setState((s) => ({ devices: s.devices.map((d) => (d.id === dev.id ? { ...d, settings: { ...(d.settings ?? {}), [key]: v } } : d)) }));
+  const prev = dev.settings?.[key];
+  patch(on ? 'true' : 'false');
+  const ok = await sendTo((device_id) => ({ device_id, remote: { action: 'set_local', key, str: on ? 'true' : 'false' } }));
+  if (!ok) patch(prev);
 }

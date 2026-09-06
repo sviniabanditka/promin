@@ -20,7 +20,7 @@ try {
   /* storage blocked */
 }
 let lang = 'en';
-let unauthorizedHook: (() => void) | null = null;
+let unauthorizedHook: ((force?: boolean) => void) | null = null;
 
 export function getToken(): string | null {
   return token;
@@ -37,8 +37,12 @@ export function setToken(t: string | null): void {
 export function setApiLang(l: string): void {
   lang = l;
 }
-export function onUnauthorized(fn: () => void): void {
+export function onUnauthorized(fn: (force?: boolean) => void): void {
   unauthorizedHook = fn;
+}
+// The server dropped every session (DELETE /me/data): re-auth via initData now.
+export function sessionLost(): void {
+  unauthorizedHook?.(true);
 }
 
 type Q = Record<string, string | number | boolean | null | undefined>;
@@ -172,11 +176,13 @@ export interface PlayerState {
   closed?: boolean;
 }
 
+export type LocalKey = 'legacy_tv_mode' | 'reduce_motion' | 'debug_mode';
 export interface Device {
   id: string;
   name: string;
   online: boolean;
   state: PlayerState | null;
+  settings: Partial<Record<LocalKey, string>> | null; // device-local; null = TV has not reported yet
 }
 
 export interface Bookmark {
@@ -241,7 +247,11 @@ export interface OpenCmd {
   season?: number;
   episode?: number;
 }
-export type SendBody = { device_id: string } & ({ open: OpenCmd } | { remote: { action: RemoteAction; value?: number } });
+export type SendBody = { device_id: string } & (
+  | { open: OpenCmd }
+  | { remote: { action: RemoteAction; value?: number } }
+  | { remote: { action: 'set_local'; key: LocalKey; str: 'true' | 'false' } }
+);
 
 // ---- image helper (posters arrive as "/img/w500/x.jpg"; /img is auth-free) ---
 
@@ -287,6 +297,8 @@ export const getAuthDevices = () => get<{ devices: AuthDevice[] }>('/auth/device
 export const revokeDevice = (token_id: string) => del<void>('/auth/devices/' + encodeURIComponent(token_id));
 export const revokeOtherDevices = () => del<{ revoked: number }>('/auth/devices');
 export const unlinkTelegram = () => del<void>('/telegram/link');
+export const clearHistory = () => del<void>('/me/history');
+export const deleteAllData = () => del<void>('/me/data');
 
 export function wsUrl(): string {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';

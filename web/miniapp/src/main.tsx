@@ -43,9 +43,12 @@ async function boot(): Promise<void> {
 }
 
 // Stored token died (401): drop it and re-auth once with fresh initData.
-api.onUnauthorized(() => {
-  if (reauthTried) return;
-  reauthTried = true;
+// force = the session was deleted on purpose (Settings → Delete all data).
+api.onUnauthorized((force) => {
+  if (!force) {
+    if (reauthTried) return;
+    reauthTried = true;
+  }
   stopWs();
   api.setToken(null);
   boot();
