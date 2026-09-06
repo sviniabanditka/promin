@@ -1036,6 +1036,12 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
         setNightMode(!isNightMode());
       },
     });
+    opts.push({
+      label: t('player.sleep'),
+      sub: sleepLabel(),
+      active: false,
+      onSelect: openSleepMenu,
+    });
     openMenu(t('player.more'), opts);
   }
   function openSubSizeMenu(): void {
@@ -1281,15 +1287,16 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   function requestVoice(voiceId: string, name?: string): void {
     if (!ctx.onVoice) return;
     setBuffering(true);
-    if (name) toast(t('player.switching_voice', { name: name })); // a cold source takes up to ~25s
+    if (name) toast({ kind: 'progress', title: t('player.switching_voice'), text: name, duration: 0 }); // a cold source takes up to ~25s
     const keepTime = absTime();
     ctx.onVoice(voiceId, function (newMedia) {
       if (destroyed) return;
       setBuffering(false);
       if (!newMedia || !newMedia.streams || !newMedia.streams.length) {
-        toast(t('sources.resolve_failed'));
+        toast({ kind: 'error', title: t('sources.resolve_failed'), text: t('toast.pick_other_source') });
         return;
       }
+      if (name) toast({ kind: 'success', icon: '✓', title: t('player.voice_switched'), text: name });
       media = newMedia;
       media.currentVoice = voiceId;
       applySubtitle(null); // don't carry the old voice's subtitle track over
@@ -1399,7 +1406,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       // once instead of silently eating the key.
       if (!seekWarned) {
         seekWarned = true;
-        toast(t('player.seek_unavailable'));
+        toast({ kind: 'warning', title: t('player.seek_unavailable'), text: t('player.seek_unavailable_hint') });
       }
       return;
     }
@@ -1684,7 +1691,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   // ---- mute toggle (volume button) ----
   function toggleMute(): void {
     video.muted = !video.muted;
-    toast(t('player.btn_mute') + ': ' + t(video.muted ? 'toggle.off' : 'toggle.on'));
+    toast({ kind: 'info', icon: video.muted ? '🔇' : '🔊', title: t('player.btn_mute'), text: t(video.muted ? 'toggle.off' : 'toggle.on') });
     showPanel();
   }
 
@@ -1692,7 +1699,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   function toggleAspect(): void {
     const fill = !root.classList.contains('player--fill');
     root.classList.toggle('player--fill', fill);
-    toast(t(fill ? 'player.aspect_fill' : 'player.aspect_fit'));
+    toast({ kind: 'info', icon: '⤢', text: t(fill ? 'player.aspect_fill' : 'player.aspect_fit') });
     showPanel();
   }
 
@@ -1728,7 +1735,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       /* some webviews reject rates they don't support — keep 1x */
     }
     const got = video.playbackRate || 1;
-    if (Math.abs(got - want) > 0.001 && Math.abs(want - 1) > 0.001) toast(t('player.speed_unavailable'));
+    if (Math.abs(got - want) > 0.001 && Math.abs(want - 1) > 0.001) toast({ kind: 'warning', title: t('player.speed_unavailable'), text: t('player.speed_unavailable_hint') });
     setLabel(btnSpeed, speedLabel(got));
     btnSpeed.classList.toggle('is-normal', Math.abs(got - 1) < 0.001);
     valSpeedSpan.textContent = speedLabel(got);
@@ -2283,7 +2290,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
         setBuffering(false);
         showPanel();
         refreshCenter();
-        toast(t('online.episodes_empty')); // tell the user the next episode has no source
+        toast({ kind: 'warning', title: t('online.episodes_empty'), text: t('toast.pick_other_source') }); // the next episode has no source
         return;
       }
       media = newMedia;
@@ -2378,7 +2385,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     if (stallTicks === STALL_WARN_S && !stallWarned) {
       stallWarned = true;
       diag('player:stall', { cur: Math.round(cur), buffered: Math.round(bufferAheadSec()) });
-      toast(t('player.stalled'));
+      toast({ kind: 'warning', title: t('player.stalled'), text: t('player.stalled_hint') });
     } else if (stallTicks >= STALL_FAIL_S) {
       stallTicks = 0;
       showError(t('player.error_network'));
@@ -2493,6 +2500,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   function updateStats(): void {
     applyPendingSeek(); // RC3: land a stashed seek even while timeupdate is frozen
     stallWatch();
+    sleepTick();
     // Reveal the audio-track button once hls.js has parsed its tracks.
     updateAudioTracks();
     if (!panelVisible) return; // the stats line is invisible — skip its DOM work
@@ -2556,7 +2564,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     if (pendingResume) {
       pendingResume = false;
       resumeAt = resumePos;
-      toast(t('player.resumed_at', { time: fmtTime(resumePos) }));
+      toast({ kind: 'info', icon: '▶', title: t('player.resumed_at', { time: fmtTime(resumePos) }), text: t('player.resumed_hint'), duration: 4000 });
       // Reveal the panel so "from the start" is one arrow away — but focus
       // play/pause, not that button: a reflexive OK to dismiss the toast used
       // to jump to 0:00. The panel auto-hides; doing nothing keeps playing.
@@ -2578,6 +2586,13 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     diag('player:ended', { cur: Math.round(absTime()), dur: Math.round(videoDuration()) });
     emitProgress(); // persist the (near-complete) final position
     if (ctx.onEnded) ctx.onEnded();
+    if (sleepAtEnd) {
+      // Sleep timer "after this episode": no auto-advance, offer the way out.
+      clearSleep();
+      toast({ kind: 'info', icon: '🌙', title: t('player.sleep_done'), text: t('player.sleep_done_hint'), duration: 6000 });
+      showEndCountdown();
+      return;
+    }
     if (ctx.onNext) {
       showNextCountdown();
       return;
@@ -2652,6 +2667,82 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   // Episodes auto-advanced since the viewer last touched the remote. After
   // three, the countdown stops advancing on its own ("still watching?") — a
   // binge that fell asleep shouldn't burn through a season and its timecodes.
+  // ---- sleep timer ----
+  // Ends the evening for the viewer who fell asleep: after N minutes (volume
+  // fades over the last minute) or after the current episode, pause instead of
+  // auto-advancing. Player-local, not persisted — a timer is a one-off.
+  const SLEEP_FADE_MS = 60 * 1000;
+  let sleepAt = 0; // epoch ms, 0 = off
+  let sleepAtEnd = false;
+  let sleepVolume = -1; // volume before the fade started
+  function sleepLabel(): string {
+    if (sleepAtEnd) return t('player.sleep_end');
+    if (!sleepAt) return t('toggle.off');
+    const left = Math.max(0, Math.ceil((sleepAt - Date.now()) / 60000));
+    return t('player.sleep_min', { n: String(left) });
+  }
+  function clearSleep(): void {
+    sleepAt = 0;
+    sleepAtEnd = false;
+    if (sleepVolume >= 0) {
+      video.volume = sleepVolume;
+      sleepVolume = -1;
+    }
+  }
+  function sleepTick(): void {
+    if (!sleepAt) return;
+    const left = sleepAt - Date.now();
+    if (left <= 0) {
+      const restore = sleepVolume;
+      clearSleep();
+      video.pause();
+      if (restore >= 0) video.volume = restore;
+      emitProgress();
+      toast({ kind: 'info', icon: '🌙', title: t('player.sleep_done'), text: t('player.sleep_done_hint'), duration: 6000 });
+      showPanel();
+      return;
+    }
+    if (left <= SLEEP_FADE_MS) {
+      if (sleepVolume < 0) sleepVolume = video.volume;
+      video.volume = Math.max(0, sleepVolume * (left / SLEEP_FADE_MS));
+    }
+  }
+  function openSleepMenu(): void {
+    const opts: MenuOption[] = [];
+    const mins = [15, 30, 45, 60, 90];
+    opts.push({
+      label: t('toggle.off'),
+      active: !sleepAt && !sleepAtEnd,
+      onSelect: function () {
+        clearSleep();
+        toast({ kind: 'info', icon: '🌙', title: t('player.sleep'), text: t('toggle.off') });
+      },
+    });
+    for (let i = 0; i < mins.length; i++) {
+      (function (m: number) {
+        opts.push({
+          label: t('player.sleep_min', { n: String(m) }),
+          active: !!sleepAt && !sleepAtEnd && Math.abs(sleepAt - Date.now() - m * 60000) < 60000,
+          onSelect: function () {
+            clearSleep();
+            sleepAt = Date.now() + m * 60000;
+            toast({ kind: 'info', icon: '🌙', title: t('player.sleep'), text: t('player.sleep_min', { n: String(m) }) });
+          },
+        });
+      })(mins[i]);
+    }
+    opts.push({
+      label: t('player.sleep_end'),
+      active: sleepAtEnd,
+      onSelect: function () {
+        clearSleep();
+        sleepAtEnd = true;
+        toast({ kind: 'info', icon: '🌙', title: t('player.sleep'), text: t('player.sleep_end') });
+      },
+    });
+    openMenu(t('player.sleep'), opts);
+  }
+
   let autoAdvances = 0;
   const AUTO_ADVANCE_MAX = 3;
 
@@ -2958,7 +3049,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       }
       lastBackAt = nowMs;
       if (panelVisible) hidePanel();
-      else toast(t('player.exit_again'));
+      else toast({ kind: 'warning', title: t('player.exit_again'), text: t('toast.press_back_again') });
     },
   });
 

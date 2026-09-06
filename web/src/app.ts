@@ -11,7 +11,7 @@ import { toast } from './ui/toast';
 import { mountHome } from './screens/home';
 import { mountPinEntry } from './screens/pin';
 import { isLogged, clearLocal } from './core/auth';
-import { setDeadSessionHook } from './core/api';
+import { setDeadSessionHook, getPing } from './core/api';
 import * as sync from './core/sync';
 import * as screensaver from './core/screensaver';
 import { initSettings, syncFromServer } from './core/settings';
@@ -152,7 +152,7 @@ function boot(): void {
   // Global router (activity stack). Back at the root shows an exit toast
   // (real device-exit is handled by MSX/the platform, see docs/frontend.md).
   router.init(rootEl, function () {
-    toast(t('toast.exit'));
+    toast({ kind: 'warning', title: t('toast.exit'), text: t('toast.press_back_again') });
   });
 
 
@@ -160,7 +160,35 @@ function boot(): void {
   // disabled when the timeout setting is 0.
   screensaver.init();
 
+  startUpdateWatch();
   routeInitial();
+}
+
+// A new server build went live while the app was open: say so once, so the
+// user knows a reload picks it up (the bundle is embedded in the binary).
+function startUpdateWatch(): void {
+  let known = '';
+  const poll = function () {
+    getPing().then(
+      function (p) {
+        const v = p && p.version ? p.version : '';
+        if (!v) return;
+        if (!known) {
+          known = v;
+          return;
+        }
+        if (v !== known) {
+          known = v;
+          toast({ kind: 'info', icon: '⬆', title: t('app.updated'), text: t('app.updated_hint'), duration: 8000 });
+        }
+      },
+      function () {
+        /* offline / restarting — try again next tick */
+      }
+    );
+  };
+  poll();
+  window.setInterval(poll, 10 * 60 * 1000);
 }
 
 // Login gate. If a token is stored we go straight to home and start the sync

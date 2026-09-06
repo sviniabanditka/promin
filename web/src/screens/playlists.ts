@@ -179,7 +179,7 @@ export function mountPlaylists(container: HTMLElement): ScreenInstance {
           load(true);
         },
         function () {
-          toast(t('playlists.create_failed'));
+          toast({ kind: 'error', title: t('playlists.create_failed'), text: t('toast.try_again') });
           Controller.toggle('content');
         }
       );
@@ -193,7 +193,7 @@ export function mountPlaylists(container: HTMLElement): ScreenInstance {
           load(true);
         },
         function () {
-          toast(t('playlists.rename_failed'));
+          toast({ kind: 'error', title: t('playlists.rename_failed'), text: t('toast.try_again') });
           Controller.toggle('content');
         }
       );
@@ -212,7 +212,7 @@ export function mountPlaylists(container: HTMLElement): ScreenInstance {
             load(true);
           },
           function () {
-            toast(t('playlists.delete_failed'));
+            toast({ kind: 'error', title: t('playlists.delete_failed'), text: t('toast.try_again') });
             Controller.toggle('content');
           }
         );
@@ -409,7 +409,7 @@ export function mountPlaylistItems(container: HTMLElement, params: PlaylistItems
       function () {},
       function () {
         // Server rejected — undo the optimistic removal so UI matches reality.
-        toast(t('playlists.item_remove_failed'));
+        toast({ kind: 'error', title: t('playlists.item_remove_failed'), text: t('toast.try_again') });
         load();
       }
     );

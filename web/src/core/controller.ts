@@ -331,7 +331,7 @@ function initInput(): void {
     // Diagnostics mode: every key to the server log (+ a toast, if visible).
     if (isDebug()) {
       report('key', { keyCode: code, key: e.key || '', code: e.code || '', mode: select_active_name() });
-      toast('key ' + code + ' / ' + (e.key || '?'));
+      toast({ kind: 'info', text: 'key ' + code + ' / ' + (e.key || '?'), duration: 1200 });
     }
 
     // A native text field (search <input>, IME) owns its keys: letters, Backspace,

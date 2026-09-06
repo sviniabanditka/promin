@@ -118,6 +118,46 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
   // The "Continue" action button (null when there is nothing to continue).
   let continueBtn: HTMLElement | null = null;
 
+  // Pre-resolve: while the user reads the page, resolve the remembered source
+  // for the episode "Продовжити"/"Дивитись" would start with. The watch modal's
+  // resolveMemo picks the promise up when its params match, so the first
+  // "play" costs no round-trip. Params are built in the SAME key order as
+  // resolveParamsFor — the memo key is JSON.stringify.
+  let prefetch: { key: string; p: Promise<ResolveResponse> } | null = null;
+  function prefetchResolve(card: Card, rp: ResumePoint | null): void {
+    let last: { balanser?: string; voice?: string | null } | null = null;
+    try {
+      const raw = window.localStorage.getItem('promin:lastsrc:' + card.type + ':' + card.tmdb_id);
+      last = raw ? (JSON.parse(raw) as { balanser?: string; voice?: string | null }) : null;
+    } catch (e) {
+      last = null;
+    }
+    if (!last || !last.balanser || last.balanser === 'torrent') return;
+    const isSeries = card.type === 'tv';
+    const firstSeason = card.seasons && card.seasons.length ? card.seasons[0].season : 1;
+    const params: ResolveParams = {
+      balanser: last.balanser,
+      tmdb_id: card.tmdb_id,
+      type: card.type,
+      title: card.title,
+      original_title: card.original_title,
+      year: card.year != null ? card.year : undefined,
+      imdb_id: card.external_ids ? card.external_ids.imdb_id : undefined,
+      season: isSeries ? (rp && rp.season != null ? rp.season : firstSeason) : undefined,
+      episode: isSeries ? (rp && rp.episode != null ? rp.episode : 1) : undefined,
+      voice: last.voice != null ? last.voice : undefined,
+    };
+    const key = JSON.stringify(params);
+    if (prefetch && prefetch.key === key) return;
+    prefetch = { key: key, p: resolveOnline(params) };
+    prefetch.p.then(
+      function () {},
+      function () {
+        prefetch = null; // a failed prefetch must not shadow a real attempt
+      }
+    );
+  }
+
   // Where the user left off, for the "Continue" button. Series: the most
   // recently touched episode; if that one is finished, the next episode.
   interface ResumePoint {
@@ -220,10 +260,10 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
     function addTo(pl: Playlist): void {
       addPlaylistItem(pl.id, card.tmdb_id, card.type).then(
         function () {
-          toast(t('title.playlist_added', { name: pl.name || '' }));
+          toast({ kind: 'success', icon: '✓', title: t('title.playlist_added'), text: pl.name || '' });
         },
         function () {
-          toast(t('title.playlist_add_failed'));
+          toast({ kind: 'error', title: t('title.playlist_add_failed'), text: t('toast.try_again') });
         }
       );
     }
@@ -236,7 +276,7 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
           const inPl = !!has[pl.id];
           const item = el('div', 'settings-opt selector' + (inPl ? ' is-active' : ''), pl.name || '');
           on(item, 'hover:enter', function () {
-            if (inPl) toast(t('title.playlist_exists', { name: pl.name || '' }));
+            if (inPl) toast({ kind: 'info', title: t('title.playlist_exists'), text: pl.name || '' });
             else addTo(pl);
             close();
           });
@@ -255,7 +295,7 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
               Controller.toggle(returnMode);
             },
             function () {
-              toast(t('playlists.create_failed'));
+              toast({ kind: 'error', title: t('playlists.create_failed'), text: t('toast.try_again') });
               Controller.toggle(returnMode);
             }
           );
@@ -746,6 +786,7 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
     // "Continue S2E5 · 25:12" — one press to the player, instead of watch →
     // source → episode → play. Only when there is somewhere to continue from.
     const rp = resumePoint(card);
+    prefetchResolve(card, rp);
     continueBtn = null;
     if (rp) {
       let label = t('title.continue');
@@ -1390,7 +1431,9 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
         const k = JSON.stringify(params);
         const hit = resolveCache[k];
         if (hit && Date.now() - hit.at < RESOLVE_MEMO_MS) return Promise.resolve(hit.res);
-        return resolveOnline(params).then(function (res) {
+        const pending = prefetch && prefetch.key === k ? prefetch.p : resolveOnline(params);
+        if (prefetch && prefetch.key === k) prefetch = null; // consumed once; a later open re-resolves
+        return pending.then(function (res) {
           if (res && res.streams && res.streams.length) resolveCache[k] = { at: Date.now(), res: res };
           return res;
         });
@@ -1695,7 +1738,7 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
             busy = false;
             hideOverlay();
             if (!res || !res.streams || !res.streams.length) {
-              toast(t('sources.resolve_empty'));
+              toast({ kind: 'error', title: t('sources.resolve_empty'), text: t('sources.resolve_empty_hint') });
               return;
             }
             currentEpisode = episode;
@@ -1707,7 +1750,7 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
           function () {
             busy = false;
             hideOverlay();
-            toast(t('sources.resolve_failed'));
+            toast({ kind: 'error', title: t('sources.resolve_failed'), text: t('toast.pick_other_source') });
           }
         );
       }
@@ -1827,7 +1870,7 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
         busy = false;
         hideOverlay();
         revealModal();
-        toast(t('sources.auto_failed'));
+        toast({ kind: 'warning', title: t('sources.auto_failed'), text: t('toast.pick_other_source') });
         if (sources.length) currentSource = sources[0];
         voices = [];
         currentVoice = null;
@@ -1932,7 +1975,7 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
 
       on(fVoice.el, 'hover:enter', function () {
         if (!voices.length) {
-          toast(t('online.voice_none'));
+          toast({ kind: 'warning', text: t('online.voice_none') });
           return;
         }
         const opts: Array<{ label: string; value: string }> = [{ label: t('online.voice_auto'), value: '' }];
@@ -2144,7 +2187,7 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
             busy = false;
             hideOverlay();
             if (!res || !res.infohash) {
-              toast(t('sources.torrents_add_failed'));
+              toast({ kind: 'error', title: t('sources.torrents_add_failed'), text: t('toast.try_again') });
               return;
             }
             const files = res.files || [];
@@ -2154,7 +2197,7 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
             }
             const playable = videos.length ? videos : files;
             if (!playable.length) {
-              toast(t('sources.torrents_no_video'));
+              toast({ kind: 'warning', title: t('sources.torrents_no_video'), text: t('sources.torrents_no_video_hint') });
               return;
             }
             if (playable.length === 1) {
@@ -2167,7 +2210,7 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
             if (closed) return;
             busy = false;
             hideOverlay();
-            toast(t('sources.torrents_add_failed'));
+            toast({ kind: 'error', title: t('sources.torrents_add_failed'), text: t('toast.try_again') });
           }
         );
       }

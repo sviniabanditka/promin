@@ -46,7 +46,7 @@ export function openMenu(key: MenuKey): void {
   } else if (key === 'settings') {
     router.replaceRoot(mountSettings);
   } else {
-    toast(t('settings.soon'));
+    toast({ kind: 'info', text: t('settings.soon') });
   }
 }
 

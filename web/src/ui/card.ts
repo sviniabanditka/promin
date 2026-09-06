@@ -106,7 +106,7 @@ export function buildCard(item: Card, lazy?: boolean): HTMLElement {
       year: item.year,
       rating: item.rating,
     }).then(function (nowOn) {
-      toast(t(nowOn ? 'title.bookmark_added_toast' : 'title.bookmark_removed_toast'));
+      toast({ kind: nowOn ? 'success' : 'info', icon: nowOn ? '★' : '☆', text: t(nowOn ? 'title.bookmark_added_toast' : 'title.bookmark_removed_toast') });
     });
   });
 

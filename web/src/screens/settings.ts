@@ -328,7 +328,7 @@ export function mountSettings(container: HTMLElement): ScreenInstance {
       setLegacyTv(!isLegacyTv());
       renderList();
       Controller.toggle('content');
-      toast(t(isLegacyTv() ? 'settings.legacy_on_hint' : 'settings.legacy_off_hint'));
+      toast({ kind: 'info', title: t('settings.legacy') + ': ' + t(isLegacyTv() ? 'toggle.on' : 'toggle.off'), text: t(isLegacyTv() ? 'settings.legacy_on_hint' : 'settings.legacy_off_hint'), duration: 5000 });
       steerHost();
     });
 
@@ -346,7 +346,7 @@ export function mountSettings(container: HTMLElement): ScreenInstance {
       Controller.toggle('content');
       if (isDebugMode()) {
         report('viewport', viewportInfo());
-        toast(t('settings.debug_on_hint'));
+        toast({ kind: 'info', title: t('settings.debug') + ': ' + t('toggle.on'), text: t('settings.debug_on_hint'), duration: 5000 });
       }
     });
 
@@ -366,10 +366,10 @@ export function mountSettings(container: HTMLElement): ScreenInstance {
             Controller.toggle('content');
             clearMyHistory().then(
               function () {
-                toast(t('settings.clear_history_done'));
+                toast({ kind: 'success', icon: '✓', text: t('settings.clear_history_done') });
               },
               function () {
-                toast(t('error.load'));
+                toast({ kind: 'error', title: t('error.load'), text: t('toast.try_again') });
               }
             );
           },

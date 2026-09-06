@@ -154,7 +154,7 @@ export function mountDevices(container: HTMLElement): ScreenInstance {
         /* gone */
       },
       function () {
-        toast(t('devices.revoke_failed'));
+        toast({ kind: 'error', title: t('devices.revoke_failed'), text: t('toast.try_again') });
       }
     );
   }

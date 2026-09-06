@@ -214,7 +214,7 @@ export function mountTorrents(container: HTMLElement): ScreenInstance {
         /* gone */
       },
       function () {
-        toast(t('torrents.delete_failed'));
+        toast({ kind: 'error', title: t('torrents.delete_failed'), text: t('toast.try_again') });
       }
     );
   }
