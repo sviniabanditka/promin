@@ -1,11 +1,24 @@
 import { useState } from 'preact/hooks';
-import { getPlaylistItems, type PlaylistItem } from '../api';
+import { getPlaylistItems, type PlaylistItem, type TimecodeItem } from '../api';
 import { fmtDate, seLabel, t } from '../i18n';
 import { loadBootstrap, useStore } from '../store';
 import { haptic } from '../tg';
 import { cardKey, Empty, MediaRow, Segmented, SkeletonRow, useCards } from '../ui';
 
 type Tab = 'bookmarks' | 'playlists' | 'history';
+
+// Watch history = the resume positions the TV saves (the separate `history`
+// table is never written). Latest row per title, newest first.
+function historyFromTimecodes(tc: TimecodeItem[]): TimecodeItem[] {
+  const latest: Record<string, TimecodeItem> = {};
+  for (const x of tc) {
+    const k = x.media_type + ':' + x.tmdb_id;
+    if (!latest[k] || latest[k].updated_at < x.updated_at) latest[k] = x;
+  }
+  return Object.keys(latest)
+    .map((k) => latest[k])
+    .sort((a, b) => b.updated_at - a.updated_at);
+}
 const LIMIT = 40; // ponytail: no paging; add "load more" if libraries outgrow it
 
 function Rows({ items, lang, subtitle }: { items: { tmdb_id: number; media_type: 'movie' | 'tv' }[]; lang: string; subtitle?: (i: any) => string | undefined }) {
@@ -92,9 +105,13 @@ export function Library() {
         <Playlists lang={s.lang} />
       ) : (
         <Rows
-          items={s.history!.slice(0, LIMIT)}
+          items={historyFromTimecodes(s.timecodes ?? []).slice(0, LIMIT)}
           lang={s.lang}
-          subtitle={(h) => [seLabel(h.season, h.episode), fmtDate(h.watched_at)].filter(Boolean).join(' · ')}
+          subtitle={(h) => {
+            const pct = h.duration_sec > 0 ? h.position_sec / h.duration_sec : 0;
+            const progress = pct >= 0.9 ? t('lib.watched') : pct > 0 ? Math.round(pct * 100) + '%' : '';
+            return [seLabel(h.season, h.episode), progress, fmtDate(h.updated_at)].filter(Boolean).join(' · ');
+          }}
         />
       )}
     </div>

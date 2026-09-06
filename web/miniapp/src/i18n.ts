@@ -83,6 +83,7 @@ const D: Record<string, Entry> = {
   'lib.bookmarks': ['Закладки', 'Закладки', 'Bookmarks'],
   'lib.playlists': ['Плейлисти', 'Плейлисты', 'Playlists'],
   'lib.history': ['Історія', 'История', 'History'],
+  'lib.watched': ['Переглянуто', 'Просмотрено', 'Watched'],
   'lib.empty': ['Тут поки порожньо', 'Здесь пока пусто', 'Nothing here yet'],
   'lib.items': ['{n} тайтлів', '{n} тайтлов', '{n} titles'],
 
