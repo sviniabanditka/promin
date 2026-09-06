@@ -1,7 +1,7 @@
 # Telegram companion
 
 Searching with a phone keyboard beats a D-pad, so Promin ships a Telegram bot
-(the same bot Alertmanager uses for alerts): send it a title, pick a result,
+— a separate bot from the alerting one (`@promin_club_bot`): send it a title, pick a result,
 open it on a TV. Server code: `server/internal/telegram`; client: the
 "Telegram bot" row in Settings and the `open_title` sync event.
 
