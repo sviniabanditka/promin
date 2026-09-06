@@ -16,7 +16,7 @@
 // ES5 target (swc): plain functions/const/let, no async/await, no spread,
 // no Array.find/includes, no Object.assign.
 
-import { getSettings, putSetting } from './api';
+import { getSettings, putSetting, postDeviceSettings } from './api';
 import { isLogged } from './auth';
 import { setLang, getLang, Lang } from './i18n';
 import { setLegacyOverride } from './capabilities';
@@ -234,8 +234,29 @@ export function setLangChangedHook(fn: () => void): void {
   langChangedHook = fn;
 }
 
+let screensaverChangedHook: (() => void) | null = null;
+export function setScreensaverChangedHook(fn: () => void): void {
+  screensaverChangedHook = fn;
+}
+
 export function applyRemoteSetting(key: string, value: string): void {
-  if (key === 'lang') {
+  if (key === 'default_quality' && isQuality(value)) {
+    store.default_quality = value;
+    persist();
+  } else if (key === 'player_engine' && isEngine(value)) {
+    store.player_engine = value;
+    persist();
+  } else if (key === 'subtitle_size' && isSubSize(value)) {
+    store.subtitle_size = value;
+    persist();
+  } else if (key === 'screensaver_min') {
+    const sv = parseInt(value, 10);
+    if (isScreensaverMin(sv)) {
+      store.screensaver_min = sv;
+      persist();
+      if (screensaverChangedHook) screensaverChangedHook();
+    }
+  } else if (key === 'lang') {
     if (isLang(value) && value !== getLang()) {
       setLang(value);
       if (langChangedHook) langChangedHook();
@@ -293,12 +314,14 @@ export function isDebugMode(): boolean {
 export function setDebugMode(on: boolean): void {
   store.debug_mode = on;
   persist();
+  reportDeviceSettings();
 }
 // Device-local: not mirrored to the server (another TV must not inherit it).
 export function setReduceMotion(on: boolean): void {
   store.reduce_motion = on;
   persist();
   applyReduceMotion();
+  reportDeviceSettings();
 }
 
 // ---- writes (apply immediately, best-effort server mirror) -------------
@@ -350,6 +373,30 @@ export function setLegacyTv(on: boolean): void {
   store.legacy_tv_mode = on;
   persist();
   applyLegacy();
+  reportDeviceSettings();
+}
+
+// Device-local settings are invisible to the profile; report them so the Mini
+// App can show and flip them for THIS TV (remote action set_local).
+export function reportDeviceSettings(): void {
+  if (!isLogged()) return;
+  postDeviceSettings({
+    legacy_tv_mode: store.legacy_tv_mode ? 'true' : 'false',
+    reduce_motion: store.reduce_motion ? 'true' : 'false',
+    debug_mode: store.debug_mode ? 'true' : 'false',
+  }).then(
+    function () {},
+    function () {}
+  );
+}
+
+// A device-local setting flipped from the Mini App.
+export function applyLocalSetting(key: string, on: boolean): boolean {
+  if (key === 'legacy_tv_mode') setLegacyTv(on);
+  else if (key === 'reduce_motion') setReduceMotion(on);
+  else if (key === 'debug_mode') setDebugMode(on);
+  else return false;
+  return true;
 }
 
 // lang lives in i18n; this just applies + mirrors it to the server.

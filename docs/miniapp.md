@@ -68,6 +68,26 @@ WebSocket. Writes are throttled server-side to one publish per second per device
 that episode). `remote` publishes the existing `remote` event; `seek_to`
 (absolute seconds) is new. `404 device_offline` when the device has no socket.
 
+## TV settings from the phone
+
+Synced profile settings are plain `PUT /api/v1/settings/{key}` writes with the
+TV's value formats — `lang` (uk|ru|en), `default_quality` (auto|2160|1080|720|480),
+`player_engine` (auto|hlsjs|native), `subtitle_size` (small|medium|large),
+`screensaver_min` (0|3|5|10), `night_mode` (true|false), `night_dim` (50..90
+step 5), `player_speed`; the TV applies them live through `settings_updated`.
+
+Device-local settings (`legacy_tv_mode`, `reduce_motion`, `debug_mode`) never
+leave the TV, so the TV reports them with `POST /api/v1/device/settings`
+(`{"legacy_tv_mode":"true", ...}`) on login and on every change; the hub keeps
+them per device, `GET /api/v1/tg/devices` returns them as `settings`, and the
+sync event `device_settings {device_id, settings}` announces changes. The Mini
+App flips one with `POST /api/v1/tg/send {device_id, remote:{action:"set_local",
+key, str:"true"|"false"}}`; the TV applies it and shows a toast.
+
+Danger zone actions are the same endpoints the TV uses: `DELETE /api/v1/me/history`
+and `DELETE /api/v1/me/data` (the latter revokes every session — the Mini App
+re-authenticates through initData afterwards, the TVs ask for the PIN).
+
 ## Bot menu button
 
 At start the bot calls `setChatMenuButton` with `web_app.url =

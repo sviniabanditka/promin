@@ -980,3 +980,8 @@ export function postPlayerState(state: PlayerStateReport): Promise<void> {
 export function revokeOtherDevices(): Promise<{ revoked: number }> {
   return del<{ revoked: number }>('/auth/devices');
 }
+
+// Device-local TV settings → server (the Telegram Mini App shows/flips them).
+export function postDeviceSettings(settings: { [k: string]: string }): Promise<void> {
+  return post<void>('/device/settings', settings, undefined, 5000);
+}

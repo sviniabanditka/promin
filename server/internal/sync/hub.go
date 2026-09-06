@@ -43,7 +43,8 @@ const (
 	EventRemote = "remote"
 	// EventPlayerState is a TV's "now playing" report for the Mini App
 	// (docs/miniapp.md). Payload PlayerStatePayload (player_state.go).
-	EventPlayerState = "player_state"
+	EventDeviceSettings = "device_settings" // payload {device_id, settings}
+	EventPlayerState    = "player_state"
 )
 
 // DeviceInfo identifies a connected device: ID is auth.TokenID of its

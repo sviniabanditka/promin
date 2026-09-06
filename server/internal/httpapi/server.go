@@ -197,6 +197,7 @@ func NewServer(
 	mux.HandleFunc("POST /api/v1/tg/send", requireAuth(authSvc, tgApp.send))
 	ps := &playerStateHandlers{hub: syncSvc.Hub()}
 	mux.HandleFunc("POST /api/v1/player/state", requireAuth(authSvc, ps.set))
+	mux.HandleFunc("POST /api/v1/device/settings", requireAuth(authSvc, ps.deviceSettings))
 
 	ws := &wsHandlers{syncSvc: syncSvc, logger: logger}
 	mux.HandleFunc("GET /api/v1/ws", requireAuthMedia(authSvc, ws.serve))

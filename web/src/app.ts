@@ -12,11 +12,11 @@ import { mountHome } from './screens/home';
 import { mountPinEntry } from './screens/pin';
 import { openTitle } from './screens/nav';
 import { dispatchRemote, RemoteAction } from './core/player/remote';
-import { isLogged, clearLocal } from './core/auth';
+import { isLogged, clearLocal, onAuthChange } from './core/auth';
 import { setDeadSessionHook, getPing } from './core/api';
 import * as sync from './core/sync';
 import * as screensaver from './core/screensaver';
-import { initSettings, syncFromServer, setNightMode, isNightMode, setLangChangedHook } from './core/settings';
+import { initSettings, syncFromServer, setNightMode, isNightMode, setLangChangedHook, setScreensaverChangedHook, applyLocalSetting, reportDeviceSettings } from './core/settings';
 import { steerHost } from './core/legacy';
 import { installGlobalHooks, report, viewportInfo } from './core/diag';
 
@@ -175,9 +175,16 @@ function boot(): void {
   });
   // Remote-control presses from the bot: the player consumes playback actions;
   // night mode is global and works from any screen.
-  sync.setRemoteEventHandler(function (action, value) {
+  sync.setRemoteEventHandler(function (action, value, key, str) {
     if (action === 'night') {
       setNightMode(!isNightMode());
+      return;
+    }
+    if (action === 'set_local') {
+      if (applyLocalSetting(key, str === 'true')) {
+        toast({ kind: 'info', icon: '⚙', title: t('settings.' + (key === 'legacy_tv_mode' ? 'legacy' : key === 'reduce_motion' ? 'reduce_motion' : 'debug')), text: t(str === 'true' ? 'toggle.on' : 'toggle.off') });
+        if (key === 'legacy_tv_mode') steerHost();
+      }
       return;
     }
     if (!dispatchRemote(action as RemoteAction, value)) {
@@ -187,6 +194,12 @@ function boot(): void {
   // Language switched from the bot or another device: repaint the app.
   setLangChangedHook(function () {
     if (isLogged()) router.replaceRoot(mountHome);
+  });
+  setScreensaverChangedHook(screensaver.reschedule);
+  // Tell the server this TV's device-local settings (for the Mini App).
+  if (isLogged()) reportDeviceSettings();
+  onAuthChange(function () {
+    if (isLogged()) reportDeviceSettings();
   });
   routeInitial();
 }

@@ -23,7 +23,7 @@ type tgAppHandlers struct {
 
 // remoteActions is the EventRemote action set the Mini App may send.
 var remoteActions = map[string]bool{
-	"toggle_play": true, "seek": true, "seek_to": true, "prev": true, "next": true,
+	"toggle_play": true, "seek": true, "seek_to": true, "prev": true, "next": true, "set_local": true,
 	"mute": true, "night": true, "sleep": true,
 }
 
@@ -88,12 +88,13 @@ func (h *tgAppHandlers) devices(w http.ResponseWriter, r *http.Request) {
 	out := make([]map[string]any, 0, len(devs))
 	for _, d := range devs {
 		out = append(out, map[string]any{
-			"id":      d.TokenID,
-			"name":    d.DeviceName,
-			"type":    d.DeviceType,
-			"current": d.Current,
-			"online":  online[d.TokenID],
-			"state":   hub.PlayerState(info.User.ID, d.TokenID),
+			"id":       d.TokenID,
+			"name":     d.DeviceName,
+			"type":     d.DeviceType,
+			"current":  d.Current,
+			"online":   online[d.TokenID],
+			"state":    hub.PlayerState(info.User.ID, d.TokenID),
+			"settings": hub.DeviceSettings(info.User.ID, d.TokenID),
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"devices": out})
@@ -111,6 +112,8 @@ type tgSendRequest struct {
 	Remote *struct {
 		Action string  `json:"action"`
 		Value  float64 `json:"value"`
+		Key    string  `json:"key"`
+		Str    string  `json:"str"`
 	} `json:"remote"`
 }
 
@@ -131,6 +134,10 @@ func (h *tgAppHandlers) send(w http.ResponseWriter, r *http.Request) {
 		writeBadRequest(w, "remote: невідома дія")
 		return
 	}
+	if req.Remote != nil && req.Remote.Action == "set_local" && (!sync.DeviceSettingKeys[req.Remote.Key] || (req.Remote.Str != "true" && req.Remote.Str != "false")) {
+		writeBadRequest(w, "set_local: key ∈ {legacy_tv_mode, reduce_motion, debug_mode}, str ∈ {true, false}")
+		return
+	}
 	hub := h.sync.Hub()
 	online := false
 	for _, d := range hub.OnlineDevices(info.User.ID) {
@@ -141,7 +148,7 @@ func (h *tgAppHandlers) send(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Remote != nil {
-		hub.Publish(info.User.ID, sync.EventRemote, telegram.RemotePayload{DeviceID: req.DeviceID, Action: req.Remote.Action, Value: req.Remote.Value})
+		hub.Publish(info.User.ID, sync.EventRemote, telegram.RemotePayload{DeviceID: req.DeviceID, Action: req.Remote.Action, Value: req.Remote.Value, Key: req.Remote.Key, Str: req.Remote.Str})
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}

@@ -285,8 +285,8 @@ let openTitleHandler: OpenTitleFn | null = null;
 export function setOpenTitleHandler(fn: OpenTitleFn): void {
   openTitleHandler = fn;
 }
-let remoteHandler: ((action: string, value: number) => void) | null = null;
-export function setRemoteEventHandler(fn: (action: string, value: number) => void): void {
+let remoteHandler: ((action: string, value: number, key: string, str: string) => void) | null = null;
+export function setRemoteEventHandler(fn: (action: string, value: number, key: string, str: string) => void): void {
   remoteHandler = fn;
 }
 
@@ -354,7 +354,7 @@ function applyEvent(ev: SyncEvent): void {
   } else if (ev.type === 'remote') {
     const tok = getToken() || '';
     if (remoteHandler && p.device_id && tok.slice(0, 12) === String(p.device_id)) {
-      remoteHandler(String(p.action || ''), Number(p.value) || 0);
+      remoteHandler(String(p.action || ''), Number(p.value) || 0, String(p.key || ''), String(p.str || ''));
     }
   } else if (ev.type === 'settings_updated') {
     applyRemoteSetting(String(p.key || ''), String(p.value || ''));

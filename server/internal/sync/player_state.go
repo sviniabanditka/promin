@@ -1,6 +1,9 @@
 package sync
 
-import "time"
+import (
+	stdsync "sync"
+	"time"
+)
 
 const (
 	// playerPublishGap throttles EventPlayerState to one publish per second
@@ -88,4 +91,41 @@ func (h *Hub) PlayerState(userID int64, deviceID string) *PlayerState {
 	}
 	st := e.state
 	return &st
+}
+
+// ---- device-local TV settings (reported by the TV, read by the Mini App) ----
+
+// DeviceSettingKeys are the TV settings that live on the device, not in the
+// profile: the Mini App shows and flips them per device via remote set_local.
+var DeviceSettingKeys = map[string]bool{"legacy_tv_mode": true, "reduce_motion": true, "debug_mode": true}
+
+type deviceKey struct {
+	user   int64
+	device string
+}
+
+var (
+	devSettingsMu stdsync.Mutex
+	devSettings   = map[deviceKey]map[string]string{}
+)
+
+// SetDeviceSettings stores the device's local settings (whitelisted keys only).
+func (h *Hub) SetDeviceSettings(userID int64, deviceID string, settings map[string]string) {
+	clean := map[string]string{}
+	for k, v := range settings {
+		if DeviceSettingKeys[k] {
+			clean[k] = v
+		}
+	}
+	devSettingsMu.Lock()
+	devSettings[deviceKey{userID, deviceID}] = clean
+	devSettingsMu.Unlock()
+	h.Publish(userID, EventDeviceSettings, map[string]any{"device_id": deviceID, "settings": clean})
+}
+
+// DeviceSettings returns the last reported settings of the device (nil = unknown).
+func (h *Hub) DeviceSettings(userID int64, deviceID string) map[string]string {
+	devSettingsMu.Lock()
+	defer devSettingsMu.Unlock()
+	return devSettings[deviceKey{userID, deviceID}]
 }

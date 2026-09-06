@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 
 	"github.com/sviniabanditka/promin/server/internal/auth"
@@ -36,5 +37,19 @@ func (h *playerStateHandlers) set(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.hub.SetPlayerState(info.User.ID, dev, req.PlayerState)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// deviceSettings: POST /api/v1/device/settings {legacy_tv_mode, reduce_motion,
+// debug_mode} ("true"/"false") — the TV reports its device-local settings on
+// boot and on change so the Mini App can show and flip them.
+func (h *playerStateHandlers) deviceSettings(w http.ResponseWriter, r *http.Request) {
+	info, _ := authFrom(r)
+	var body map[string]string
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&body); err != nil {
+		writeBadRequest(w, "невірне тіло")
+		return
+	}
+	h.hub.SetDeviceSettings(info.User.ID, auth.TokenID(info.Session.Token), body)
 	w.WriteHeader(http.StatusNoContent)
 }
