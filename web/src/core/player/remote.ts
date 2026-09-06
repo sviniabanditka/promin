@@ -3,7 +3,7 @@
 // internals. Actions: toggle_play | seek (value = ±seconds) | prev | next |
 // mute | sleep (value = minutes). Night mode is global and handled in app.ts.
 
-export type RemoteAction = 'toggle_play' | 'seek' | 'prev' | 'next' | 'mute' | 'sleep' | 'night';
+export type RemoteAction = 'toggle_play' | 'seek' | 'seek_to' | 'prev' | 'next' | 'mute' | 'sleep' | 'night';
 
 let handler: ((action: RemoteAction, value: number) => boolean) | null = null;
 

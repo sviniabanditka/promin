@@ -280,8 +280,9 @@ export function saveTimecode(
 // ---- incoming events (WS + polling share this) -------------------------
 
 // Registered by app.ts (sync.ts must not import screens — cycle).
-let openTitleHandler: ((tmdbID: number, type: 'movie' | 'tv', title: string, resume: boolean) => void) | null = null;
-export function setOpenTitleHandler(fn: (tmdbID: number, type: 'movie' | 'tv', title: string, resume: boolean) => void): void {
+type OpenTitleFn = (tmdbID: number, type: 'movie' | 'tv', title: string, resume: boolean, season: number | null, episode: number | null) => void;
+let openTitleHandler: OpenTitleFn | null = null;
+export function setOpenTitleHandler(fn: OpenTitleFn): void {
   openTitleHandler = fn;
 }
 let remoteHandler: ((action: string, value: number) => void) | null = null;
@@ -341,7 +342,14 @@ function applyEvent(ev: SyncEvent): void {
     // device_id = the first 12 chars of the session token (auth.TokenID).
     const tok = getToken() || '';
     if (openTitleHandler && p.device_id && tok.slice(0, 12) === String(p.device_id)) {
-      openTitleHandler(Number(p.tmdb_id), String(p.media_type) === 'tv' ? 'tv' : 'movie', String(p.title || ''), !!p.resume);
+      openTitleHandler(
+        Number(p.tmdb_id),
+        String(p.media_type) === 'tv' ? 'tv' : 'movie',
+        String(p.title || ''),
+        !!p.resume,
+        p.season != null ? Number(p.season) : null,
+        p.episode != null ? Number(p.episode) : null
+      );
     }
   } else if (ev.type === 'remote') {
     const tok = getToken() || '';

@@ -164,9 +164,9 @@ function boot(): void {
 
   startUpdateWatch();
   // "Open on TV" from the Telegram bot lands on the title page.
-  sync.setOpenTitleHandler(function (tmdbID, type, title, resume) {
+  sync.setOpenTitleHandler(function (tmdbID, type, title, resume, season, episode) {
     if (!isLogged()) return;
-    openTitle(type, tmdbID, resume);
+    openTitle(type, tmdbID, resume, season, episode);
     toast({ kind: 'info', icon: '✈', title: t('telegram.opened'), text: title });
   });
   // Remote-control presses from the bot: the player consumes playback actions;

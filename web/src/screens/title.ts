@@ -61,6 +61,9 @@ export interface TitleParams {
   id: number;
   // Start playback from the saved position as soon as the title renders.
   resume?: boolean;
+  // Start this episode as soon as the title renders (Telegram "▶ on TV").
+  season?: number;
+  episode?: number;
 }
 
 export function mountTitle(container: HTMLElement, params: TitleParams): ScreenInstance {
@@ -117,6 +120,8 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
   let resumeHook: (() => void) | null = null;
   // The "Continue" action button (null when there is nothing to continue).
   let continueBtn: HTMLElement | null = null;
+  // Set by render(): opens the watch modal on a given episode (deep links).
+  let openEpisode: ((season: number, episode: number) => void) | null = null;
 
   // Pre-resolve: while the user reads the page, resolve the remembered source
   // for the episode "Продовжити"/"Дивитись" would start with. The watch modal's
@@ -899,6 +904,9 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
     on(torrents, 'hover:enter', function () {
       openWatchModal(card, seasons, 'torrents');
     });
+    openEpisode = function (season: number, episode: number) {
+      openWatchModal(card, seasons, 'online', { season: season, episode: episode });
+    };
 
     // ---- page 1 controller (action buttons) ----
     const actionsController = {
@@ -2436,6 +2444,7 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
           // the player for Back). Falls back to the plain title when there is
           // nothing to continue.
           if (params.resume && continueBtn) trigger(continueBtn, 'hover:enter');
+          else if (params.episode != null && openEpisode) openEpisode(params.season != null ? params.season : 1, params.episode);
         } else showError();
       },
       function () {

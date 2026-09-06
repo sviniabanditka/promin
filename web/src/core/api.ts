@@ -958,3 +958,20 @@ export function createTelegramLink(): Promise<TelegramLink> {
 export function unlinkTelegram(): Promise<void> {
   return del<void>('/telegram/link');
 }
+
+// ---- player state → server (Telegram Mini App remote reads it) ----------
+export interface PlayerStateReport {
+  closed?: boolean;
+  tmdb_id?: number | string;
+  media_type?: string;
+  title?: string;
+  season?: number | null;
+  episode?: number | null;
+  position_sec?: number;
+  duration_sec?: number;
+  paused?: boolean;
+  voice?: string;
+}
+export function postPlayerState(state: PlayerStateReport): Promise<void> {
+  return post<void>('/player/state', state, undefined, 5000);
+}

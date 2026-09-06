@@ -51,7 +51,7 @@ import { isResumable } from '../progress';
 import { report as diag } from '../diag';
 import { setRemoteHandler, RemoteAction } from './remote';
 import { ensureHls, HlsInstance, HlsCtor } from './hls';
-import { Stream, Subtitle, Voice, mediaUrl } from '../api';
+import { Stream, Subtitle, Voice, mediaUrl, postPlayerState } from '../api';
 
 export interface PlayerMedia {
   type: 'hls' | 'mp4';
@@ -3133,6 +3133,49 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   });
 
   // ---- boot ----
+  // Player state → server every 5 s and on play/pause/seek, so the Telegram
+  // Mini App's remote shows what is playing with a live progress bar.
+  let lastStateAt = 0;
+  function reportState(force?: boolean): void {
+    const now = Date.now();
+    if (!force && now - lastStateAt < 900) return;
+    lastStateAt = now;
+    let voiceName = '';
+    if (media.currentVoice && media.voices) {
+      for (let i = 0; i < media.voices.length; i++) {
+        if (media.voices[i].id === media.currentVoice) voiceName = media.voices[i].name;
+      }
+    }
+    postPlayerState({
+      tmdb_id: ctx.tmdb_id,
+      media_type: ctx.media_type,
+      title: ctx.title,
+      season: ctx.season,
+      episode: ctx.episode,
+      position_sec: Math.round(absTime() * 10) / 10,
+      duration_sec: Math.round(videoDuration() * 10) / 10,
+      paused: video.paused,
+      voice: voiceName,
+    }).then(
+      function () {},
+      function () {
+        /* best-effort */
+      }
+    );
+  }
+  const stateTimer = window.setInterval(function () {
+    if (!destroyed) reportState(false);
+  }, 5000);
+  video.addEventListener('play', function () {
+    reportState(true);
+  });
+  video.addEventListener('pause', function () {
+    reportState(true);
+  });
+  video.addEventListener('seeked', function () {
+    reportState(true);
+  });
+
   // Telegram remote (core/player/remote.ts): the phone acts as a second remote.
   setRemoteHandler(function (action: RemoteAction, value: number): boolean {
     if (destroyed) return false;
@@ -3142,6 +3185,10 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
         break;
       case 'seek':
         seekClamped(absTime() + (value || 0));
+        showPanel();
+        break;
+      case 'seek_to':
+        seekClamped(Math.max(0, value || 0));
         showPanel();
         break;
       case 'prev':
@@ -3191,6 +3238,11 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       flushTimecode(); // replaceRoot / eviction paths never went through exitToSources
       destroyed = true;
       setRemoteHandler(null);
+      window.clearInterval(stateTimer);
+      postPlayerState({ closed: true }).then(
+        function () {},
+        function () {}
+      );
       window.removeEventListener('keydown', onExtraKey);
       root.removeEventListener('mousemove', onMouseMoveReveal);
       video.removeEventListener('click', onVideoClick);
