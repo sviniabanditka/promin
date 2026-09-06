@@ -166,6 +166,10 @@ function boot(): void {
   // "Open on TV" from the Telegram bot lands on the title page.
   sync.setOpenTitleHandler(function (tmdbID, type, title, resume, season, episode) {
     if (!isLogged()) return;
+    // Reset the screen stack first: a title opened while the player is running
+    // must not pile a second player on top of the first (both kept playing and
+    // reporting state — the remote flickered between them).
+    router.replaceRoot(mountHome);
     openTitle(type, tmdbID, resume, season, episode);
     toast({ kind: 'info', icon: '✈', title: t('telegram.opened'), text: title });
   });
