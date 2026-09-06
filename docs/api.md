@@ -202,3 +202,13 @@ Event `type` values: `bookmark_added`, `bookmark_removed` (payload: bookmark),
 |---|---|---|---|
 | DELETE | `/api/v1/me/history` | bearer | Deletes the profile's history and timecodes; sync event `data_cleared` (`scope: history`). 204. |
 | DELETE | `/api/v1/me/data` | bearer | Deletes bookmarks, playlists, history, timecodes, settings and revokes all sessions of the profile; sync event `data_cleared` (`scope: all`). 204. |
+
+## Telegram companion
+
+| Method | Path | Auth | Effect |
+|---|---|---|---|
+| GET | `/api/v1/telegram/status` | bearer | `{enabled, linked, bot_username}` |
+| POST | `/api/v1/telegram/link` | bearer | Issues a 6-digit link code: `{code, deep_link, expires_at}`; `503 telegram_disabled` when the bot is off |
+| DELETE | `/api/v1/telegram/link` | bearer | Unlinks every chat of the profile. 204 |
+
+Sync event `open_title` (`{tmdb_id, media_type, device_id, title}`) is delivered to all sockets of the user; only the device whose token prefix equals `device_id` acts. See docs/telegram.md.

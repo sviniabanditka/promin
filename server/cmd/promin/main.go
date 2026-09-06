@@ -24,6 +24,7 @@ import (
 	"github.com/sviniabanditka/promin/server/internal/sources"
 	"github.com/sviniabanditka/promin/server/internal/store"
 	"github.com/sviniabanditka/promin/server/internal/sync"
+	"github.com/sviniabanditka/promin/server/internal/telegram"
 	"github.com/sviniabanditka/promin/server/internal/torrent"
 	"github.com/sviniabanditka/promin/server/internal/weather"
 )
@@ -214,7 +215,14 @@ func main() {
 
 	weatherSvc := weather.NewService(sources.NewStoreCache(db.TMDBCache), logger)
 
-	handler := httpapi.NewServer(version, logger, cfg.DataDir, catalogSvc, sourcesSvc, remuxQueue, torrentMgr, authSvc, syncSvc, cfg.HTTPAddr, logBuf, cfg.LogsPassword, weatherSvc, cfg.WeatherPlace, cfg.H1Host, cfg.MainHost)
+	// Telegram companion bot: long polling, only when the token is set.
+	var tgBot *telegram.Bot
+	if cfg.TelegramBotToken != "" {
+		tgBot = telegram.New(telegram.NewClient(cfg.TelegramAPIBaseURL, cfg.TelegramBotToken), db.Telegram, catalogSvc, hub, logger)
+		go tgBot.Run(ctx)
+	}
+
+	handler := httpapi.NewServer(version, logger, cfg.DataDir, catalogSvc, sourcesSvc, remuxQueue, torrentMgr, authSvc, syncSvc, cfg.HTTPAddr, logBuf, cfg.LogsPassword, weatherSvc, cfg.WeatherPlace, cfg.H1Host, cfg.MainHost, tgBot)
 	srv := &http.Server{
 		Addr:    cfg.HTTPAddr,
 		Handler: handler,

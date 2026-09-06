@@ -35,3 +35,7 @@ func tokenID(token string) string {
 	}
 	return token[:tokenIDLen]
 }
+
+// TokenID is the exported tokenID: the sync hub identifies a connected
+// device by it (docs/api.md devices, open_title.device_id).
+func TokenID(token string) string { return tokenID(token) }

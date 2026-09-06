@@ -10,6 +10,7 @@ import { initI18n, t } from './core/i18n';
 import { toast } from './ui/toast';
 import { mountHome } from './screens/home';
 import { mountPinEntry } from './screens/pin';
+import { openTitle } from './screens/nav';
 import { isLogged, clearLocal } from './core/auth';
 import { setDeadSessionHook, getPing } from './core/api';
 import * as sync from './core/sync';
@@ -161,6 +162,12 @@ function boot(): void {
   screensaver.init();
 
   startUpdateWatch();
+  // "Open on TV" from the Telegram bot lands on the title page.
+  sync.setOpenTitleHandler(function (tmdbID, type, title) {
+    if (!isLogged()) return;
+    openTitle(type, tmdbID);
+    toast({ kind: 'info', icon: '✈', title: t('telegram.opened'), text: title });
+  });
   routeInitial();
 }
 

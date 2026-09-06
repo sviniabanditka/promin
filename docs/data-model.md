@@ -250,3 +250,7 @@ wins".
 | Remux output | `/data/remux/<job>/` | Deleted after `PROMIN_REMUX_JOB_TTL` idle; all wiped on boot |
 | Provider id map | `/data/veoveo.json.gz` | Re-downloaded when older than a week |
 | PIN secret | `/data/pin_secret` (0600) | Never; deleting it invalidates every PIN |
+
+## telegram_links
+
+`telegram_links(chat_id PRIMARY KEY, user_id → users ON DELETE CASCADE, created_at)` — Telegram chats linked to a profile (docs/telegram.md). Link codes themselves are in memory only (10-minute TTL).

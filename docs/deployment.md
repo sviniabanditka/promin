@@ -201,6 +201,7 @@ Never committed. Names and keys only:
 |---|---|---|---|
 | `promin-secrets` | `admin-password` | `PROMIN_ADMIN_PASSWORD` | yes |
 | `promin-secrets` | `tmdb-api-key` | `PROMIN_TMDB_API_KEY` | yes — the binary exits without a TMDB key |
+| `promin-secrets` | `telegram-bot-token` | `PROMIN_TELEGRAM_BOT_TOKEN` | optional — without it the Telegram companion is off |
 | `promin-secrets` | `native-source-base-url` | `PROMIN_NATIVE_SOURCE_BASE_URL` | optional — without it the corresponding provider is off |
 | `lampac-proxy` | `url` | `PROMIN_NATIVE_PROXY_URL` — residential HTTP proxy URL used only for provider catalog pages that block datacenter IPs | optional — without it those providers are off |
 | `promin-logs` | `password` | `PROMIN_LOGS_PASSWORD` | optional — without it `/logs` is disabled |
@@ -247,6 +248,8 @@ default. Durations use Go syntax (`30s`, `24h`).
 | `PROMIN_NATIVE_SOURCES` | `false` | Enable the built-in online-source providers. |
 | _provider-specific `PROMIN_*` variables_ | see the private `server/providers` submodule README | Each source reads its own base URL / token there; not part of the public config package. |
 | `PROMIN_NATIVE_PROXY_URL` | empty | `http://user:pass@host:port` residential proxy for providers that block datacenter IPs; empty disables them. |
+| `PROMIN_TELEGRAM_BOT_TOKEN` | empty (bot off) | Telegram companion bot token; k8s secret `promin-secrets/telegram-bot-token`. See docs/telegram.md |
+| `PROMIN_TELEGRAM_API_BASE_URL` | `https://api.telegram.org` | Telegram API host |
 
 ## 6. CI/CD
 

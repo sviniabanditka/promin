@@ -279,6 +279,12 @@ export function saveTimecode(
 
 // ---- incoming events (WS + polling share this) -------------------------
 
+// Registered by app.ts (sync.ts must not import screens — cycle).
+let openTitleHandler: ((tmdbID: number, type: 'movie' | 'tv', title: string) => void) | null = null;
+export function setOpenTitleHandler(fn: (tmdbID: number, type: 'movie' | 'tv', title: string) => void): void {
+  openTitleHandler = fn;
+}
+
 function applyEvent(ev: SyncEvent): void {
   if (!ev || typeof ev.id !== 'number') return;
   if (ev.id > cursor) cursor = ev.id;
@@ -326,7 +332,14 @@ function applyEvent(ev: SyncEvent): void {
     notify('timecodes');
     persist();
   }
-  else if (ev.type === 'settings_updated') {
+  else if (ev.type === 'open_title') {
+    // Telegram bot → "open on TV": fanned out to every device of the user,
+    // device_id = the first 12 chars of the session token (auth.TokenID).
+    const tok = getToken() || '';
+    if (openTitleHandler && p.device_id && tok.slice(0, 12) === String(p.device_id)) {
+      openTitleHandler(Number(p.tmdb_id), String(p.media_type) === 'tv' ? 'tv' : 'movie', String(p.title || ''));
+    }
+  } else if (ev.type === 'settings_updated') {
     applyRemoteSetting(String(p.key || ''), String(p.value || ''));
   } else if (ev.type === 'data_cleared') {
     // Settings → Danger zone on another device (or this one): drop local copies.

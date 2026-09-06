@@ -102,6 +102,8 @@ All configuration is environment variables. Durations use Go syntax (`30s`, `24h
 | `PROMIN_NATIVE_SOURCES` | `false` | Master switch for native online providers |
 | _provider-specific `PROMIN_*` variables_ | see the private `server/providers` submodule README | Each source reads its own base URL / token there; not part of the public config package. |
 | `PROMIN_NATIVE_PROXY_URL` | empty | HTTP proxy for providers whose catalogs block datacenter IPs (Kinotochka, Eneyida, HDVB pages); from secret `lampac-proxy`. Empty → those providers off |
+| `PROMIN_TELEGRAM_BOT_TOKEN` | empty (bot off) | Telegram companion bot token; k8s secret `promin-secrets/telegram-bot-token`. See docs/telegram.md |
+| `PROMIN_TELEGRAM_API_BASE_URL` | `https://api.telegram.org` | Telegram API host |
 | `PROMIN_WEBDIR` | unset | Dev only (`httpapi/static.go`): serve the UI from this directory instead of the embedded bundle |
 
 Not configurable (constants in code): PIN limiter 5 failures / 15 min per IP and

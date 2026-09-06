@@ -5,6 +5,7 @@
 package sync
 
 import (
+	"sort"
 	"sync"
 	"time"
 )
@@ -31,7 +32,18 @@ const (
 	EventTimecodeUpdated     = "timecode_updated"
 	EventSettingsUpdated     = "settings_updated"
 	EventDataCleared         = "data_cleared" // payload {scope: history|all}
+	// EventOpenTitle asks ONE device to open a title (Telegram bot → TV).
+	// Payload {tmdb_id, media_type, device_id, title}; every socket of the
+	// user receives it and only the device whose id matches acts.
+	EventOpenTitle = "open_title"
 )
+
+// DeviceInfo identifies a connected device: ID is auth.TokenID of its
+// session, Name the session's device_name.
+type DeviceInfo struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
 
 // eventLogTTL is how long a published event stays in a user's in-memory
 // journal for poll-based catch-up (docs/backend.md: "TTL
@@ -52,14 +64,14 @@ type Hub struct {
 	mu     sync.Mutex
 	nextID int64
 	log    map[int64][]Event // userID -> events, newest last
-	subs   map[int64]map[chan Event]struct{}
+	subs   map[int64]map[chan Event]DeviceInfo
 }
 
 // NewHub builds an empty Hub.
 func NewHub() *Hub {
 	return &Hub{
 		log:  map[int64][]Event{},
-		subs: map[int64]map[chan Event]struct{}{},
+		subs: map[int64]map[chan Event]DeviceInfo{},
 	}
 }
 
@@ -139,16 +151,16 @@ func (h *Hub) Cursor(userID int64) int64 {
 }
 
 // Subscribe registers a live listener (a WS connection) for userID's
-// events. The caller must call the returned cancel func when the
-// connection closes.
-func (h *Hub) Subscribe(userID int64) (ch chan Event, cancel func()) {
+// events, tagged with the connecting device so OnlineDevices can list it.
+// The caller must call the returned cancel func when the connection closes.
+func (h *Hub) Subscribe(userID int64, deviceID, deviceName string) (ch chan Event, cancel func()) {
 	ch = make(chan Event, subscriberBuffer)
 
 	h.mu.Lock()
 	if h.subs[userID] == nil {
-		h.subs[userID] = map[chan Event]struct{}{}
+		h.subs[userID] = map[chan Event]DeviceInfo{}
 	}
-	h.subs[userID][ch] = struct{}{}
+	h.subs[userID][ch] = DeviceInfo{ID: deviceID, Name: deviceName}
 	h.mu.Unlock()
 
 	cancel = func() {
@@ -161,4 +173,28 @@ func (h *Hub) Subscribe(userID int64) (ch chan Event, cancel func()) {
 		close(ch)
 	}
 	return ch, cancel
+}
+
+// OnlineDevices lists the devices currently subscribed for userID, one
+// entry per device id (a reconnecting TV may briefly hold two sockets),
+// sorted by name then id so replies are stable.
+func (h *Hub) OnlineDevices(userID int64) []DeviceInfo {
+	h.mu.Lock()
+	seen := map[string]bool{}
+	out := make([]DeviceInfo, 0, len(h.subs[userID]))
+	for _, d := range h.subs[userID] {
+		if d.ID == "" || seen[d.ID] {
+			continue
+		}
+		seen[d.ID] = true
+		out = append(out, d)
+	}
+	h.mu.Unlock()
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
 }

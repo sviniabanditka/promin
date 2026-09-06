@@ -11,7 +11,7 @@ import Controller, { on } from '../core/controller';
 import { Scroll } from '../core/scroll';
 import { t, getLang, Lang } from '../core/i18n';
 import { ScreenInstance } from '../core/activity';
-import { getPing, clearMyHistory, deleteMyData } from '../core/api';
+import { getPing, clearMyHistory, deleteMyData, getTelegramStatus, createTelegramLink, unlinkTelegram, TelegramStatus } from '../core/api';
 import * as router from '../core/router';
 import * as sync from '../core/sync';
 import { isLogged, getUser, logout as authLogout, clearLocal as authClearLocal } from '../core/auth';
@@ -132,6 +132,102 @@ export function mountSettings(container: HTMLElement): ScreenInstance {
     });
   }
 
+  // ---- Telegram companion --------------------------------------------
+
+  let tgStatus: TelegramStatus | null = null;
+  function tgLabel(st: TelegramStatus): string {
+    if (!st.enabled) return t('telegram.disabled_short');
+    return t(st.linked ? 'telegram.linked' : 'telegram.not_linked');
+  }
+  function askUnlinkTelegram(): void {
+    openConfirm(container, {
+      text: t('telegram.unlink_confirm'),
+      yesLabel: t('telegram.unlink'),
+      mode: 'settings_telegram',
+      onYes: function () {
+        Controller.toggle('content');
+        unlinkTelegram().then(
+          function () {
+            tgStatus = null;
+            toast({ kind: 'success', icon: '✓', text: t('telegram.unlinked') });
+            renderList();
+            Controller.toggle('content');
+          },
+          function () {
+            toast({ kind: 'error', title: t('error.load'), text: t('toast.try_again') });
+          }
+        );
+      },
+    });
+  }
+  // Link code sheet: a 6-digit code (also as a t.me deep link) the user sends
+  // to the bot; the sheet polls status and closes itself once linked.
+  function openTelegramLink(): void {
+    const overlay = el('div', 'settings-modal');
+    const box = el('div', 'settings-modal__box tg-box');
+    box.appendChild(el('div', 'settings-modal__title', t('telegram.link_title')));
+    const codeEl = el('div', 'tg-code', '······');
+    const hint = el('div', 'tg-hint', t('telegram.link_hint', { bot: tgStatus && tgStatus.bot_username ? '@' + tgStatus.bot_username : t('telegram.the_bot') }));
+    const link = el('div', 'tg-link', '');
+    box.appendChild(codeEl);
+    box.appendChild(hint);
+    box.appendChild(link);
+    const close = el('div', 'button selector tg-close', t('action.cancel'));
+    box.appendChild(close);
+    overlay.appendChild(box);
+    container.appendChild(overlay);
+    modal = overlay;
+
+    let poll = 0;
+    let dead = false;
+    function stop(): void {
+      dead = true;
+      if (poll) window.clearInterval(poll);
+    }
+    function done(): void {
+      stop();
+      closeModal();
+    }
+    createTelegramLink().then(
+      function (l) {
+        if (dead) return;
+        codeEl.textContent = l.code.slice(0, 3) + ' ' + l.code.slice(3);
+        if (l.deep_link) link.textContent = l.deep_link.replace(/^https?:\/\//, '');
+      },
+      function () {
+        if (dead) return;
+        codeEl.textContent = '—';
+        hint.textContent = t('error.load');
+      }
+    );
+    poll = window.setInterval(function () {
+      getTelegramStatus().then(
+        function (st) {
+          if (dead) return;
+          tgStatus = st;
+          if (st.linked) {
+            toast({ kind: 'success', icon: '✓', title: t('telegram.linked_toast'), text: t('telegram.linked_hint') });
+            done();
+            renderList();
+            Controller.toggle('content');
+          }
+        },
+        function () {}
+      );
+    }, 3000);
+    on(close, 'hover:enter', done);
+    Controller.add('settings_modal', {
+      toggle: function () {
+        Controller.collectionSet(overlay);
+        Controller.collectionFocus(close, overlay);
+      },
+      back: function () {
+        done();
+      },
+    });
+    Controller.toggle('settings_modal');
+  }
+
   // ---- modal (mode 'settings_modal') ---------------------------------
 
   let modal: HTMLElement | null = null;
@@ -237,6 +333,26 @@ export function mountSettings(container: HTMLElement): ScreenInstance {
       addRow('devices.open', '', function () {
         openDevices();
       });
+      const tgVal = addRow('telegram.row', tgStatus ? tgLabel(tgStatus) : '…', function () {
+        if (!tgStatus) return;
+        if (!tgStatus.enabled) {
+          toast({ kind: 'info', text: t('telegram.disabled') });
+          return;
+        }
+        if (tgStatus.linked) askUnlinkTelegram();
+        else openTelegramLink();
+      });
+      if (!tgStatus) {
+        getTelegramStatus().then(
+          function (st) {
+            tgStatus = st;
+            tgVal.textContent = tgLabel(st);
+          },
+          function () {
+            tgVal.textContent = '—';
+          }
+        );
+      }
       addRow('profile.logout', '', function () {
         askLogout();
       });

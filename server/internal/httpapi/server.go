@@ -20,6 +20,7 @@ import (
 	"github.com/sviniabanditka/promin/server/internal/remux"
 	"github.com/sviniabanditka/promin/server/internal/sources"
 	"github.com/sviniabanditka/promin/server/internal/sync"
+	"github.com/sviniabanditka/promin/server/internal/telegram"
 	torrentpkg "github.com/sviniabanditka/promin/server/internal/torrent"
 	"github.com/sviniabanditka/promin/server/internal/weather"
 )
@@ -47,6 +48,7 @@ func NewServer(
 	weatherPlace string,
 	h1Host string,
 	mainHost string,
+	tgBot *telegram.Bot, // nil when PROMIN_TELEGRAM_BOT_TOKEN is unset
 ) http.Handler {
 	mux := http.NewServeMux()
 
@@ -178,6 +180,13 @@ func NewServer(
 	mux.HandleFunc("DELETE /api/v1/me/history", requireAuth(authSvc, meH.clearHistory))
 	mux.HandleFunc("DELETE /api/v1/me/data", requireAuth(authSvc, meH.deleteData))
 	mux.HandleFunc("GET /api/v1/sync/events", requireAuth(authSvc, syncH.events))
+
+	// Telegram companion bot pairing (docs/api.md). Routes exist even when the
+	// bot is off so the client can read enabled:false.
+	tgH := &telegramHandlers{bot: tgBot}
+	mux.HandleFunc("GET /api/v1/telegram/status", requireAuth(authSvc, tgH.status))
+	mux.HandleFunc("POST /api/v1/telegram/link", requireAuth(authSvc, tgH.link))
+	mux.HandleFunc("DELETE /api/v1/telegram/link", requireAuth(authSvc, tgH.unlink))
 
 	ws := &wsHandlers{syncSvc: syncSvc, logger: logger}
 	mux.HandleFunc("GET /api/v1/ws", requireAuthMedia(authSvc, ws.serve))

@@ -111,6 +111,12 @@ type Config struct {
 	// moved native (docs/streaming.md).
 	// (PROMIN_NATIVE_SOURCE_BASE_URL). Deliberately NOT defaulted in code — the
 	// source host lives in deployment config/secrets, never in git.
+
+	// TelegramBotToken enables the Telegram companion bot (search from the
+	// phone, open on a TV). Empty = bot disabled. From the k8s secret, never a
+	// default. TelegramAPIBaseURL overrides the Bot API host (tests / mirrors).
+	TelegramBotToken   string
+	TelegramAPIBaseURL string
 }
 
 // Load reads configuration from environment variables, applying the
@@ -160,6 +166,8 @@ func Load() Config {
 		BackupKeep:             getenvInt("PROMIN_BACKUP_KEEP", 7),
 		NativeSourcesEnable:    getenvBool("PROMIN_NATIVE_SOURCES", false),
 		NativeProxyURL:         getenv("PROMIN_NATIVE_PROXY_URL", ""),
+		TelegramBotToken:       getenv("PROMIN_TELEGRAM_BOT_TOKEN", ""),
+		TelegramAPIBaseURL:     getenv("PROMIN_TELEGRAM_API_BASE_URL", "https://api.telegram.org"),
 	}
 }
 

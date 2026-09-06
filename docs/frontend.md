@@ -157,3 +157,20 @@ menus, subtitles, toasts. `night_mode` (on/off) and `night_dim` (50–90 %, step
 5) are synced settings; the toggle lives in Settings and in the player's "more"
 menu, and a change made on another device is applied live through the
 `settings_updated` sync event (`applyRemoteSetting` in `core/settings.ts`).
+
+## Toasts
+
+`ui/toast.ts` — one card at a time, bottom-centre, reused in place (no flash on
+replace). `toast(text)` or `toast({ title?, text, icon?, kind?, duration? })`
+with kinds `info | success | warning | error | progress` (accent bar/icon colour;
+`progress` adds an indeterminate bar and is meant with `duration: 0` = sticky
+until the next toast). Copy is split into a short title and a one-line hint
+(`*_hint` i18n keys). Also `app.ts` polls `/api/v1/ping` every 10 minutes and
+toasts once when the server version changes.
+
+## Pre-resolve
+
+Opening a title page starts resolving the remembered source for the episode
+"Continue"/"Watch" would start with (`prefetchResolve` in `screens/title.ts`);
+the watch modal's `resolveMemo` reuses that promise when the params match, so
+the first play needs no extra round-trip.

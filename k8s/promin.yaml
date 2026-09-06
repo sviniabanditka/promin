@@ -53,6 +53,10 @@ spec:
             # Онлайн-источники — только нативные провайдеры (docs/sources.md, docs/streaming.md); lampac снесён.
             # Поиск торрентов — публичный JacRed.
             - { name: PROMIN_JACRED_BASE_URL, value: "http://jac.red" }
+            # Telegram-бот (поиск с телефона → открыть на ТВ). Без секрета бот выключен.
+            - name: PROMIN_TELEGRAM_BOT_TOKEN
+              valueFrom:
+                secretKeyRef: { name: promin-secrets, key: telegram-bot-token, optional: true }
             # TMDB v3 key — только из секрета, в коде дефолта нет.
             - name: PROMIN_TMDB_API_KEY
               valueFrom:

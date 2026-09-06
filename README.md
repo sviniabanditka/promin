@@ -24,6 +24,8 @@ browser or phone.
   Chromium ~47 webviews, reduce-motion option.
 - **Accounts** — 6-digit PIN profiles, device management, admin panel, WebSocket
   sync, encrypted off-site backups.
+- **Telegram companion** — search titles from the phone and open them on a TV;
+  night mode with adjustable dimming and a sleep timer for late viewing.
 
 ## Quick start (bare VPS, docker compose)
 
@@ -68,6 +70,7 @@ Production runs on k3s; both paths are described in
 | [torrents](docs/torrents.md) | Search, engine, packs, resume |
 | [auth](docs/auth.md) | PIN profiles, tokens, devices, admin, sync |
 | [deployment](docs/deployment.md) | Compose and k3s, secrets, env vars, CI/CD, backups |
+| [telegram](docs/telegram.md) | Companion bot: search from the phone, open on a TV |
 | [diagnostics](docs/diagnostics.md) | Diagnostics mode, `/api/v1/diag`, verifying a deploy |
 | [backlog](docs/backlog.md) | Open work |
 

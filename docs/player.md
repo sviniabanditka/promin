@@ -145,3 +145,11 @@ Resume deep into such a file adds `start=<pos>`; the server starts ffmpeg with `
 | Space | play/pause |
 | M | mute |
 | ⏯ ▶ ⏸ ⏹ ⏪ ⏩ ⏭ ⏮ | matching transport action; ⏹ exits |
+
+## Sleep timer
+
+In the "more" menu: off / 15 / 30 / 45 / 60 / 90 minutes / after this episode.
+A minute before the deadline the volume fades linearly to zero; at the deadline
+playback pauses, the position is saved, the volume is restored and a toast says
+good night. "After this episode" suppresses the next-episode auto-advance and
+shows the end-of-title countdown instead. Player-local, not persisted.

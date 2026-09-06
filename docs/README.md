@@ -16,6 +16,7 @@ kept here; open work lives in [backlog.md](backlog.md).
 | [torrents.md](torrents.md) | Search (JacRed API), engine, packs and episodes, resume |
 | [auth.md](auth.md) | PIN profiles, tokens, media token, devices, admin, sync |
 | [deployment.md](deployment.md) | docker-compose + Caddy and k3s, secrets, env table, CI/CD, backups, rollback |
+| [telegram.md](telegram.md) | Companion bot: linking, search from the phone, "open on TV", device selection |
 | [diagnostics.md](diagnostics.md) | Diagnostics mode, `/api/v1/diag`, reading logs, verifying a deploy |
 | [backlog.md](backlog.md) | Open work and unplanned ideas |
 

@@ -936,3 +936,24 @@ export function clearMyHistory(): Promise<void> {
 export function deleteMyData(): Promise<void> {
   return del<void>('/me/data');
 }
+
+// ---- Telegram companion bot ----------------------------------------------
+export interface TelegramStatus {
+  enabled: boolean;
+  linked: boolean;
+  bot_username: string;
+}
+export interface TelegramLink {
+  code: string;
+  deep_link: string;
+  expires_at: number;
+}
+export function getTelegramStatus(): Promise<TelegramStatus> {
+  return get<TelegramStatus>('/telegram/status');
+}
+export function createTelegramLink(): Promise<TelegramLink> {
+  return post<TelegramLink>('/telegram/link');
+}
+export function unlinkTelegram(): Promise<void> {
+  return del<void>('/telegram/link');
+}
