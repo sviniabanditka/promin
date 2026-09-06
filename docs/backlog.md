@@ -37,6 +37,10 @@ system itself is described in the other documents.
 
 ## Frontend
 
+- The `history` table and `/api/v1/history` are never written by the TV; watch
+  history everywhere is derived from `timecodes`. Either drop the table and
+  endpoints or start writing "watched" events into it deliberately.
+
 - `api.ts`: abort the underlying request on timeout (sockets stay open).
 - `scroll.ts`: `transitionend` listeners can accumulate → double lazy-append.
 - Catalog: pagination race on fast filter changes (`reqSeq` guard), and a
