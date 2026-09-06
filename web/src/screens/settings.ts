@@ -271,6 +271,7 @@ export function mountSettings(container: HTMLElement): ScreenInstance {
     addRow('settings.night', t(isNightMode() ? 'toggle.on' : 'toggle.off'), function () {
       setNightMode(!isNightMode());
       renderList();
+      Controller.toggle('content'); // re-collect the fresh rows and refocus rowEls[focusIndex]
     });
     addRow('settings.night_dim', getNightDim() + '%', function () {
       const opts: Option[] = [];
