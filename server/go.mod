@@ -5,6 +5,7 @@ go 1.26.8
 require (
 	github.com/anacrolix/torrent v1.61.0
 	github.com/coder/websocket v1.8.15
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	golang.org/x/crypto v0.54.0
 	golang.org/x/net v0.56.0
 	modernc.org/sqlite v1.46.0

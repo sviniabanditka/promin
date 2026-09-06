@@ -166,6 +166,10 @@ export function mountSettings(container: HTMLElement): ScreenInstance {
     const overlay = el('div', 'settings-modal');
     const box = el('div', 'settings-modal__box tg-box');
     box.appendChild(el('div', 'settings-modal__title', t('telegram.link_title')));
+    const qr = document.createElement('img');
+    qr.className = 'tg-qr hide';
+    qr.alt = '';
+    box.appendChild(qr);
     const codeEl = el('div', 'tg-code', '······');
     const hint = el('div', 'tg-hint', t('telegram.link_hint', { bot: tgStatus && tgStatus.bot_username ? '@' + tgStatus.bot_username : t('telegram.the_bot') }));
     const link = el('div', 'tg-link', '');
@@ -193,6 +197,10 @@ export function mountSettings(container: HTMLElement): ScreenInstance {
         if (dead) return;
         codeEl.textContent = l.code.slice(0, 3) + ' ' + l.code.slice(3);
         if (l.deep_link) link.textContent = l.deep_link.replace(/^https?:\/\//, '');
+        if (l.qr) {
+          qr.src = l.qr;
+          qr.classList.remove('hide');
+        }
       },
       function () {
         if (dead) return;

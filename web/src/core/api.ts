@@ -947,6 +947,7 @@ export interface TelegramLink {
   code: string;
   deep_link: string;
   expires_at: number;
+  qr?: string; // data:image/png;base64,… of the deep link
 }
 export function getTelegramStatus(): Promise<TelegramStatus> {
   return get<TelegramStatus>('/telegram/status');

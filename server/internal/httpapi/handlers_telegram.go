@@ -1,7 +1,10 @@
 package httpapi
 
 import (
+	"encoding/base64"
 	"net/http"
+
+	"github.com/skip2/go-qrcode"
 
 	"github.com/sviniabanditka/promin/server/internal/telegram"
 )
@@ -47,7 +50,15 @@ func (h *telegramHandlers) link(w http.ResponseWriter, r *http.Request) {
 	if u := h.bot.Username(); u != "" {
 		deepLink = "https://t.me/" + u + "?start=" + code
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"code": code, "deep_link": deepLink, "expires_at": expires.Unix()})
+	// QR of the deep link for the phone camera: PNG as a data URL, so the TV
+	// webview shows it with a plain <img> (no inline SVG quirks on old engines).
+	qr := ""
+	if deepLink != "" {
+		if png, err := qrcode.Encode(deepLink, qrcode.Medium, 480); err == nil {
+			qr = "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"code": code, "deep_link": deepLink, "expires_at": expires.Unix(), "qr": qr})
 }
 
 // unlink: DELETE /api/v1/telegram/link → 204; drops every chat of the profile.

@@ -3840,8 +3840,19 @@ body.night-mode #night-shade { display: block; }
 
 /* Settings → Telegram link sheet */
 .tg-box { text-align: center; }
+.tg-qr {
+  display: block;
+  width: 26rem;
+  height: 26rem;
+  margin: 1.6rem auto 0;
+  border-radius: 1.2rem;
+  background: #fff;
+  padding: 0.8rem;
+  box-sizing: border-box;
+}
+.tg-qr.hide { display: none; }
 .tg-code {
-  font-size: 7.2rem;
+  font-size: 5.6rem;
   font-weight: 700;
   letter-spacing: 0.6rem;
   line-height: 1.2;
