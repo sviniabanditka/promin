@@ -30,6 +30,7 @@ const (
 	EventHistoryAdded        = "history_added"
 	EventTimecodeUpdated     = "timecode_updated"
 	EventSettingsUpdated     = "settings_updated"
+	EventDataCleared         = "data_cleared" // payload {scope: history|all}
 )
 
 // eventLogTTL is how long a published event stays in a user's in-memory

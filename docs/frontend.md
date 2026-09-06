@@ -147,3 +147,13 @@ Realtime data (`core/sync.ts`): bookmarks and timecodes are cached in `localStor
 ## Diagnostics
 
 `core/diag.ts` is the one channel for "what does this device actually do". When `debug_mode` is on, `report(kind, data)` POSTs `{kind, seq, host, data}` to `POST /api/v1/diag` (fire-and-forget, min 40 ms apart); the server writes it to its log as `msg=diag`. Built-in probes: `boot` with `viewportInfo()` (inner/outer/screen/doc/visual sizes, dpr, root font, touch and PointerEvent support, html classes, UA), `viewport-fix`, every `key` (also shown as a toast), the first input events, `error`/`unhandledrejection`, and the player's `player:*` events (mount, engine, seek, resume, stall, errors).
+
+## Night mode
+
+TV webviews expose no backlight API, so "brightness 0" is imitated: a single
+`#night-shade` div on `<body>` (black, `position: fixed`, `pointer-events: none`,
+top z-index) with `opacity = night_dim / 100`. It covers everything — video,
+menus, subtitles, toasts. `night_mode` (on/off) and `night_dim` (50–90 %, step
+5) are synced settings; the toggle lives in Settings and in the player's "more"
+menu, and a change made on another device is applied live through the
+`settings_updated` sync event (`applyRemoteSetting` in `core/settings.ts`).

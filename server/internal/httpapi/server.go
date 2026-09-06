@@ -172,6 +172,11 @@ func NewServer(
 	mux.HandleFunc("PUT /api/v1/settings/{key}", requireAuth(authSvc, syncH.putSetting))
 
 	mux.HandleFunc("GET /api/v1/sync/bootstrap", requireAuth(authSvc, syncH.bootstrap))
+
+	// Settings → Danger zone (docs/auth.md).
+	meH := &meHandlers{svc: syncSvc, auth: authSvc, logger: logger}
+	mux.HandleFunc("DELETE /api/v1/me/history", requireAuth(authSvc, meH.clearHistory))
+	mux.HandleFunc("DELETE /api/v1/me/data", requireAuth(authSvc, meH.deleteData))
 	mux.HandleFunc("GET /api/v1/sync/events", requireAuth(authSvc, syncH.events))
 
 	ws := &wsHandlers{syncSvc: syncSvc, logger: logger}

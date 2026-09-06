@@ -22,6 +22,7 @@ import {
   SyncEvent,
 } from './api';
 import { getToken, isLogged, onAuthChange } from './auth';
+import { applyRemoteSetting } from './settings';
 
 // ---- cache -------------------------------------------------------------
 
@@ -325,8 +326,20 @@ function applyEvent(ev: SyncEvent): void {
     notify('timecodes');
     persist();
   }
-  // history_added / settings_updated / playlist_* — not surfaced by the
-  // current UI; cursor still advances so we don't re-fetch them.
+  else if (ev.type === 'settings_updated') {
+    applyRemoteSetting(String(p.key || ''), String(p.value || ''));
+  } else if (ev.type === 'data_cleared') {
+    // Settings → Danger zone on another device (or this one): drop local copies.
+    timecodes = {};
+    notify('timecodes');
+    if (p.scope === 'all') {
+      bookmarks = {};
+      notify('bookmarks');
+    }
+    persist();
+  }
+  // history_added / playlist_* — not surfaced by the current UI; cursor still
+  // advances so we don't re-fetch them.
 }
 
 // ---- bootstrap ---------------------------------------------------------

@@ -11,13 +11,28 @@ import Controller, { on } from '../core/controller';
 import { Scroll } from '../core/scroll';
 import { t, getLang, Lang } from '../core/i18n';
 import { ScreenInstance } from '../core/activity';
-import { getPing } from '../core/api';
+import { getPing, clearMyHistory, deleteMyData } from '../core/api';
 import * as router from '../core/router';
 import * as sync from '../core/sync';
-import { isLogged, getUser, logout as authLogout } from '../core/auth';
+import { isLogged, getUser, logout as authLogout, clearLocal as authClearLocal } from '../core/auth';
 import { mountPinEntry } from './pin';
 import { openDevices } from './nav';
-import { getScreensaverMin, setScreensaverMin, getSubSize, setSubSize, SubSize, isReduceMotion, setReduceMotion, isDebugMode, setDebugMode } from '../core/settings';
+import {
+  getScreensaverMin,
+  setScreensaverMin,
+  getSubSize,
+  setSubSize,
+  SubSize,
+  isReduceMotion,
+  setReduceMotion,
+  isDebugMode,
+  setDebugMode,
+  isNightMode,
+  setNightMode,
+  getNightDim,
+  setNightDim,
+  NIGHT_DIM_VALUES,
+} from '../core/settings';
 import { report, viewportInfo } from '../core/diag';
 import { steerHost } from '../core/legacy';
 import { toast } from '../ui/toast';
@@ -253,6 +268,23 @@ export function mountSettings(container: HTMLElement): ScreenInstance {
 
     body.appendChild(el('div', 'settings-section', t('settings.section_playback')));
 
+    addRow('settings.night', t(isNightMode() ? 'toggle.on' : 'toggle.off'), function () {
+      setNightMode(!isNightMode());
+      renderList();
+    });
+    addRow('settings.night_dim', getNightDim() + '%', function () {
+      const opts: Option[] = [];
+      for (let i = 0; i < NIGHT_DIM_VALUES.length; i++) {
+        opts.push({ value: String(NIGHT_DIM_VALUES[i]), label: NIGHT_DIM_VALUES[i] + '%' });
+      }
+      openOptions(t('settings.night_dim'), opts, String(getNightDim()), function (v) {
+        setNightDim(parseInt(v, 10));
+        closeModal();
+        renderList();
+        Controller.toggle('content');
+      });
+    });
+
     addRow('settings.quality', t('quality.' + getDefaultQuality()), function () {
       openOptions(t('settings.quality'), qualityOptions(), getDefaultQuality(), function (v) {
         setDefaultQuality(v as Quality);
@@ -320,6 +352,46 @@ export function mountSettings(container: HTMLElement): ScreenInstance {
     body.appendChild(el('div', 'settings-section', t('settings.about')));
 
     versionValueEl = addRow('settings.version', version || '…', null);
+
+    // Danger zone: destructive, signed-in only, each behind a confirm sheet.
+    if (isLogged()) {
+      body.appendChild(el('div', 'settings-section settings-section--danger', t('settings.danger')));
+      const hist = addRow('settings.clear_history', '', function () {
+        openConfirm(container, {
+          text: t('settings.clear_history_confirm'),
+          yesLabel: t('settings.clear_history_yes'),
+          mode: 'settings_danger',
+          onYes: function () {
+            Controller.toggle('content');
+            clearMyHistory().then(
+              function () {
+                toast(t('settings.clear_history_done'));
+              },
+              function () {
+                toast(t('error.load'));
+              }
+            );
+          },
+        });
+      });
+      hist.parentElement!.classList.add('settings-row--danger');
+      const wipe = addRow('settings.delete_data', '', function () {
+        openConfirm(container, {
+          text: t('settings.delete_data_confirm'),
+          yesLabel: t('settings.delete_data_yes'),
+          mode: 'settings_danger',
+          onYes: function () {
+            sync.stop();
+            const gate = function () {
+              authClearLocal();
+              router.replaceRoot(mountPinEntry);
+            };
+            deleteMyData().then(gate, gate);
+          },
+        });
+      });
+      wipe.parentElement!.classList.add('settings-row--danger');
+    }
 
     Controller.add('content', contentController);
   }

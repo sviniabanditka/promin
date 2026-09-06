@@ -108,6 +108,11 @@ func (s *Service) newSession(user store.User, deviceName, deviceType string) (st
 	return token, nil
 }
 
+// RevokeAll signs the user out of every device (Danger zone → delete all data).
+func (s *Service) RevokeAll(userID int64) error {
+	return s.sessions.DeleteByUser(userID)
+}
+
 // Logout revokes token (POST /api/v1/auth/logout).
 func (s *Service) Logout(token string) error {
 	return s.sessions.Delete(token)

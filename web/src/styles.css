@@ -3738,3 +3738,25 @@ html.is-phone, html.is-phone body { touch-action: pan-x pan-y; }
   bottom: auto;
   top: 62rem;
 }
+
+
+/* ================================================================ */
+/* Night mode: one black shade over everything (video, menus, toasts). */
+/* Opacity is set inline from the night_dim setting (settings.ts).      */
+/* ================================================================ */
+#night-shade {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #000;
+  pointer-events: none;
+  z-index: 100000;
+}
+body.night-mode #night-shade { display: block; }
+
+/* Settings → Danger zone */
+.settings-section--danger { color: #e5484d; }
+.settings-row--danger .settings-row__label { color: #e5484d; }

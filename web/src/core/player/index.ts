@@ -46,7 +46,7 @@ import { toast } from '../../ui/toast';
 import { el, empty, pad2 } from '../../ui/dom';
 import { ScreenInstance } from '../activity';
 import { preferNativeHls, canDecodeHevc } from '../capabilities';
-import { getDefaultQuality, getPlayerEngine, getPlayerSpeed, setPlayerSpeed, getSubSize, setSubSize, SubSize } from '../settings';
+import { getDefaultQuality, getPlayerEngine, getPlayerSpeed, setPlayerSpeed, getSubSize, setSubSize, SubSize, isNightMode, setNightMode } from '../settings';
 import { isResumable } from '../progress';
 import { report as diag } from '../diag';
 import { ensureHls, HlsInstance, HlsCtor } from './hls';
@@ -1027,6 +1027,14 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       sub: t('subsize.' + getSubSize()),
       active: false,
       onSelect: openSubSizeMenu,
+    });
+    opts.push({
+      label: t('settings.night'),
+      sub: t(isNightMode() ? 'toggle.on' : 'toggle.off'),
+      active: false,
+      onSelect: function () {
+        setNightMode(!isNightMode());
+      },
     });
     openMenu(t('player.more'), opts);
   }

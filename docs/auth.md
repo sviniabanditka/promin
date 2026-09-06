@@ -192,3 +192,17 @@ repaints screens on remote events.
 Device-local flags describe *this* TV's hardware, so another device must not
 inherit them; they can also be preset through URL flags `?legacy=1` /
 `?debug=1` for a device whose PIN screen cannot be operated yet.
+
+## Danger zone
+
+Settings → Danger zone (signed-in only), each action behind a confirm sheet:
+
+- **Clear watch history** — `DELETE /api/v1/me/history`: history rows and resume
+  positions of this profile. Bookmarks, playlists and settings stay. Other
+  devices receive the sync event `data_cleared{scope:"history"}` and drop their
+  local copies.
+- **Delete all data** — `DELETE /api/v1/me/data`: bookmarks, playlists, history,
+  resume positions and synced settings of this profile, then **every session of
+  the profile is revoked**. The profile row and its PIN survive; all devices,
+  including the one that pressed the button, land on the PIN screen. Event
+  `data_cleared{scope:"all"}`.

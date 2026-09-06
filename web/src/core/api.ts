@@ -926,3 +926,13 @@ export interface PingResponse {
 export function getPing(): Promise<PingResponse> {
   return get<PingResponse>('/ping');
 }
+
+// ---- Settings → Danger zone ----------------------------------------------
+export function clearMyHistory(): Promise<void> {
+  return del<void>('/me/history');
+}
+// Wipes bookmarks/playlists/history/timecodes/settings and revokes EVERY
+// session — the caller must drop the local session and show the PIN gate.
+export function deleteMyData(): Promise<void> {
+  return del<void>('/me/data');
+}

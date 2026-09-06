@@ -384,3 +384,31 @@ func (s *Service) PollEvents(userID, since int64) (events []Event, cursor int64,
 	}
 	return evs, cursor, false
 }
+
+// ClearHistory wipes watch history and resume positions (Settings → Danger
+// zone → clear history). Other devices get EventDataCleared{scope:"history"}.
+func (s *Service) ClearHistory(userID int64) error {
+	if err := s.history.ClearUser(userID); err != nil {
+		return err
+	}
+	if err := s.timecodes.ClearUser(userID); err != nil {
+		return err
+	}
+	s.hub.Publish(userID, EventDataCleared, map[string]string{"scope": "history"})
+	return nil
+}
+
+// ClearAll wipes everything the profile owns except the profile itself:
+// bookmarks, playlists, history, resume positions, synced settings. The caller
+// (httpapi) then revokes every session so all devices fall back to the PIN gate.
+func (s *Service) ClearAll(userID int64) error {
+	for _, f := range []func(int64) error{
+		s.bookmarks.ClearUser, s.playlists.ClearUser, s.history.ClearUser, s.timecodes.ClearUser, s.settings.ClearUser,
+	} {
+		if err := f(userID); err != nil {
+			return err
+		}
+	}
+	s.hub.Publish(userID, EventDataCleared, map[string]string{"scope": "all"})
+	return nil
+}

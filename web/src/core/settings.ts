@@ -47,6 +47,11 @@ interface Store {
   screensaver_min: number;
   // Subtitle text size in the player's own cue renderer.
   subtitle_size: SubSize;
+  // Night mode: a black shade over the WHOLE app (video, menus, subtitles) —
+  // TV webviews expose no backlight API, so this imitates "brightness 0".
+  // Synced: it's the user's habit, not the device's quirk.
+  night_mode: boolean;
+  night_dim: number; // shade opacity in %, 50..90 step 5
 }
 
 // Diagnostics is opt-in (Settings → diagnostics mode, or ?debug=1 in the URL).
@@ -60,6 +65,8 @@ const store: Store = {
   debug_mode: DEBUG_DEFAULT,
   player_speed: 1,
   screensaver_min: 5,
+  night_mode: false,
+  night_dim: 85,
   subtitle_size: 'medium',
 };
 
@@ -110,6 +117,8 @@ function readLocal(): void {
     if (isSpeed(data.player_speed)) store.player_speed = data.player_speed as number;
     if (isScreensaverMin(data.screensaver_min)) store.screensaver_min = data.screensaver_min as number;
     if (isSubSize(data.subtitle_size)) store.subtitle_size = data.subtitle_size;
+    store.night_mode = !!data.night_mode;
+    if (isNightDim(data.night_dim)) store.night_dim = data.night_dim as number;
   } catch (e) {
     /* ignore corrupt cache */
   }
@@ -169,6 +178,76 @@ export function initSettings(): void {
   persist();
   applyLegacy();
   applyReduceMotion();
+  applyNight();
+}
+
+// ---- night mode ---------------------------------------------------------
+
+export function isNightDim(v: unknown): boolean {
+  return typeof v === 'number' && v >= 50 && v <= 90 && v % 5 === 0;
+}
+export const NIGHT_DIM_VALUES: number[] = [50, 55, 60, 65, 70, 75, 80, 85, 90];
+
+// One fixed div on <body> (created lazily), opacity = night_dim%. A plain
+// element rather than a filter on <video>: the old Tizen GPU handles a
+// composited black quad fine, a brightness filter on a video not so much.
+function applyNight(): void {
+  try {
+    const body = document.body;
+    if (!body) return;
+    let shade = document.getElementById('night-shade');
+    if (!shade) {
+      shade = document.createElement('div');
+      shade.id = 'night-shade';
+      body.appendChild(shade);
+    }
+    shade.style.opacity = String(store.night_dim / 100);
+    setBodyClass('night-mode', store.night_mode);
+  } catch (e) {
+    /* ignore */
+  }
+}
+export function isNightMode(): boolean {
+  return store.night_mode;
+}
+export function setNightMode(on: boolean): void {
+  store.night_mode = on;
+  persist();
+  applyNight();
+  pushSetting('night_mode', on ? 'true' : 'false');
+}
+export function getNightDim(): number {
+  return store.night_dim;
+}
+export function setNightDim(v: number): void {
+  if (!isNightDim(v)) return;
+  store.night_dim = v;
+  persist();
+  applyNight();
+  pushSetting('night_dim', String(v));
+}
+
+// A synced setting changed on another device (sync event settings_updated):
+// mirror the ones that must take effect immediately.
+export function applyRemoteSetting(key: string, value: string): void {
+  if (key === 'night_mode') {
+    store.night_mode = value === 'true';
+    persist();
+    applyNight();
+  } else if (key === 'night_dim') {
+    const nd = parseInt(value, 10);
+    if (isNightDim(nd)) {
+      store.night_dim = nd;
+      persist();
+      applyNight();
+    }
+  } else if (key === 'player_speed') {
+    const sp = parseFloat(value);
+    if (isSpeed(sp)) {
+      store.player_speed = sp;
+      persist();
+    }
+  }
 }
 
 // ---- reads (synchronous) -----------------------------------------------
@@ -293,8 +372,14 @@ export function syncFromServer(onLangChanged?: () => void): void {
         if (isScreensaverMin(sv)) store.screensaver_min = sv;
       }
       if (isSubSize(s.subtitle_size)) store.subtitle_size = s.subtitle_size;
+      if (typeof s.night_mode === 'string') store.night_mode = s.night_mode === 'true';
+      if (typeof s.night_dim === 'string') {
+        const nd = parseInt(s.night_dim, 10);
+        if (isNightDim(nd)) store.night_dim = nd;
+      }
       persist();
       applyLegacy();
+      applyNight();
 
       if (isLang(s.lang) && s.lang !== getLang()) {
         setLang(s.lang);

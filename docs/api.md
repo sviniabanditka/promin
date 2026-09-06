@@ -195,3 +195,10 @@ Event `type` values: `bookmark_added`, `bookmark_removed` (payload: bookmark),
 | GET | `/logs` | basic | — | HTML viewer |
 | GET | `/logs/api/history` | basic | `limit?=1000` (≤ 5000), `level?`, `q?` | `{records: [...]}` from the in-memory ring buffer |
 | GET | `/logs/api/stream` | basic | `level?`, `q?` | `text/event-stream` of new records, keepalive every 20 s |
+
+## Profile data (Danger zone)
+
+| Method | Path | Auth | Effect |
+|---|---|---|---|
+| DELETE | `/api/v1/me/history` | bearer | Deletes the profile's history and timecodes; sync event `data_cleared` (`scope: history`). 204. |
+| DELETE | `/api/v1/me/data` | bearer | Deletes bookmarks, playlists, history, timecodes, settings and revokes all sessions of the profile; sync event `data_cleared` (`scope: all`). 204. |
