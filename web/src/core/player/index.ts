@@ -49,6 +49,7 @@ import { preferNativeHls, canDecodeHevc } from '../capabilities';
 import { getDefaultQuality, getPlayerEngine, getPlayerSpeed, setPlayerSpeed, getSubSize, setSubSize, SubSize, isNightMode, setNightMode } from '../settings';
 import { isResumable } from '../progress';
 import { report as diag } from '../diag';
+import { setRemoteHandler, RemoteAction } from './remote';
 import { ensureHls, HlsInstance, HlsCtor } from './hls';
 import { Stream, Subtitle, Voice, mediaUrl } from '../api';
 
@@ -2707,6 +2708,11 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       video.volume = Math.max(0, sleepVolume * (left / SLEEP_FADE_MS));
     }
   }
+  function setSleepMinutes(m: number): void {
+    clearSleep();
+    if (m > 0) sleepAt = Date.now() + m * 60000;
+    toast({ kind: 'info', icon: '🌙', title: t('player.sleep'), text: m > 0 ? t('player.sleep_min', { n: String(m) }) : t('toggle.off') });
+  }
   function openSleepMenu(): void {
     const opts: MenuOption[] = [];
     const mins = [15, 30, 45, 60, 90];
@@ -3127,6 +3133,32 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   });
 
   // ---- boot ----
+  // Telegram remote (core/player/remote.ts): the phone acts as a second remote.
+  setRemoteHandler(function (action: RemoteAction, value: number): boolean {
+    if (destroyed) return false;
+    switch (action) {
+      case 'toggle_play':
+        togglePlay();
+        break;
+      case 'seek':
+        seekClamped(absTime() + (value || 0));
+        showPanel();
+        break;
+      case 'prev':
+        return goPrev();
+      case 'next':
+        return goNext();
+      case 'mute':
+        toggleMute();
+        break;
+      case 'sleep':
+        setSleepMinutes(value || 30);
+        break;
+      default:
+        return false;
+    }
+    return true;
+  });
   progressTimer = window.setInterval(emitProgress, 10000);
   updateClock();
   clockTimer = window.setInterval(updateClock, 15000);
@@ -3158,6 +3190,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     destroy: function () {
       flushTimecode(); // replaceRoot / eviction paths never went through exitToSources
       destroyed = true;
+      setRemoteHandler(null);
       window.removeEventListener('keydown', onExtraKey);
       root.removeEventListener('mousemove', onMouseMoveReveal);
       video.removeEventListener('click', onVideoClick);

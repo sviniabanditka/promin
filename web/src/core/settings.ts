@@ -229,8 +229,18 @@ export function setNightDim(v: number): void {
 
 // A synced setting changed on another device (sync event settings_updated):
 // mirror the ones that must take effect immediately.
+let langChangedHook: (() => void) | null = null;
+export function setLangChangedHook(fn: () => void): void {
+  langChangedHook = fn;
+}
+
 export function applyRemoteSetting(key: string, value: string): void {
-  if (key === 'night_mode') {
+  if (key === 'lang') {
+    if (isLang(value) && value !== getLang()) {
+      setLang(value);
+      if (langChangedHook) langChangedHook();
+    }
+  } else if (key === 'night_mode') {
     store.night_mode = value === 'true';
     persist();
     applyNight();

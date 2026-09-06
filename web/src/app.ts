@@ -11,11 +11,12 @@ import { toast } from './ui/toast';
 import { mountHome } from './screens/home';
 import { mountPinEntry } from './screens/pin';
 import { openTitle } from './screens/nav';
+import { dispatchRemote, RemoteAction } from './core/player/remote';
 import { isLogged, clearLocal } from './core/auth';
 import { setDeadSessionHook, getPing } from './core/api';
 import * as sync from './core/sync';
 import * as screensaver from './core/screensaver';
-import { initSettings, syncFromServer } from './core/settings';
+import { initSettings, syncFromServer, setNightMode, isNightMode, setLangChangedHook } from './core/settings';
 import { steerHost } from './core/legacy';
 import { installGlobalHooks, report, viewportInfo } from './core/diag';
 
@@ -163,10 +164,25 @@ function boot(): void {
 
   startUpdateWatch();
   // "Open on TV" from the Telegram bot lands on the title page.
-  sync.setOpenTitleHandler(function (tmdbID, type, title) {
+  sync.setOpenTitleHandler(function (tmdbID, type, title, resume) {
     if (!isLogged()) return;
-    openTitle(type, tmdbID);
+    openTitle(type, tmdbID, resume);
     toast({ kind: 'info', icon: '✈', title: t('telegram.opened'), text: title });
+  });
+  // Remote-control presses from the bot: the player consumes playback actions;
+  // night mode is global and works from any screen.
+  sync.setRemoteEventHandler(function (action, value) {
+    if (action === 'night') {
+      setNightMode(!isNightMode());
+      return;
+    }
+    if (!dispatchRemote(action as RemoteAction, value)) {
+      toast({ kind: 'info', icon: '🎛', text: t('telegram.remote_no_player') });
+    }
+  });
+  // Language switched from the bot or another device: repaint the app.
+  setLangChangedHook(function () {
+    if (isLogged()) router.replaceRoot(mountHome);
   });
   routeInitial();
 }
