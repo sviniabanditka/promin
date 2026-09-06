@@ -62,7 +62,9 @@ curl -fsSL https://raw.githubusercontent.com/sviniabanditka/promin/main/install.
    API key and an optional admin password, and writes `.env` (mode 600). An
    existing `.env` is never rewritten.
 4. `docker compose pull` (falls back to `docker compose build` when the image
-   cannot be pulled) and `docker compose up -d`.
+   cannot be pulled) and `docker compose up -d`. The `ghcr.io` package is
+   private on purpose — the image built by CI has the private providers
+   compiled in — so a public install always takes the build path (5–8 min).
 5. Prints the two URLs to enter in Media Station X: `https://<domain>` and
    `https://<domain>:8443` for old Samsung Tizen.
 
