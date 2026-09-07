@@ -14,8 +14,10 @@ import "net/http"
 // TestOnboardingI18n checks the HTML keys against the dictionary). Language:
 // ?lang= → localStorage → navigator.language → uk; the switcher is in the hero.
 //
-// Screenshot slots are marked `.shot` figures with a data-shot key; drop an
-// <img> inside each later (search the key to find where each screenshot goes).
+// Screenshot slots are marked `.shot` figures with a data-shot key. A filled
+// slot holds an <img src="/shot-<key>.webp?v=N"> (file in web/assets/, copied
+// to the bundle root by the web build) with data-t-alt for its alt text; an
+// empty one still shows the dashed `.box` placeholder.
 func onboardingPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(onboardingHTML))
@@ -271,7 +273,7 @@ const onboardingHTML = `<!doctype html>
       </ol>
       <div class="note"><span class="i">💡</span><span data-t="s2_note"></span></div>
       <figure class="shot" data-shot="msx-setup">
-          <div class="box" data-t="s2_shot"></div>
+          <img src="/shot-msx-setup.webp?v=1" width="1440" height="856" loading="lazy" alt="" data-t-alt="s2_shot">
           <figcaption data-t="s2_cap"></figcaption>
         </figure>
     </div>
@@ -590,6 +592,7 @@ const onboardingHTML = `<!doctype html>
     document.documentElement.lang = lang;
     document.title = tr('title');
     document.querySelectorAll('[data-t]').forEach(function (el) { el.innerHTML = tr(el.getAttribute('data-t')); });
+    document.querySelectorAll('[data-t-alt]').forEach(function (el) { el.alt = tr(el.getAttribute('data-t-alt')).replace(/<[^>]*>/g, ''); });
     document.querySelectorAll('#lang button').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-lang') === lang); });
     try { localStorage.setItem('promin_lang', lang); } catch (e) {}
   }

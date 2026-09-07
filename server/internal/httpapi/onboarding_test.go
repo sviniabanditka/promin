@@ -11,7 +11,7 @@ import (
 // [uk, ru, en] triple, and no entry may be dead.
 func TestOnboardingI18n(t *testing.T) {
 	keys := map[string]bool{}
-	for _, m := range regexp.MustCompile(`data-t="([a-z0-9_]+)"`).FindAllStringSubmatch(onboardingHTML, -1) {
+	for _, m := range regexp.MustCompile(`data-t(?:-alt)?="([a-z0-9_]+)"`).FindAllStringSubmatch(onboardingHTML, -1) {
 		keys[m[1]] = true
 	}
 	keys["title"], keys["copied"] = true, true // set from JS, not markup
