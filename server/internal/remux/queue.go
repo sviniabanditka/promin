@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -105,11 +106,10 @@ func NewQueue(cfg Config) (*Queue, error) {
 	return q, nil
 }
 
-// Submit finds an existing job for (kind, source, audioIndex) or creates
-// and starts a new one. Per docs/backend.md: "повторный
-// запрос отдаёт уже существующий job" (dedup by source+kind, extended
-// here with audioIndex since switching tracks is a new job per
-// docs/streaming.md).
+// Submit finds an existing job for (kind, source, audioIndex, start) — exact
+// dedup key, or any live job of the same track whose muxed range covers start
+// (see coveringLocked) — or creates and starts a new one. Per docs/backend.md:
+// "повторный запрос отдаёт уже существующий job".
 func (q *Queue) Submit(kind Kind, source string, audioIndex int) (*Job, error) {
 	return q.submit(kind, source, audioIndex, false, nil, 0)
 }
@@ -164,6 +164,22 @@ func (q *Queue) submit(kind Kind, source string, audioIndex int, hdr bool, audio
 			}
 		}
 	}
+	// Same track, different offset: a live job whose muxed range already covers
+	// startSec serves it as-is (the client reads X-Remux-Start / the redirect's
+	// start= and seeks inside). An audio switch back, or a seek back before the
+	// current job's start, is then instant instead of another ffmpeg.
+	if j := q.coveringLocked(kind, source, audioIndex, startSec); j != nil {
+		q.mu.Unlock()
+		j.Touch()
+		return j, nil
+	}
+	// Per-source cap on ffmpeg processes: the source URL carries the viewer's
+	// token, so its siblings are this viewer's own earlier jobs (audio switch /
+	// far seek) that the player has already stopped reading. Evict the least
+	// recently accessed ones instead of letting them run the whole file out.
+	// Transcode is capped at 1 because MaxTranscodes is 1 in prod — a second
+	// job would just queue behind the abandoned one forever.
+	victims := q.overCapLocked(kind, source)
 
 	id := newJobID()
 	outputDir := filepath.Join(q.cfg.DataDir, "remux", id)
@@ -172,6 +188,11 @@ func (q *Queue) submit(kind Kind, source string, audioIndex int, hdr bool, audio
 	q.dedup[key] = id
 	q.mu.Unlock()
 
+	for _, v := range victims {
+		q.cfg.Logger.Info("remux: evicting sibling job over per-source cap", "job_id", v.ID, "kind", v.Kind, "start", v.StartSec)
+		go q.destroy(v)
+	}
+
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		job.setFailed(err)
 		return job, fmt.Errorf("remux: create job dir: %w", err)
@@ -179,6 +200,70 @@ func (q *Queue) submit(kind Kind, source string, audioIndex int, hdr bool, audio
 
 	go q.run(job)
 	return job, nil
+}
+
+// coverMarginSec keeps a reused job's edge comfortably past the requested
+// offset so the player lands inside published segments, not on the last one.
+const coverMarginSec = 10
+
+// coveringLocked finds a non-failed job for (kind, source, audio) whose output
+// already covers startSec: a finished job covers everything past its StartSec,
+// a running one up to StartSec+MuxedSec()-margin. Caller holds q.mu.
+func (q *Queue) coveringLocked(kind Kind, source string, audioIndex int, startSec float64) *Job {
+	for _, j := range q.jobs {
+		if j.Kind != kind || j.Source != source || j.AudioIndex != audioIndex || j.StartSec > startSec {
+			continue
+		}
+		switch j.State() {
+		case StateReady:
+			return j
+		case StateRunning:
+			if startSec-j.StartSec+coverMarginSec <= j.MuxedSec() {
+				return j
+			}
+		}
+	}
+	return nil
+}
+
+// perSourceCap is how many queued/running ffmpeg processes one (kind, source)
+// may hold. Copy keeps the previous job alive so a quick switch back reuses it;
+// transcode can't afford two (~2-3 cores each, MaxTranscodes=1).
+func perSourceCap(kind Kind) int {
+	if kind == KindTranscodeHEVC {
+		return 1
+	}
+	return 2
+}
+
+// overCapLocked removes from the queue the least recently accessed live jobs of
+// (kind, source) so that one more fits under perSourceCap, and returns them for
+// the caller to destroy outside the lock. Caller holds q.mu.
+func (q *Queue) overCapLocked(kind Kind, source string) []*Job {
+	var live []*Job
+	for _, j := range q.jobs {
+		if j.Kind != kind || j.Source != source {
+			continue
+		}
+		if s := j.State(); s == StateQueued || s == StateRunning {
+			live = append(live, j)
+		}
+	}
+	excess := len(live) - perSourceCap(kind) + 1
+	if excess <= 0 {
+		return nil
+	}
+	sort.Slice(live, func(a, b int) bool { return live[a].idleSince().Before(live[b].idleSince()) })
+	victims := live[:excess]
+	for _, v := range victims {
+		delete(q.jobs, v.ID)
+	}
+	for key, id := range q.dedup {
+		if _, ok := q.jobs[id]; !ok {
+			delete(q.dedup, key)
+		}
+	}
+	return victims
 }
 
 // TranscodeQueueDepth counts transcode jobs still waiting for a slot (state
@@ -212,6 +297,7 @@ func (q *Queue) Get(id string) (*Job, bool) {
 // goroutine). Concurrency is bounded by copySem, per
 // PROMIN_REMUX_MAX_TRANSCODES's copy-side counterpart (MaxCopyJobs).
 func (q *Queue) run(job *Job) {
+	defer close(job.done)
 	// Transcode is CPU-heavy and gets its own semaphore; copy jobs share the
 	// cheap one. Never let a transcode consume a copy slot or vice versa.
 	sem := q.copySem
@@ -289,10 +375,13 @@ func (q *Queue) run(job *Job) {
 	<-stderrDone // drain stderr fully before Wait() closes the pipe (keeps the error tail)
 
 	if err := cmd.Wait(); err != nil {
-		// Cancellation (job killed by cleanup/shutdown) isn't a real
-		// failure worth surfacing as an error state past the fact it's
-		// already being torn down.
+		// Cancellation (job killed by cleanup/eviction/shutdown) isn't a real
+		// failure worth logging as one, but the state must still leave
+		// running: pinUntilDone (httpapi) polls State() to release its torrent
+		// reader, and a stopped job that stayed "running" pinned the torrent
+		// forever.
 		if ctx.Err() != nil {
+			job.setFailed(context.Canceled)
 			q.cfg.Logger.Info("remux: job stopped", "job_id", job.ID)
 			return
 		}
@@ -342,10 +431,21 @@ func (q *Queue) sweep() {
 
 	for _, j := range expired {
 		q.cfg.Logger.Info("remux: job TTL expired, cleaning up", "job_id", j.ID, "kind", j.Kind)
-		stopJob(j)
-		if err := os.RemoveAll(j.OutputDir); err != nil {
-			q.cfg.Logger.Warn("remux: failed removing job dir", "job_id", j.ID, "error", err)
-		}
+		go q.destroy(j)
+	}
+}
+
+// destroy kills a job already removed from the maps and deletes its output —
+// after ffmpeg has actually exited (bounded wait), so a segment it was still
+// writing doesn't resurrect the directory.
+func (q *Queue) destroy(j *Job) {
+	stopJob(j)
+	select {
+	case <-j.done:
+	case <-time.After(10 * time.Second):
+	}
+	if err := os.RemoveAll(j.OutputDir); err != nil {
+		q.cfg.Logger.Warn("remux: failed removing job dir", "job_id", j.ID, "error", err)
 	}
 }
 

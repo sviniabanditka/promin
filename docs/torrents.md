@@ -105,19 +105,28 @@ The client builds the URL in `streamUrl()` from device capabilities
 | (none) | progressive: `http.ServeContent` over the torrent reader, full `Range` support, `Content-Type` by extension (`.mkv` → `video/x-matroska`) |
 | `mkv=false` | for an `.mkv` file: submit a `copy_mkv` remux job (container → HLS, no re-encode) and `302` to its playlist |
 | `transcode=1` (+ `hdr=1`) | submit an HEVC/AV1 → H264 transcode (`hdr=1` adds tone-mapping) and `302` to its playlist. The decision is client-side, from the release name (`torrentPlay.ts`: `hevc|h265|x265|av1|2160p|4k`), so no ffprobe runs on a cold torrent |
-| `audio=N` | which source audio track the remux/transcode muxes (`-map 0:a:N`, default 0). Switching tracks re-requests `/stream` with another index; the client does not rely on HLS alternate-audio renditions |
-| `start=N` | seconds; the ffmpeg job starts at that offset (`-ss`) so a resume deep into the file plays immediately. Ignored on the progressive path (Range covers it) |
+| `audio=N` | which source audio track the remux/transcode muxes (`-map 0:a:N`, default 0). Switching tracks re-requests `/stream` with another index **and** `start=<current position>`, so the new track's job begins where the viewer is; the client does not rely on HLS alternate-audio renditions |
+| `start=N` | seconds; the ffmpeg job starts at that offset (`-ss`) so a resume, an audio switch or a far seek plays from there at once. The queue may instead return an existing job of the same track that already covers `N` (`docs/streaming.md` §2); the job's real start is in the redirect URL (`start=`) and in `X-Remux-Start`. Ignored on the progressive path (Range covers it) |
 
 Remux and transcode jobs read the file through Promin's own loopback
 `/stream/...?t=<caller's token>` (`selfStreamURL`), so ffmpeg gets valid bytes
-through the anacrolix reader instead of a sparse on-disk `.part`. While the job
-is queued or running, `pinUntilDone` holds a reader open so the torrent cannot be
-idle-dropped or evicted. The redirect target is
-`/remux/<job>/playlist.m3u8?hls=1&t=<token>`; `?hls=1` makes a not-ready
-playlist come back as a valid empty live m3u8 instead of a 202 JSON body.
+through the anacrolix reader instead of a sparse on-disk `.part`; a job muxing
+from an offset simply issues `Range` reads there and the reader prioritises
+those pieces. While the job is queued or running, `pinUntilDone` holds a reader
+open so the torrent cannot be idle-dropped or evicted; a job killed by the
+queue (eviction/TTL) ends in state `failed`, which releases that pin. The
+redirect target is `/remux/<job>/playlist.m3u8?hls=1[&start=<job start>]&t=<token>`;
+`?hls=1` makes a not-ready playlist come back as a valid empty live m3u8
+instead of a 202 JSON body.
 
-A playlist muxed from an offset exposes `X-Remux-Start: N` and
-`X-Remux-Duration`; the player treats playlist time 0 as source time N.
+Because the token is part of the job's source URL, one viewer's jobs on a file
+never mix with another's. Per viewer and file the queue keeps at most 2 copy
+jobs (1 transcode) running — an audio switch or far seek evicts the least
+recently used older job (`docs/streaming.md` §2).
+
+A playlist muxed from an offset exposes `X-Remux-Start: <job start>` (also on
+the not-ready empty playlist) and `X-Remux-Duration`; the player treats
+playlist time 0 as that source time.
 
 ### Packs and episodes
 
@@ -132,7 +141,8 @@ episode.
 
 Positions are synced timecodes (see `docs/auth.md` §5). On resume the player
 either seeks (progressive) or re-requests the HLS stream with `start=<pos>`
-(remux/transcode), then treats the new playlist as starting at that position.
+(remux/transcode), then treats the new playlist as starting at the offset the
+response reports.
 
 ### What is remembered per title
 

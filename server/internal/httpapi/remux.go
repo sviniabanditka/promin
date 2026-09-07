@@ -157,6 +157,12 @@ func (h *remuxHandlers) servePlaylist(w http.ResponseWriter, job *remux.Job, fil
 		if hlsWait || strings.HasPrefix(file, "stream-") {
 			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 			w.Header().Set("Cache-Control", "no-cache")
+			// The player fetches this URL once before handing it to the engine and
+			// reads the offset/total from it — expose them even before the first
+			// segment exists (duration is parsed from ffmpeg's banner early).
+			if file == remux.PlaylistFile {
+				setRemuxHeaders(w, job)
+			}
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(notReadyPlaylist))
 			return
@@ -179,36 +185,10 @@ func (h *remuxHandlers) servePlaylist(w http.ResponseWriter, job *remux.Job, fil
 
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	w.Header().Set("Cache-Control", "no-cache")
-	// X-Remux-Duration/Audio only apply to the single-playlist (online copy_hls)
-	// path — the client reads them via prepareStream's JSON poll. Multi-audio HLS
-	// carries the tracks in its master.m3u8 (hls.js switches natively), so the
-	// headers are irrelevant there.
+	// X-Remux-Duration/Start/Audio only apply to the single-playlist path — the
+	// client reads them from its own fetch of the playlist (prepareStream).
 	if file == remux.PlaylistFile {
-		expose := ""
-		add := func(h string) {
-			if expose != "" {
-				expose += ", "
-			}
-			expose += h
-		}
-		if d := job.DurationSec(); d > 0 {
-			w.Header().Set("X-Remux-Duration", strconv.FormatFloat(d, 'f', 3, 64))
-			add("X-Remux-Duration")
-		}
-		// Muxed from an offset: playlist time 0 == StartSec of the source.
-		if job.StartSec > 0 {
-			w.Header().Set("X-Remux-Start", strconv.FormatFloat(job.StartSec, 'f', 0, 64))
-			add("X-Remux-Start")
-		}
-		if tracks := job.AudioTracks(); len(tracks) > 1 {
-			if b, err := json.Marshal(tracks); err == nil {
-				w.Header().Set("X-Remux-Audio", string(b))
-				add("X-Remux-Audio")
-			}
-		}
-		if expose != "" {
-			w.Header().Set("Access-Control-Expose-Headers", expose)
-		}
+		setRemuxHeaders(w, job)
 	}
 	// Child URIs (seg-*.ts, stream-*.m3u8 variants, #EXT-X-MEDIA audio) are
 	// RELATIVE — hls.js/native drop the master's ?t= query when resolving them
@@ -220,6 +200,38 @@ func (h *remuxHandlers) servePlaylist(w http.ResponseWriter, job *remux.Job, fil
 	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
+}
+
+// setRemuxHeaders exposes what the player needs to place the playlist on the
+// source timeline: X-Remux-Duration (source total, once ffmpeg logged it),
+// X-Remux-Start (playlist time 0 == this source second — the job the queue
+// returned may not be the offset the client asked for), X-Remux-Audio (source
+// track list). All listed in Access-Control-Expose-Headers.
+func setRemuxHeaders(w http.ResponseWriter, job *remux.Job) {
+	expose := ""
+	add := func(h string) {
+		if expose != "" {
+			expose += ", "
+		}
+		expose += h
+	}
+	if d := job.DurationSec(); d > 0 {
+		w.Header().Set("X-Remux-Duration", strconv.FormatFloat(d, 'f', 3, 64))
+		add("X-Remux-Duration")
+	}
+	if job.StartSec > 0 {
+		w.Header().Set("X-Remux-Start", strconv.FormatFloat(job.StartSec, 'f', 0, 64))
+		add("X-Remux-Start")
+	}
+	if tracks := job.AudioTracks(); len(tracks) > 1 {
+		if b, err := json.Marshal(tracks); err == nil {
+			w.Header().Set("X-Remux-Audio", string(b))
+			add("X-Remux-Audio")
+		}
+	}
+	if expose != "" {
+		w.Header().Set("Access-Control-Expose-Headers", expose)
+	}
 }
 
 // appendRemuxToken adds ?t=/&t=<token> to every relative child URI in an HLS

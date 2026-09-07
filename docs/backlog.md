@@ -14,14 +14,6 @@ system itself is described in the other documents.
 
 ## Player
 
-- **Audio track switch on torrents re-muxes from zero.** `/stream?audio=N`
-  starts a fresh ffmpeg job; a switch mid-film is not instant and costs
-  disk/CPU. Options: multi-rendition HLS from one job, or keep-alive of the
-  previous job.
-- **Far seek on a torrent that is still downloading** waits for the download to
-  reach the target. A true instant far-seek is an `-ss`-from-Range job plus a
-  player time-base offset (the offset half already exists: `start=N` and
-  `timeBase`).
 - **Voice vs. in-stream audio track UX.** Both live in one menu now; decide
   whether a source voice change should preserve the in-stream track choice.
 - **Mini-player / PiP**: keep the `<video>` alive across routes.
@@ -36,10 +28,6 @@ system itself is described in the other documents.
 - Free-disk gate before a full prefetch (LRU + `PROMIN_TORRENT_MAX_ACTIVE` only).
 
 ## Frontend
-
-- The `history` table and `/api/v1/history` are never written by the TV; watch
-  history everywhere is derived from `timecodes`. Either drop the table and
-  endpoints or start writing "watched" events into it deliberately.
 
 - `api.ts`: abort the underlying request on timeout (sockets stay open).
 - `scroll.ts`: `transitionend` listeners can accumulate → double lazy-append.

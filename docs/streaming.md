@@ -65,18 +65,41 @@ another `audio=<n>`. Multi-audio master output is not produced.
 
 **Start offset**: `start=N` inserts `-ss N` *before* `-i` (`withInputSeek`) so
 ffmpeg begins at the nearest keyframe instead of muxing from 0. Output time then
-starts at 0; the playlist response carries `X-Remux-Start: N` and the player
-adds it back (`timeBase` in `web/src/core/player/index.ts`). The player asks
-for it whenever it resumes more than 30 s into a growing source.
+starts at 0; the playlist response carries `X-Remux-Start: <job start>` and the
+player adds it back (`timeBase` in `web/src/core/player/index.ts`). The player
+asks for it whenever it (re)loads a growing source more than 30 s in: resume,
+an audio-track switch (`audio=<n>&start=<pos>`), a seek back before the
+current job's start, or a seek more than 30 s past the muxed edge. The job
+that answers may start elsewhere than `N` (see reuse below), which is why the
+player always takes `timeBase` from the response, never from what it asked.
 
-**Queue** (`remux/queue.go`): in-memory, no persistence. Dedup key is
-`kind + source + audio + round(start)`; a repeat request returns the live job,
-a job in `failed` state is dropped and retried. Copy jobs share a semaphore of
-`PROMIN_REMUX_MAX_COPY` (default 4); transcodes have their own
-`PROMIN_REMUX_MAX_TRANSCODES` (default 1, prod 1 — one HEVC decode eats
-2–3 vCPU). Jobs idle (no `/remux/<job>/...` request) for `PROMIN_REMUX_JOB_TTL`
-(default 30 min) are killed and their directory removed; leftover directories
-are wiped at startup. ffmpeg stderr is parsed for the source `Duration:` and the
+**Queue** (`remux/queue.go`): in-memory, no persistence. `submit` resolves a
+request in this order:
+
+1. exact dedup key `kind + source + audio + round(start)` → the live job (a job
+   in `failed` state is dropped and retried);
+2. **covering reuse** (`coveringLocked`): any non-failed job of the same
+   `kind + source + audio` whose output already covers `start` — a finished job
+   covers everything past its own start, a running one up to
+   `start + MuxedSec() − 10 s` (`Job.MuxedSec` = EXTINF sum of its playlist).
+   Switching a dub back, or seeking back into an earlier job's range, is served
+   by that job with no new ffmpeg;
+3. otherwise a new job. Before starting it, the **per-source cap**
+   (`overCapLocked`) evicts the least recently accessed queued/running siblings
+   of the same `kind + source` beyond `perSourceCap` − 1: copy kinds keep 2
+   (the abandoned job survives one switch so a quick switch back reuses it),
+   `transcode_hevc` keeps 1 (with `MaxTranscodes = 1` a second job would only
+   queue behind the abandoned one). The source URL embeds the caller's token,
+   so siblings are always this viewer's own earlier jobs — the ones its player
+   has already stopped reading.
+
+Copy jobs share a semaphore of `PROMIN_REMUX_MAX_COPY` (default 4);
+transcodes have their own `PROMIN_REMUX_MAX_TRANSCODES` (default 1, prod 1 —
+one HEVC decode eats 2–3 vCPU). Jobs idle (no `/remux/<job>/...` request) for
+`PROMIN_REMUX_JOB_TTL` (default 30 min) are killed and their directory removed
+(`destroy`: kill, wait for ffmpeg to exit, then delete); a killed job ends in
+state `failed` (`context.Canceled`) so anything polling its state releases.
+Leftover directories are wiped at startup. ffmpeg stderr is parsed for the source `Duration:` and the
 audio stream table (`remux/hls_copy.go`); the last 6 lines are kept for failure
 logs. Binaries: `PROMIN_FFMPEG_PATH`, `PROMIN_FFPROBE_PATH`; a missing ffmpeg
 only logs a warning at startup — `/relay` keeps working without it. `zscale`
@@ -88,11 +111,13 @@ availability is probed once (`HasZscale`); without it HDR transcodes are plain
 - `playlist.m3u8` not yet written: `202 {"state","progress"[,"queue_position"]}`
   by default (the online path polls this JSON — `prepareStream`/
   `pollRemuxPlaylist`, up to 60 × 1.5 s); with `?hls=1` or for `stream-*.m3u8`
-  a valid *empty live* playlist is returned instead, because hls.js is loading
-  it directly and would choke on JSON; `master.m3u8` returns `503 Retry-After: 1`.
-  A failed job returns `502 upstream_unavailable` (the ffmpeg tail goes to the
-  server log only).
-- Ready playlist: `X-Remux-Duration` (source total), `X-Remux-Start`,
+  a valid *empty live* playlist is returned instead, because an HLS engine may
+  be loading it directly and would choke on JSON — for `playlist.m3u8` it
+  already carries the `X-Remux-*` headers below; `master.m3u8` returns
+  `503 Retry-After: 1`. A failed job returns `502 upstream_unavailable` (the
+  ffmpeg tail goes to the server log only).
+- Ready playlist (`setRemuxHeaders`): `X-Remux-Duration` (source total),
+  `X-Remux-Start` (playlist time 0 == this source second; absent when 0),
   `X-Remux-Audio` (source track list, deduped by language, max 12), all listed
   in `Access-Control-Expose-Headers`; `appendRemuxToken` stamps `?t=` on every
   relative child URI (hls.js drops the master's query when resolving them).
@@ -129,8 +154,19 @@ API (`server/internal/httpapi/handlers_torrents.go`): search
 Cases 1–2 call `Prefetch` (mark the whole file wanted so the muxed region
 reaches the real end), pin a reader on the torrent while the job is queued or
 running (`pinUntilDone`, protects it from idle drop/LRU), and `302` to
-`/remux/<job>/playlist.m3u8?hls=1&t=<token>`. `audio=N` picks the inline track;
-`start=N` is passed through to the job.
+`/remux/<job>/playlist.m3u8?hls=1[&start=<job start>]&t=<token>`. `audio=N`
+picks the inline track; `start=N` goes to the queue, which may answer with an
+older job that already covers `N` (§2) — hence the job's real start in the
+redirect URL and in `X-Remux-Start`. The player fetches `/stream` itself
+(`prepareStream` → `pollRemuxPlaylist`), reads those, and hands the *final*
+playlist URL to hls.js / `<video>`, so `/stream` is hit once per load and the
+engine's playlist reloads go straight to `/remux/<job>/…`.
+
+A job muxing from an offset reads the torrent through `/stream` with `Range`
+requests; the anacrolix reader prioritises pieces only at the position being
+read (nothing is requested after a bare seek), so a far offset downloads first
+without any extra hint to the engine, while `Prefetch` keeps the rest of the
+file at normal priority.
 
 ## 4. Client capabilities and routing
 

@@ -12,7 +12,11 @@
 package remux
 
 import (
+	"bufio"
 	"context"
+	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -60,6 +64,9 @@ type Job struct {
 	// labelled from the title) for native switching; len≤1 → single playlist.m3u8.
 	Audio     []AudioMeta
 	CreatedAt time.Time
+	// done is closed when run() returns (ffmpeg exited or never started), so
+	// an evictor can wait for the process to be gone before deleting OutputDir.
+	done chan struct{}
 
 	mu          sync.Mutex
 	state       State
@@ -93,6 +100,7 @@ func newJob(id string, kind Kind, source string, audioIndex int, outputDir strin
 		HDR:        hdr,
 		Audio:      audio,
 		CreatedAt:  now,
+		done:       make(chan struct{}),
 		state:      StateQueued,
 		lastAccess: now,
 	}
@@ -198,6 +206,34 @@ func (j *Job) setDurationSec(d float64) {
 		j.durationSec = d
 	}
 	j.mu.Unlock()
+}
+
+// MuxedSec is how many seconds of output the job has published so far: the
+// EXTINF sum of its playlist (exactly what hls.js can seek within). 0 until
+// ffmpeg writes the first segment. Used by Queue.submit to reuse a job whose
+// muxed range already covers a requested start offset.
+func (j *Job) MuxedSec() float64 {
+	f, err := os.Open(j.PlaylistPath())
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+	var sum float64
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		ln := sc.Text()
+		if !strings.HasPrefix(ln, "#EXTINF:") {
+			continue
+		}
+		v := strings.TrimPrefix(ln, "#EXTINF:")
+		if i := strings.IndexByte(v, ','); i >= 0 {
+			v = v[:i]
+		}
+		if d, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil && d > 0 {
+			sum += d
+		}
+	}
+	return sum
 }
 
 // Touch marks the job as accessed just now, resetting its idle TTL clock

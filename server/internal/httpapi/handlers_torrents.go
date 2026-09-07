@@ -317,16 +317,19 @@ func (h *torrentHandlers) streamViaRemux(w http.ResponseWriter, r *http.Request,
 	h.redirectToPlaylist(w, r, job)
 }
 
-// redirectToPlaylist 302s to the job's HLS entry point. Multi-audio jobs write a
-// master.m3u8 (one rendition per track) — hls.js needs a VALID master on first
-// load (a not-ready master can't be a stand-in empty media playlist), so wait a
-// few seconds for ffmpeg to emit it before redirecting. Single-audio jobs use
-// playlist.m3u8 and the not-ready empty-live-m3u8 path handles their warmup.
+// redirectToPlaylist 302s to the job's HLS playlist. The not-ready state is
+// handled by the ?hls=1 empty-live-m3u8 path. start=<sec> repeats the job's
+// real offset in the URL: the queue may answer a start=N request with an
+// older job that already covers N (remux.Queue.submit), and the player fetches
+// /stream itself and reads the final URL / X-Remux-Start to set its timeBase.
 func (h *torrentHandlers) redirectToPlaylist(w http.ResponseWriter, r *http.Request, job *remux.Job) {
 	// The redirect target is a gated media route, so it must carry the caller's
 	// token — through the one helper (this site used to append it unescaped).
-	dest := withMediaToken("/remux/"+job.ID+"/playlist.m3u8?hls=1", r.URL.Query().Get("t"))
-	http.Redirect(w, r, dest, http.StatusFound)
+	dest := "/remux/" + job.ID + "/playlist.m3u8?hls=1"
+	if job.StartSec > 0 {
+		dest += "&start=" + strconv.FormatFloat(job.StartSec, 'f', 0, 64)
+	}
+	http.Redirect(w, r, withMediaToken(dest, r.URL.Query().Get("t")), http.StatusFound)
 }
 
 func contentTypeFor(name string) string {

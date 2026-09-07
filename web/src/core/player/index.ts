@@ -1367,6 +1367,13 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   // fully seekable on demand (hls.js/Range fetch the target), so clamping their
   // seeks to the buffered edge was the "resume/+10min lands at ~2min" bug.
   let growingSource = false;
+  // A seek this far past the muxed edge restarts the mux at the target instead
+  // of stashing; closer than that the edge (copy runs faster than realtime)
+  // gets there sooner than a new ffmpeg would.
+  const FAR_SEEK_S = 30;
+  // Never restart within this much of the (hint-only) total: the hint can
+  // overshoot the file, and a job started past the true end produces nothing.
+  const FAR_SEEK_END_GUARD_S = 60;
   // Last non-zero play position — a stall/error resumes here when the element
   // has zeroed currentTime.
   let lastGoodTime = 0;
@@ -1412,6 +1419,17 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     if (growingSource) {
       const end = seekEnd();
       if (rel > end) {
+        // Far past the muxed edge: a new mux job from the target (start=N, same
+        // path as resume) beats waiting for ffmpeg to crawl there. Not when
+        // the target may lie past the REAL end — a growing source only knows
+        // the TMDB runtime hint, and ffmpeg muxes nothing past the true end.
+        if (rel - end > FAR_SEEK_S && pos < videoDuration() - FAR_SEEK_END_GUARD_S) {
+          diag('player:seek-remux', { target: Math.round(pos), edge: Math.round(end + timeBase) });
+          resumeAt = pos;
+          pendingResume = false;
+          reload(false);
+          return;
+        }
         diag('player:seek-stash', { target: Math.round(pos), edge: Math.round(end + timeBase) });
         pendingSeek = rel;
         rel = end;
@@ -1986,10 +2004,14 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       // Torrent /stream URL carries audio=N: rewrite it to the picked track so a
       // switch re-muxes that track inline (ctxAudio drives the menu; don't reset
       // ctxAudio here — it persists for the session).
-      if (/[?&]audio=\d+/.test(rawUrl)) {
-        return Promise.resolve(rawUrl.replace(/([?&])audio=\d+/, '$1audio=' + remuxAudioIndex));
-      }
-      return Promise.resolve(rawUrl);
+      const url = /[?&]audio=\d+/.test(rawUrl) ? rawUrl.replace(/([?&])audio=\d+/, '$1audio=' + remuxAudioIndex) : rawUrl;
+      // Torrent HLS: /stream 302s to the job playlist. Resolve it here rather
+      // than letting the engine follow the redirect: the queue may answer
+      // start=N with an OLDER job that already covers N (audio switch back,
+      // seek back), so the real offset comes back as X-Remux-Start and the
+      // engine gets the final playlist URL (no re-hit of /stream per reload).
+      if (isTorrentHls) return pollRemuxPlaylist(url, 6, my);
+      return Promise.resolve(url);
     }
     remuxAudio = [];
     // Ask ffmpeg for the track the user picked (audio=0 by default). A different
@@ -2014,6 +2036,9 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   // pollRemuxPlaylist GETs the ffmpeg playlist until it returns 200 (ready,
   // first segments written) rather than 202 (still buffering). ~60 tries ×
   // 1.5s ≈ 90s ceiling — a demuxed source's first mux pass can take ~30s.
+  // Resolves with the FINAL url (after redirects) and adopts the response's
+  // X-Remux-Start as timeBase: the job serving us may start elsewhere than
+  // the offset we asked for.
   // Info-bar text while a remux/transcode job is being prepared (cleared once
   // the playlist is ready).
   let prepText = '';
@@ -2022,6 +2047,12 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       if (r.status === 200) {
         if (my !== loadSeq) return null; // superseded by a newer load — don't clobber its state (LIFE-2)
         prepText = '';
+        const sh = r.headers.get('X-Remux-Start');
+        const st = sh ? parseFloat(sh) : 0;
+        if (isFinite(st) && st >= 0 && st !== timeBase) {
+          diag('player:mux-base', { asked: Math.round(timeBase), got: Math.round(st) });
+          timeBase = st;
+        }
         const dh = r.headers.get('X-Remux-Duration');
         if (dh) {
           const d = parseFloat(dh);
@@ -2042,7 +2073,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
             /* malformed header — just leave the track menu hidden */
           }
         }
-        return url;
+        return r.url || url;
       }
       // A definitive client error (4xx) means the job is gone — give up.
       if (r.status >= 400 && r.status < 500) return null;
@@ -2145,9 +2176,11 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
         // not go fatal. Unknown keys are ignored by older hls.js builds.
         // Resume target known up front → hls.js loads THAT fragment first
         // instead of fragment 0 + a seek (a wasted segment and a flash of the
-        // opening on every "Continue"). A growing remux keeps 0 (its seekable
-        // edge may not have reached the target; seekClamped stashes it).
-        const startAt = !growingSource ? (pendingResume ? resumePos : resumeAt) - timeBase : 0;
+        // opening on every "Continue"). Relative to the playlist: on a growing
+        // remux the job usually starts AT the target (rel≈0); when the server
+        // reused an older job covering it, rel>0 skips straight to it. Past the
+        // edge hls.js takes the last fragment and seekClamped stashes the rest.
+        const startAt = (pendingResume ? resumePos : resumeAt) - timeBase;
         const inst = new Hls({
           // enableWorker stays FALSE: moving demux to a Blob worker is a real
           // perf win on paper but unverifiable from here — a CSP/worker-src block

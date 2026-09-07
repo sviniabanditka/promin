@@ -24,7 +24,7 @@ Streams arrive best-first with same-origin URLs (`/relay`, `/remux`, `/stream`);
 | `hls` | `native`, or `auto` on a modern Tizen with native HLS and legacy mode off | `<video src>` m3u8 |
 | `hls` | `hlsjs`, or `auto` elsewhere | hls.js (`enableWorker: false`, generous manifest/level/fragment retries, `subtitleDisplay: false`, `startPosition` = resume target) with a `<video src>` fallback when MSE is missing |
 
-`/remux?…` URLs are not playlists: `prepareStream()` fetches the job JSON, then polls `playlist_url` until it answers 200 (202 = still muxing; the body's `state`/`queue_position` is shown in the info bar as "preparing…"/"queued #n"), up to ~90 s. The 200 response's `X-Remux-Duration` becomes the authoritative total and `X-Remux-Audio` the list of source audio tracks.
+`/remux?…` URLs are not playlists: `prepareStream()` fetches the job JSON, then polls `playlist_url` until it answers 200 (202 = still muxing; the body's `state`/`queue_position` is shown in the info bar as "preparing…"/"queued #n"), up to ~90 s. A torrent `/stream` URL that will answer with HLS (`media.type === 'hls'`) is fetched the same way (up to 6 tries): the fetch follows the server's 302 and the engine receives the *final* playlist URL. In both cases the 200 response's `X-Remux-Start` becomes `timeBase` (absent = 0 — the job the server returned may not start where the player asked), `X-Remux-Duration` the authoritative total and `X-Remux-Audio` the list of source audio tracks.
 
 Every (re)start bumps `loadSeq`; stale async chains bail. Fatal hls.js errors and native `error` events auto-recover in place up to 6 times (media error → `recoverMediaError`, network → `startLoad`, else reload at the last good position); the budget resets after 5 s of advancing playback. A stall watchdog (1 s tick) toasts after 25 s of frozen time and shows the error overlay (Retry / Change source) after 45 s. `showError()` tears the engine down so nothing keeps loading behind the overlay.
 
@@ -68,9 +68,11 @@ Time inside the player is **absolute source time**. `timeBase` is the offset bet
 
 All seeks go through `seekClamped(pos)`:
 
-- a target before `timeBase − 1` restarts the engine with `start=<pos>` (only a new mux job can play it);
-- for a **growing source** (an explicit `/remux` job, or a torrent `/stream` answered with HLS) a target past `seekEnd()` — `min(duration, seekable.end)` — is stashed in `pendingSeek` and applied from `timeupdate` or the 1 s stats tick once the muxed edge reaches it; a stash past the authoritative end is dropped;
+- a target before `timeBase − 1` restarts the engine with `start=<pos>` (the server answers with an earlier job that already covers `pos`, if one is alive, else a new one);
+- for a **growing source** (an explicit `/remux` job, or a torrent `/stream` answered with HLS) a target past `seekEnd()` — `min(duration, seekable.end)` — is handled by distance: more than `FAR_SEEK_S = 30` past the edge, and at least `FAR_SEEK_END_GUARD_S = 60` before the known total, restarts the engine with `start=<pos>` (a new mux job from the target, `timeBase = pos`); anything closer is stashed in `pendingSeek` and applied from `timeupdate` or the 1 s stats tick once the muxed edge reaches it; a stash past the authoritative end is dropped. The end guard exists because a growing torrent source only knows the TMDB runtime hint, and a job started past the file's true end muxes nothing;
 - VOD and progressive sources seek directly (hls.js / Range fetch the target).
+
+Every restart goes through `reload()` → `prepareStream()`: a target over 30 s adds `start=<target>` to the stream URL and provisionally sets `timeBase = target`; the response's `X-Remux-Start` then corrects it, and `seekToResume()` at `loadedmetadata` seeks the remainder (`resumeAt − timeBase`) — nothing when the job starts at the target. hls.js is created with `startPosition = resumeAt − timeBase`, so a reused job loads the fragment at the target rather than fragment 0.
 
 **Duration** (`videoDuration()`): `authDuration` when known (hls.js `LEVEL_UPDATED` with a non-live playlist → `totalduration + timeBase`; native `video.duration`; `X-Remux-Duration`), else the `durationHint` seeded from the TMDB runtime for growing torrent sources, else `video.duration`. The `ended` fallback fires when `absTime ≥ authDuration − 1`, because a growing playlist never emits `ended`.
 
@@ -82,7 +84,7 @@ Flow: on `loadedmetadata` a resumable position is applied silently with a toast 
 
 - hls.js VOD: `startPosition` is the resume target, so the first fragment loaded is the right one;
 - native paths: `seekClamped()` then `verifyResumeSeek()` checks the first real ticks and re-issues the seek up to twice if `|cur − target| > 3 s`; any explicit user seek cancels the verification;
-- growing sources with a target > 30 s: the stream URL gets `start=<pos>` so ffmpeg muxes from there, `timeBase = pos`, and the stash mechanism owns any remaining overshoot.
+- growing sources with a target > 30 s: the stream URL gets `start=<pos>` so ffmpeg muxes from there, `timeBase` comes from the response, and the stash mechanism owns any remaining overshoot.
 
 Progress is emitted every 10 s, after a seek, on pause, on episode switch, on `pagehide`/`visibilitychange`, and on destroy, via `ctx.onProgress(pos, dur)` → `sync.saveTimecode` (local cache + `POST /timecodes`, last-write-wins). A growing source reports nothing until its total is known, and a position of 0 is never written.
 
@@ -101,7 +103,7 @@ The chosen height is remembered for the session (`wantQualityNum`) and re-applie
 
 The Audio pill opens a single sheet with up to two sections:
 
-- **In stream** — instant switches: source tracks of a remux (`X-Remux-Audio`, or torrent tracks from `ctx.loadAudioTracks` → `GET /torrents/audio`) switch by re-requesting the stream with `audio=<index>` and reloading in place; hls.js tracks (captured from `MANIFEST_PARSED`/`AUDIO_TRACKS_UPDATED`, de-duplicated by name+lang across failover groups) switch via `hls.audioTrack`; native `video.audioTracks` toggle `enabled`. Generic names like `audio_1` are replaced by the language name, and `media.audioNames` (the source's real dub names in manifest order) win when present.
+- **In stream** — source tracks of a remux (`X-Remux-Audio`, or torrent tracks from `ctx.loadAudioTracks` → `GET /torrents/audio`) switch by `reload(true)`: the stream is re-requested with `audio=<index>` and `start=<current position>`, so the new track's job muxes from where the viewer is (a few seconds to the first segment) instead of from 0; the previous job stays alive for one switch, so switching back lands on it instantly (server-side covering reuse, `docs/streaming.md` §2). hls.js tracks (captured from `MANIFEST_PARSED`/`AUDIO_TRACKS_UPDATED`, de-duplicated by name+lang across failover groups) switch via `hls.audioTrack`; native `video.audioTracks` toggle `enabled`. Generic names like `audio_1` are replaced by the language name, and `media.audioNames` (the source's real dub names in manifest order) win when present.
 - **From source** — the resolve response's `voices`; picking one calls `ctx.onVoice`, which re-resolves and reloads at the kept position (toast "Switching voice: …", a cold source can take ~25 s).
 
 The pill's value shows the dub currently playing. The picked in-stream track (`wantAudio`) is re-selected on the next episode.
@@ -131,7 +133,7 @@ Speeds 0.5–2× in seven steps. The rate is a **global per-user setting** (`pla
 
 `core/torrentPlay.ts` builds the media for a torrent file: `/stream/{infohash}/{index}?audio=0` plus `mkv=false` when the webview cannot demux Matroska and `transcode=1` (`hdr=1` for HDR names) when the release name says HEVC/AV1/2160p and `canDecodeHevc()` is false. The backend then 302-redirects to an HLS playlist, so `media.type` is `hls` and the player treats it as a growing source. Series packs map files to episodes with `parseEpisode()` (`S01E05`, `1x05`, `E05`, "05 серія") so each file has its own timecode slot and prev/next/strip work across the pack.
 
-Resume deep into such a file adds `start=<pos>`; the server starts ffmpeg with `-ss` and answers with `X-Remux-Start`; the player's `timeBase` is the start it asked for.
+Resume deep into such a file, an audio-track switch and a seek far past the muxed edge all add `start=<pos>`; the server starts ffmpeg with `-ss` (or returns an existing job of that track that already covers `pos`) and the player's `timeBase` is the `X-Remux-Start` it gets back, not the start it asked for.
 
 ## Keyboard map
 
