@@ -263,7 +263,7 @@ const onboardingHTML = `<!doctype html>
         <li data-t="s2_1"></li>
         <li><span data-t="s2_2"></span>
           <div class="url">
-            <code id="startUrl">promin.club/msx/start.json</code>
+            <code id="startUrl">promin.club</code>
             <button class="copy" data-copy="startUrl" data-t="copy"></button>
           </div>
         </li>
@@ -477,7 +477,7 @@ const onboardingHTML = `<!doctype html>
     copy: ["Копіювати", "Копировать", "Copy"],
     copied: ["Скопійовано", "Скопировано", "Copied"],
     s2_3: ["Збережіть і перезапустіть MSX — відкриється головний екран <b>Promin</b>.", "Сохраните и перезапустите MSX — откроется главный экран <b>Promin</b>.", "Save and restart MSX — the <b>Promin</b> home screen opens."],
-    s2_note: ["Деякі версії MSX приймають просто <code>promin.club</code> — але надійніше вводити повний шлях <code>/msx/start.json</code>.", "Некоторые версии MSX принимают просто <code>promin.club</code> — но надёжнее вводить полный путь <code>/msx/start.json</code>.", "Some MSX versions accept plain <code>promin.club</code>, but the full path <code>/msx/start.json</code> is more reliable."],
+    s2_note: ["Вводьте лише домен — без <code>http://</code> і без шляхів. MSX сам знайде стартове меню Promin.", "Вводите только домен — без <code>http://</code> и без путей. MSX сам найдёт стартовое меню Promin.", "Enter just the domain — no <code>http://</code> and no path. MSX finds the Promin start menu by itself."],
     s2_shot: ["скріншот: поле Start Parameter у MSX", "скриншот: поле Start Parameter в MSX", "screenshot: the Start Parameter field in MSX"],
     s2_cap: ["MSX → Settings → Start Parameter", "MSX → Settings → Start Parameter", "MSX → Settings → Start Parameter"],
     s3_h: ["Увійти за PIN-кодом", "Войти по PIN-коду", "Log in with a PIN"],
@@ -572,7 +572,7 @@ const onboardingHTML = `<!doctype html>
     q8: ["Очистити історію або видалити дані", "Очистить историю или удалить данные", "Clear history or delete data"],
     q8a: ["<b>Налаштування → Небезпечна зона</b>. <b>Очистити історію перегляду</b> прибирає позиції «продовжити», закладки й плейлисти лишаються. <b>Видалити всі дані</b> стирає все в профілі та розлогінює всі пристрої — PIN при цьому залишається робочим.", "<b>Настройки → Опасная зона</b>. <b>Очистить историю просмотра</b> убирает позиции «продолжить», закладки и плейлисты остаются. <b>Удалить все данные</b> стирает всё в профиле и разлогинивает все устройства — PIN при этом остаётся рабочим.", "<b>Settings → Danger zone</b>. <b>Clear watch history</b> removes “continue” positions; bookmarks and playlists stay. <b>Delete all data</b> wipes the profile and signs out every device — the PIN keeps working."],
     q9: ["Старий Samsung не відкриває promin.club", "Старый Samsung не открывает promin.club", "An old Samsung cannot open promin.club"],
-    q9a: ["Деякі Tizen 2016–2017 років не дружать з HTTP/2. Для них є окрема адреса — вкажіть у MSX <code>h1.promin.club/msx/start.json</code>. Усе інше працює так само.", "Некоторые Tizen 2016–2017 годов не дружат с HTTP/2. Для них есть отдельный адрес — укажите в MSX <code>h1.promin.club/msx/start.json</code>. Всё остальное работает так же.", "Some 2016–2017 Tizen sets struggle with HTTP/2. There is a dedicated address for them — enter <code>h1.promin.club/msx/start.json</code> in MSX. Everything else works the same."],
+    q9a: ["Деякі Tizen 2016–2017 років не дружать з HTTP/2. Для них є окрема адреса — вкажіть у MSX <code>h1.promin.club</code>. Усе інше працює так само.", "Некоторые Tizen 2016–2017 годов не дружат с HTTP/2. Для них есть отдельный адрес — укажите в MSX <code>h1.promin.club</code>. Всё остальное работает так же.", "Some 2016–2017 Tizen sets struggle with HTTP/2. There is a dedicated address for them — enter <code>h1.promin.club</code> in MSX. Everything else works the same."],
     q10: ["Без телевізора — у браузері чи на телефоні", "Без телевизора — в браузере или на телефоне", "No TV — in a browser or on a phone"],
     q10a: ["Promin відкривається й у звичайному браузері за адресою <a href=\"https://promin.club\">promin.club</a>: той самий PIN, той самий акаунт. Керування — клавіатурою або дотиком.", "Promin открывается и в обычном браузере по адресу <a href=\"https://promin.club\">promin.club</a>: тот же PIN, тот же аккаунт. Управление — клавиатурой или касанием.", "Promin also opens in a regular browser at <a href=\"https://promin.club\">promin.club</a>: same PIN, same account. Use the keyboard or touch."],
     footer: ["Потрібен PIN-код? Зверніться до власника порталу.", "Нужен PIN-код? Обратитесь к владельцу портала.", "Need a PIN? Ask the portal owner."]
