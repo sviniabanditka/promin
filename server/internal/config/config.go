@@ -109,7 +109,8 @@ type Config struct {
 	NativeSourcesEnable bool
 	// NativeProxyURL: HTTP proxy for providers whose catalogs block datacenter
 	// IPs (pages only, never video). Secret lampac-proxy/url in k8s.
-	NativeProxyURL string
+	NativeProxyURL      string
+	OpenSubtitlesAPIKey string
 	// providers that replace lampac's RCH-only modules (docs/streaming.md).
 	// moved native (docs/streaming.md).
 	// (PROMIN_NATIVE_SOURCE_BASE_URL). Deliberately NOT defaulted in code — the
@@ -170,6 +171,7 @@ func Load() Config {
 		BackupKeep:             getenvInt("PROMIN_BACKUP_KEEP", 7),
 		NativeSourcesEnable:    getenvBool("PROMIN_NATIVE_SOURCES", false),
 		NativeProxyURL:         getenv("PROMIN_NATIVE_PROXY_URL", ""),
+		OpenSubtitlesAPIKey:    getenv("PROMIN_OPENSUBTITLES_API_KEY", ""),
 		TelegramBotToken:       getenv("PROMIN_TELEGRAM_BOT_TOKEN", ""),
 		TelegramAPIBaseURL:     getenv("PROMIN_TELEGRAM_API_BASE_URL", "https://api.telegram.org"),
 	}
