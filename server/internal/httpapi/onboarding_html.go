@@ -191,6 +191,9 @@ const onboardingHTML = `<!doctype html>
   .top button:hover { color:var(--ink); }
   .top button.on { background:var(--panel); border-color:var(--line); color:var(--ink); }
   .sec { display:none; }
+  /* a section swap changes the document height; without this, scroll anchoring
+     re-applies the old offset and the switch lands far down the page */
+  body { overflow-anchor:none; }
   .sec.on { display:block; animation:fade .25s ease; }
   .acc .body p { margin:8px 0 0; color:var(--muted); }
   .acc .body p b, .acc .body p code, .acc .body p a { color:var(--ink); }
@@ -612,12 +615,18 @@ const onboardingHTML = `<!doctype html>
     document.querySelectorAll('.sec').forEach(function (s) { s.classList.toggle('on', s.getAttribute('data-sec') === key); });
     if (scrollTo) { var el = document.getElementById(scrollTo); if (el) el.scrollIntoView(); }
   }
+  var hero = document.querySelector('.hero');
   document.querySelectorAll('#top button').forEach(function (b) {
     b.addEventListener('click', function () {
       var key = b.getAttribute('data-sec');
       history.replaceState(null, '', '#' + key);
       showSec(key);
-      window.scrollTo({ top: document.getElementById('top').offsetTop, behavior: 'smooth' });
+      // Land with the tab bar at the top of the viewport. Measure the hero, not
+      // #top: #top is sticky, so once it is pinned its own offsetTop reports the
+      // shifted position — which equals where we already are, making the scroll
+      // a no-op and leaving the switch wherever the height change clamped it.
+      // 'instant' also overrides html { scroll-behavior: smooth }.
+      window.scrollTo({ top: hero.offsetTop + hero.offsetHeight, behavior: 'instant' });
     });
   });
   function fromHash() {
