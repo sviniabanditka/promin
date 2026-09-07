@@ -947,6 +947,15 @@ export function createTelegramLink(): Promise<TelegramLink> {
 export function unlinkTelegram(): Promise<void> {
   return del<void>('/telegram/link');
 }
+export interface TelegramChat {
+  chat_id: number;
+  first_name: string;
+  username: string;
+  created_at: number;
+}
+export function getTelegramLinks(): Promise<{ links: TelegramChat[] }> {
+  return get<{ links: TelegramChat[] }>('/telegram/links');
+}
 
 // ---- player state → server (Telegram Mini App remote reads it) ----------
 export interface PlayerStateReport {

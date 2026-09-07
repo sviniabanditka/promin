@@ -3876,4 +3876,6 @@ body.night-mode #night-shade { display: block; }
 }
 .tg-hint { font-size: 2.2rem; line-height: 1.35; opacity: 0.8; margin-bottom: 1.2rem; }
 .tg-link { font-size: 2rem; opacity: 0.6; margin-bottom: 2.4rem; word-break: break-all; }
-.tg-close { display: inline-block; align-self: flex-start; }
+/* keep .button's inline-flex (it centres the label); align-self stops the
+   column flex parent from stretching the button across the sheet */
+.tg-close { align-self: flex-start; }

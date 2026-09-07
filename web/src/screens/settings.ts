@@ -17,6 +17,7 @@ import {
   deleteMyData,
   getTelegramStatus,
   createTelegramLink,
+  getTelegramLinks,
   unlinkTelegram,
   TelegramStatus,
   revokeOtherDevices,
@@ -219,17 +220,28 @@ export function mountSettings(container: HTMLElement): ScreenInstance {
         hint.textContent = t('error.load');
       }
     );
+    // Baseline of already-linked chats, so the poll can spot the new one. Until
+    // it is known the poll holds off: a first reading taken late must not be
+    // mistaken for an arrival.
+    let baseline = -1;
+    getTelegramLinks().then(
+      function (r) {
+        if (baseline < 0) baseline = r.links.length;
+      },
+      function () {
+        if (baseline < 0) baseline = 0; // endpoint unavailable: any chat counts
+      }
+    );
     poll = window.setInterval(function () {
-      getTelegramStatus().then(
-        function (st) {
-          if (dead) return;
-          tgStatus = st;
-          if (st.linked) {
-            toast({ kind: 'success', icon: '✓', title: t('telegram.linked_toast'), text: t('telegram.linked_hint') });
-            done();
-            renderList();
-            Controller.toggle('content');
-          }
+      getTelegramLinks().then(
+        function (r) {
+          if (dead || baseline < 0) return;
+          if (r.links.length <= baseline) return;
+          if (tgStatus) tgStatus.linked = true;
+          toast({ kind: 'success', icon: '✓', title: t('telegram.linked_toast'), text: t('telegram.linked_hint') });
+          done();
+          renderList();
+          Controller.toggle('content');
         },
         function () {}
       );
