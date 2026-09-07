@@ -153,7 +153,7 @@ const onboardingHTML = `<!doctype html>
     aspect-ratio:16/9; display:grid; place-items:center;
     color:var(--faint); font-size:13.5px; text-align:center; padding:16px;
   }
-  figure.shot img { width:100%; border-radius:var(--radius-sm); border:1px solid var(--line); display:block; }
+  figure.shot img { width:100%; height:auto; border-radius:var(--radius-sm); border:1px solid var(--line); display:block; }
   figure.shot figcaption { color:var(--faint); font-size:13px; margin-top:8px; text-align:center; }
 
   .note { display:flex; gap:10px; padding:14px 16px; border-radius:var(--radius-sm);
@@ -287,7 +287,7 @@ const onboardingHTML = `<!doctype html>
       <ol class="how"><li data-t="s3_1"></li><li data-t="s3_2"></li><li data-t="s3_3"></li></ol>
       <div class="note"><span class="i">🔑</span><span data-t="s3_note"></span></div>
       <figure class="shot" data-shot="pin-screen">
-          <div class="box" data-t="s3_shot"></div>
+          <img src="/shot-pin-screen.webp?v=1" width="1440" height="810" loading="lazy" alt="" data-t-alt="s3_shot">
           <figcaption data-t="s3_cap"></figcaption>
         </figure>
     </div>
