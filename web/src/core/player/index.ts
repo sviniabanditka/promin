@@ -1372,10 +1372,37 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     }
   }
   function pickExtSub(sub: Subtitle): void {
-    extSub = sub;
-    wantSub = sub.label || '';
-    applySubtitle(sub);
-    rememberExt(sub);
+    // Fetch first: the daily OpenSubtitles download quota can be spent (429),
+    // and a <track> would fail silently. A 200 also warms the server cache.
+    toast({ kind: 'progress', title: t('player.subs_loading'), text: sub.label || '', duration: 0 });
+    fetch(mediaUrl(sub.url), { credentials: 'same-origin' }).then(
+      function (res) {
+        if (destroyed) return;
+        if (res.status === 429) {
+          res.json().then(
+            function (j: { error?: { message?: string } }) {
+              toast({ kind: 'warning', title: t('player.subs_quota'), text: (j && j.error && j.error.message) || '', duration: 6000 });
+            },
+            function () {
+              toast({ kind: 'warning', title: t('player.subs_quota'), text: '', duration: 6000 });
+            }
+          );
+          return;
+        }
+        if (!res.ok) {
+          toast({ kind: 'error', title: t('player.subs_search_failed'), text: t('toast.try_again') });
+          return;
+        }
+        extSub = sub;
+        wantSub = sub.label || '';
+        applySubtitle(sub);
+        rememberExt(sub);
+        toast({ kind: 'success', icon: '💬', title: t('player.subs'), text: sub.label || '' });
+      },
+      function () {
+        if (!destroyed) toast({ kind: 'error', title: t('player.subs_search_failed'), text: t('toast.try_again') });
+      }
+    );
   }
   function openExtSubsMenu(): void {
     const imdb = ctx.imdb_id;

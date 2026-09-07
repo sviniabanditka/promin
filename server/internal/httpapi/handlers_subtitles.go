@@ -33,7 +33,7 @@ func (h *subtitlesHandlers) search(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "subtitles_unavailable", "сервіс субтитрів недоступний")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"enabled": true, "results": res})
+	writeJSON(w, http.StatusOK, map[string]any{"enabled": true, "results": res, "remaining": h.svc.Remaining()})
 }
 
 // GET /api/v1/subtitles/{file_id}.vtt (requireAuthMedia: ?t=) → text/vtt
@@ -51,6 +51,11 @@ func (h *subtitlesHandlers) file(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, subtitles.ErrNotFound) {
 			writeNotFound(w, "not_found", "файл не знайдено")
+			return
+		}
+		var q *subtitles.ErrQuota
+		if errors.As(err, &q) {
+			writeError(w, http.StatusTooManyRequests, "subtitles_quota", "Ліміт завантажень субтитрів на сьогодні вичерпано. Оновлення: "+q.Reset)
 			return
 		}
 		writeError(w, http.StatusBadGateway, "subtitles_unavailable", "не вдалося завантажити субтитри")

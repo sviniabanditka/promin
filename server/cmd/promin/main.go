@@ -236,6 +236,7 @@ func main() {
 	}
 
 	subsClient := subtitles.New(cfg.OpenSubtitlesAPIKey, "", filepath.Join(cfg.DataDir, "subs"), httpapi.ToWebVTT)
+	subsClient.SetAccount(cfg.OpenSubtitlesUser, cfg.OpenSubtitlesPassword)
 	if subsClient.Enabled() {
 		logger.Info("external subtitles enabled (OpenSubtitles)")
 	}

@@ -202,6 +202,8 @@ Never committed. Names and keys only:
 | `promin-secrets` | `admin-password` | `PROMIN_ADMIN_PASSWORD` | yes |
 | `promin-secrets` | `tmdb-api-key` | `PROMIN_TMDB_API_KEY` | yes — the binary exits without a TMDB key |
 | `promin-secrets` | `telegram-bot-token` | `PROMIN_TELEGRAM_BOT_TOKEN` | optional — without it the Telegram companion is off |
+| `promin-secrets` | `opensubtitles-api-key` | `PROMIN_OPENSUBTITLES_API_KEY` | optional — external subtitles in the player |
+| `promin-secrets` | `opensubtitles-user` / `opensubtitles-password` | `PROMIN_OPENSUBTITLES_USER` / `_PASSWORD` | optional — logged-in downloads (free account 20/day instead of 5/day) |
 | `promin-secrets` | `native-source-base-url` | `PROMIN_NATIVE_SOURCE_BASE_URL` | optional — without it the corresponding provider is off |
 | `lampac-proxy` | `url` | `PROMIN_NATIVE_PROXY_URL` — residential HTTP proxy URL used only for provider catalog pages that block datacenter IPs | optional — without it those providers are off |
 | `promin-logs` | `password` | `PROMIN_LOGS_PASSWORD` | optional — without it `/logs` is disabled |

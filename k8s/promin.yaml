@@ -63,6 +63,12 @@ spec:
               valueFrom:
                 secretKeyRef: { name: promin-secrets, key: telegram-bot-token, optional: true }
             # OpenSubtitles (внешние субтитры в плеере). Без секрета фича выключена.
+            - name: PROMIN_OPENSUBTITLES_USER
+              valueFrom:
+                secretKeyRef: { name: promin-secrets, key: opensubtitles-user, optional: true }
+            - name: PROMIN_OPENSUBTITLES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: promin-secrets, key: opensubtitles-password, optional: true }
             - name: PROMIN_OPENSUBTITLES_API_KEY
               valueFrom:
                 secretKeyRef: { name: promin-secrets, key: opensubtitles-api-key, optional: true }

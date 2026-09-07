@@ -111,6 +111,11 @@ type Config struct {
 	// IPs (pages only, never video). Secret lampac-proxy/url in k8s.
 	NativeProxyURL      string
 	OpenSubtitlesAPIKey string
+	// OpenSubtitlesUser/Password: optional account for the bigger daily download
+	// quota (anonymous 5/day → free account 20/day). Secret keys
+	// opensubtitles-user / opensubtitles-password.
+	OpenSubtitlesUser     string
+	OpenSubtitlesPassword string
 	// providers that replace lampac's RCH-only modules (docs/streaming.md).
 	// moved native (docs/streaming.md).
 	// (PROMIN_NATIVE_SOURCE_BASE_URL). Deliberately NOT defaulted in code — the
@@ -172,6 +177,8 @@ func Load() Config {
 		NativeSourcesEnable:    getenvBool("PROMIN_NATIVE_SOURCES", false),
 		NativeProxyURL:         getenv("PROMIN_NATIVE_PROXY_URL", ""),
 		OpenSubtitlesAPIKey:    getenv("PROMIN_OPENSUBTITLES_API_KEY", ""),
+		OpenSubtitlesUser:      getenv("PROMIN_OPENSUBTITLES_USER", ""),
+		OpenSubtitlesPassword:  getenv("PROMIN_OPENSUBTITLES_PASSWORD", ""),
 		TelegramBotToken:       getenv("PROMIN_TELEGRAM_BOT_TOKEN", ""),
 		TelegramAPIBaseURL:     getenv("PROMIN_TELEGRAM_API_BASE_URL", "https://api.telegram.org"),
 	}

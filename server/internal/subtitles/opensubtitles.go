@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -30,6 +31,17 @@ const (
 
 var ErrDisabled = errors.New("subtitles: no api key")
 var ErrNotFound = errors.New("subtitles: not found")
+
+// ErrQuota: the daily download quota of the OpenSubtitles account is spent.
+// Reset carries the API's human-readable "renewed in …" text.
+type ErrQuota struct{ Reset string }
+
+func (e *ErrQuota) Error() string { return "subtitles: download quota exhausted (" + e.Reset + ")" }
+
+const (
+	searchCacheTTL = 24 * time.Hour
+	minCallGap     = 260 * time.Millisecond // free tier: 5 requests/s per IP
+)
 
 // Result is one subtitle file as offered to the player.
 type Result struct {
@@ -48,6 +60,32 @@ type Client struct {
 	cacheDir string
 	http     *http.Client
 	convert  func(srt []byte) []byte // SRT → WebVTT
+	// Optional account: logged-in downloads get a bigger daily quota
+	// (anonymous 5/day, free account 20/day, VIP more).
+	username, password string
+
+	mu        sync.Mutex
+	lastCall  time.Time
+	token     string // /login JWT, valid ~24 h
+	searches  map[string]searchEntry
+	remaining int // last known downloads left today (-1 = unknown)
+}
+
+type searchEntry struct {
+	at  time.Time
+	res []Result
+}
+
+// SetAccount enables logged-in downloads (PROMIN_OPENSUBTITLES_USER/PASSWORD).
+func (c *Client) SetAccount(username, password string) {
+	c.username, c.password = username, password
+}
+
+// Remaining is the last quota value the API reported (-1 until a download happened).
+func (c *Client) Remaining() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.remaining
 }
 
 // New returns a client; convert turns SRT bytes into WebVTT (the httpapi relay
@@ -56,7 +94,7 @@ func New(apiKey, baseURL, cacheDir string, convert func([]byte) []byte) *Client 
 	if baseURL == "" {
 		baseURL = DefaultBaseURL
 	}
-	return &Client{apiKey: apiKey, baseURL: strings.TrimSuffix(baseURL, "/"), cacheDir: cacheDir, http: &http.Client{Timeout: 25 * time.Second}, convert: convert}
+	return &Client{apiKey: apiKey, baseURL: strings.TrimSuffix(baseURL, "/"), cacheDir: cacheDir, http: &http.Client{Timeout: 25 * time.Second}, convert: convert, searches: map[string]searchEntry{}, remaining: -1}
 }
 
 func (c *Client) Enabled() bool { return c != nil && c.apiKey != "" }
@@ -88,11 +126,50 @@ func (c *Client) Search(ctx context.Context, q Query) ([]Result, error) {
 	}
 	v.Set("order_by", "download_count")
 	v.Set("order_direction", "desc")
-	body, err := c.get(ctx, c.baseURL+"/subtitles?"+v.Encode())
+	key := v.Encode()
+	c.mu.Lock()
+	if e, ok := c.searches[key]; ok && time.Since(e.at) < searchCacheTTL {
+		c.mu.Unlock()
+		return e.res, nil
+	}
+	c.mu.Unlock()
+	body, err := c.get(ctx, c.baseURL+"/subtitles?"+key)
 	if err != nil {
 		return nil, err
 	}
-	return ParseSearch(body)
+	res, err := ParseSearch(body)
+	if err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	if len(c.searches) > 2000 { // ponytail: flush instead of per-entry GC
+		c.searches = map[string]searchEntry{}
+	}
+	c.searches[key] = searchEntry{at: time.Now(), res: res}
+	c.mu.Unlock()
+	return res, nil
+}
+
+// login fetches the account JWT (once; re-run after a 401).
+func (c *Client) login(ctx context.Context) error {
+	if c.username == "" {
+		return nil
+	}
+	payload, _ := json.Marshal(map[string]string{"username": c.username, "password": c.password})
+	body, err := c.do(ctx, http.MethodPost, c.baseURL+"/login", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	var r struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(body, &r); err != nil || r.Token == "" {
+		return fmt.Errorf("subtitles: login: no token")
+	}
+	c.mu.Lock()
+	c.token = r.Token
+	c.mu.Unlock()
+	return nil
 }
 
 type searchResp struct {
@@ -141,18 +218,39 @@ func (c *Client) VTT(ctx context.Context, fileID int64) ([]byte, error) {
 	if b, err := os.ReadFile(path); err == nil && len(b) > 0 {
 		return b, nil
 	}
-	// One POST /download per file id (anonymous daily quota), then the link.
+	// One POST /download per file id (daily quota), then the link.
+	if c.username != "" && c.token == "" {
+		_ = c.login(ctx)
+	}
 	payload, _ := json.Marshal(map[string]any{"file_id": fileID, "sub_format": "srt"})
 	body, err := c.do(ctx, http.MethodPost, c.baseURL+"/download", bytes.NewReader(payload))
-	if err != nil {
-		return nil, err
+	if err != nil && c.token != "" && strings.Contains(err.Error(), " 401 ") {
+		c.token = ""
+		if c.login(ctx) == nil {
+			body, err = c.do(ctx, http.MethodPost, c.baseURL+"/download", bytes.NewReader(payload))
+		}
 	}
 	var dl struct {
 		Link      string `json:"link"`
 		Remaining int    `json:"remaining"`
+		ResetTime string `json:"reset_time"`
 		Message   string `json:"message"`
 	}
-	if err := json.Unmarshal(body, &dl); err != nil || dl.Link == "" {
+	if err != nil {
+		if strings.Contains(err.Error(), " 406 ") {
+			return nil, &ErrQuota{Reset: "24h"}
+		}
+		return nil, err
+	}
+	if json.Unmarshal(body, &dl) == nil {
+		c.mu.Lock()
+		c.remaining = dl.Remaining
+		c.mu.Unlock()
+	}
+	if dl.Link == "" {
+		if dl.Remaining <= 0 || strings.Contains(strings.ToLower(dl.Message), "quota") {
+			return nil, &ErrQuota{Reset: dl.ResetTime}
+		}
 		return nil, fmt.Errorf("subtitles: download link: %s", strings.TrimSpace(dl.Message))
 	}
 	raw, err := c.get(ctx, dl.Link)
@@ -186,6 +284,16 @@ func (c *Client) do(ctx context.Context, method, u string, body io.Reader) ([]by
 		if body != nil {
 			req.Header.Set("Content-Type", "application/json")
 		}
+		c.mu.Lock()
+		if tok := c.token; tok != "" && !strings.HasSuffix(u, "/login") {
+			req.Header.Set("Authorization", "Bearer "+tok)
+		}
+		// Free tier allows 5 requests/s per IP: space our calls.
+		if wait := minCallGap - time.Since(c.lastCall); wait > 0 {
+			time.Sleep(wait)
+		}
+		c.lastCall = time.Now()
+		c.mu.Unlock()
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {

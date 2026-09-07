@@ -159,3 +159,5 @@ A minute before the deadline the volume fades linearly to zero; at the deadline
 playback pauses, the position is saved, the volume is restored and a toast says
 good night. "After this episode" suppresses the next-episode auto-advance and
 shows the end-of-title countdown instead. Player-local, not persisted.
+
+OpenSubtitles limits: 5 API requests/s per IP and 5 downloads/day anonymously (20 with a free account, secret keys `opensubtitles-user`/`opensubtitles-password`). The server spaces API calls, caches search results for 24 h and every downloaded file forever (`/data/subs`), and answers `429 subtitles_quota` when the quota is spent; the player fetches the file before applying it and shows the quota toast instead of a silent empty track.
