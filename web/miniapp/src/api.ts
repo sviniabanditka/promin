@@ -298,6 +298,15 @@ export const getAuthDevices = () => get<{ devices: AuthDevice[] }>('/auth/device
 export const revokeDevice = (token_id: string) => del<void>('/auth/devices/' + encodeURIComponent(token_id));
 export const revokeOtherDevices = () => del<{ revoked: number }>('/auth/devices');
 export const unlinkTelegram = () => del<void>('/telegram/link');
+export interface TelegramLink {
+  chat_id: number;
+  first_name: string;
+  username: string;
+  created_at: number;
+}
+export const getTelegramLinks = () => get<{ links: TelegramLink[] }>('/telegram/links');
+export const unlinkTelegramChat = (chatId: number) => del<void>('/telegram/links/' + chatId);
+export const createTelegramLink = () => post<{ code: string; deep_link: string; expires_at: number }>('/telegram/link');
 export const clearHistory = () => del<void>('/me/history');
 export const deleteAllData = () => del<void>('/me/data');
 

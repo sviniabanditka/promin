@@ -188,6 +188,8 @@ func NewServer(
 	mux.HandleFunc("GET /api/v1/telegram/status", requireAuth(authSvc, tgH.status))
 	mux.HandleFunc("POST /api/v1/telegram/link", requireAuth(authSvc, tgH.link))
 	mux.HandleFunc("DELETE /api/v1/telegram/link", requireAuth(authSvc, tgH.unlink))
+	mux.HandleFunc("GET /api/v1/telegram/links", requireAuth(authSvc, tgH.links))
+	mux.HandleFunc("DELETE /api/v1/telegram/links/{chat_id}", requireAuth(authSvc, tgH.unlinkOne))
 
 	// Telegram Mini App (docs/miniapp.md): initData login, devices + player
 	// state, send-to-TV. The TV reports its player via /player/state.

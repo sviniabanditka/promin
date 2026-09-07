@@ -1,8 +1,23 @@
 import { useEffect, useState } from 'preact/hooks';
-import { clearHistory, deleteAllData, getAuthDevices, putSetting, revokeDevice, revokeOtherDevices, sessionLost, unlinkTelegram, type AuthDevice, type LocalKey } from '../api';
+import {
+  clearHistory,
+  createTelegramLink,
+  deleteAllData,
+  getAuthDevices,
+  getTelegramLinks,
+  putSetting,
+  revokeDevice,
+  revokeOtherDevices,
+  sessionLost,
+  unlinkTelegram,
+  unlinkTelegramChat,
+  type AuthDevice,
+  type LocalKey,
+  type TelegramLink,
+} from '../api';
 import { fmtDate, LANGS, t, type Lang } from '../i18n';
 import { chooseDevice, sendLocal, setLang, setSetting, setState, targetDevice, toast, useStore, visibleDevices } from '../store';
-import { confirmDialog, haptic } from '../tg';
+import { confirmDialog, haptic, openTelegramLink } from '../tg';
 import { Segmented, Sheet, SkeletonRow } from '../ui';
 
 const LANG_LABEL: Record<Lang, string> = { uk: 'Українська', ru: 'Русский', en: 'English' };
@@ -94,6 +109,32 @@ export function Settings() {
     }
   };
 
+  const [links, setLinks] = useState<TelegramLink[] | null>(null);
+  const loadLinks = () => getTelegramLinks().then((r) => setLinks(r.links), () => setLinks([]));
+  useEffect(() => {
+    loadLinks();
+  }, []);
+  const invite = async () => {
+    try {
+      const l = await createTelegramLink();
+      haptic('ok');
+      const text = t('set.invite_text');
+      openTelegramLink('https://t.me/share/url?url=' + encodeURIComponent(l.deep_link) + '&text=' + encodeURIComponent(text));
+    } catch {
+      toast(t('common.error'));
+    }
+  };
+  const unlinkOne = async (l: TelegramLink) => {
+    const name = l.first_name || (l.username ? '@' + l.username : String(l.chat_id));
+    if (!(await confirmDialog(t('set.unlink_one_confirm', { name })))) return;
+    try {
+      await unlinkTelegramChat(l.chat_id);
+      haptic('ok');
+      loadLinks();
+    } catch {
+      toast(t('common.error'));
+    }
+  };
   const unlink = async () => {
     if (!(await confirmDialog(t('set.unlink_confirm')))) return;
     try {
@@ -268,6 +309,23 @@ export function Settings() {
       <section class="group">
         <h2 class="group-title">{t('set.telegram')}</h2>
         {s.user && <div class="note">{t('set.signed_in_as', { login: s.user.login })}</div>}
+        <div class="list">
+          {(links ?? []).map((l) => (
+            <div class="row" key={l.chat_id}>
+              <div class="row-label">
+                {l.first_name || t('set.no_name')}
+                {l.username ? <span class="row-val"> @{l.username}</span> : null}
+              </div>
+              <button class="btn btn-small btn-ghost" onClick={() => unlinkOne(l)}>
+                {t('set.unlink_one')}
+              </button>
+            </div>
+          ))}
+        </div>
+        <button class="btn" onClick={invite}>
+          {t('set.invite_phone')}
+        </button>
+        <div class="note">{t('set.invite_hint')}</div>
         <button class="btn btn-danger" onClick={unlink}>
           {t('set.unlink')}
         </button>

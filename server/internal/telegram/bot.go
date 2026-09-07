@@ -219,7 +219,7 @@ func (b *Bot) handleMessage(ctx context.Context, m *Message) {
 		if arg == "" {
 			arg = text
 		}
-		b.link(ctx, chatID, arg, lang)
+		b.link(ctx, chatID, m.From, arg, lang)
 		return
 	}
 
@@ -275,13 +275,17 @@ func (b *Bot) menu(ctx context.Context, chatID, userID int64, lang, text string)
 	}
 }
 
-func (b *Bot) link(ctx context.Context, chatID int64, code, lang string) {
+func (b *Bot) link(ctx context.Context, chatID int64, from *User, code, lang string) {
 	userID, ok := b.links.Consume(code)
 	if !ok {
 		b.reply(ctx, chatID, tr(lang, "link.bad"), nil)
 		return
 	}
-	if err := b.repo.Link(chatID, userID, time.Now().Unix()); err != nil {
+	first, uname := "", ""
+	if from != nil {
+		first, uname = from.FirstName, from.Username
+	}
+	if err := b.repo.Link(chatID, userID, first, uname, time.Now().Unix()); err != nil {
 		b.fail(ctx, chatID, lang, "link", err)
 		return
 	}
@@ -671,3 +675,9 @@ func (b *Bot) fail(ctx context.Context, chatID int64, lang, what string, err err
 	b.log.Warn("telegram: "+what+" failed", "error", err)
 	b.reply(ctx, chatID, tr(lang, "err.generic"), nil)
 }
+
+// Links lists the chats linked to a profile (Settings → Telegram).
+func (b *Bot) Links(userID int64) ([]store.TelegramLink, error) { return b.repo.List(userID) }
+
+// UnlinkChat removes one chat of the profile.
+func (b *Bot) UnlinkChat(userID, chatID int64) error { return b.repo.UnlinkChatOfUser(userID, chatID) }

@@ -57,6 +57,18 @@ Listings are kept per (chat, message) in memory; after a restart an old message
 answers "stale — press the menu button again". The device picked for "Open on
 TV" or the remote is reused for five minutes while it stays online.
 
+## Several phones on one profile
+
+A profile is shared by the household, so any number of Telegram chats may be
+linked to it. Ways to add a phone: on the TV, Settings → Telegram bot → "Link
+another phone" shows a fresh code/QR; in the Mini App, Settings → Telegram →
+"Invite another phone" issues a code and opens Telegram's share sheet with the
+`t.me/<bot>?start=<code>` link — the invitee presses Start and is linked. The
+bot stores `first_name`/`username` with each chat; `GET /api/v1/telegram/links`
+lists them, `DELETE /api/v1/telegram/links/{chat_id}` unlinks one phone,
+`DELETE /api/v1/telegram/link` unlinks all. All linked chats share the same
+menu, Mini App, devices, library and the synced `lang`.
+
 ## Search and open
 
 Any text from a linked chat is a TMDB search (`catalog.Search`, Ukrainian).

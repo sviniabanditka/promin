@@ -45,6 +45,7 @@ export interface TgWebApp {
   onEvent(event: string, fn: () => void): void;
   offEvent(event: string, fn: () => void): void;
   showConfirm?(message: string, cb: (ok: boolean) => void): void;
+  openTelegramLink?(url: string): void;
   setHeaderColor?(color: string): void;
   setBackgroundColor?(color: string): void;
 }
@@ -100,4 +101,11 @@ export function confirmDialog(message: string): Promise<boolean> {
     });
   }
   return Promise.resolve(window.confirm(message));
+}
+
+
+// Open a t.me link natively (share sheet, bot deep link); falls back to a tab.
+export function openTelegramLink(url: string): void {
+  if (tg && tg.openTelegramLink) tg.openTelegramLink(url);
+  else window.open(url, '_blank');
 }

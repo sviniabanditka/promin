@@ -210,6 +210,8 @@ Event `type` values: `bookmark_added`, `bookmark_removed` (payload: bookmark),
 | GET | `/api/v1/telegram/status` | bearer | `{enabled, linked, bot_username}` |
 | POST | `/api/v1/telegram/link` | bearer | Issues a 6-digit link code: `{code, deep_link, expires_at}`; `503 telegram_disabled` when the bot is off |
 | DELETE | `/api/v1/telegram/link` | bearer | Unlinks every chat of the profile. 204 |
+| GET | `/api/v1/telegram/links` | bearer | `{links:[{chat_id, first_name, username, created_at}]}` |
+| DELETE | `/api/v1/telegram/links/{chat_id}` | bearer | Unlinks one chat of the profile. 204 |
 
 Sync event `open_title` (`{tmdb_id, media_type, device_id, title}`) is delivered to all sockets of the user; only the device whose token prefix equals `device_id` acts. See docs/telegram.md.
 

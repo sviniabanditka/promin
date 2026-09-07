@@ -1,7 +1,10 @@
 package httpapi
 
 import (
+	"strconv"
+
 	"encoding/base64"
+	"github.com/sviniabanditka/promin/server/internal/store"
 	"net/http"
 
 	"github.com/skip2/go-qrcode"
@@ -73,6 +76,41 @@ func (h *telegramHandlers) unlink(w http.ResponseWriter, r *http.Request) {
 	}
 	info, _ := authFrom(r)
 	if err := h.bot.Unlink(info.User.ID); err != nil {
+		writeInternal(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// links: GET /api/v1/telegram/links → {links:[{chat_id, first_name, username, created_at}]}.
+func (h *telegramHandlers) links(w http.ResponseWriter, r *http.Request) {
+	if h.disabled(w) {
+		return
+	}
+	info, _ := authFrom(r)
+	list, err := h.bot.Links(info.User.ID)
+	if err != nil {
+		writeInternal(w, err)
+		return
+	}
+	if list == nil {
+		list = []store.TelegramLink{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"links": list})
+}
+
+// unlinkOne: DELETE /api/v1/telegram/links/{chat_id} — one phone of the family.
+func (h *telegramHandlers) unlinkOne(w http.ResponseWriter, r *http.Request) {
+	if h.disabled(w) {
+		return
+	}
+	info, _ := authFrom(r)
+	chatID, err := strconv.ParseInt(r.PathValue("chat_id"), 10, 64)
+	if err != nil {
+		writeBadRequest(w, "невірний chat_id")
+		return
+	}
+	if err := h.bot.UnlinkChat(info.User.ID, chatID); err != nil {
 		writeInternal(w, err)
 		return
 	}

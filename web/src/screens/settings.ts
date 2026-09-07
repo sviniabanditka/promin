@@ -376,8 +376,25 @@ export function mountSettings(container: HTMLElement): ScreenInstance {
           toast({ kind: 'info', text: t('telegram.disabled') });
           return;
         }
-        if (tgStatus.linked) askUnlinkTelegram();
-        else openTelegramLink();
+        if (!tgStatus.linked) {
+          openTelegramLink();
+          return;
+        }
+        // Already linked: a family shares the profile — offer to add another
+        // phone (fresh code/QR) or to unlink everyone.
+        openOptions(
+          t('telegram.row'),
+          [
+            { value: 'add', label: t('telegram.add_phone') },
+            { value: 'unlink', label: t('telegram.unlink') },
+          ],
+          'add',
+          function (v) {
+            closeModal();
+            if (v === 'add') openTelegramLink();
+            else askUnlinkTelegram();
+          }
+        );
       });
       if (!tgStatus) {
         getTelegramStatus().then(
