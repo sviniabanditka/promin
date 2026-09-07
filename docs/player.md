@@ -7,7 +7,7 @@ The player is one module, `web/src/core/player/index.ts`, plus the lazy hls.js l
 ```ts
 PlayerMedia   { type: 'hls' | 'mp4'; streams: Stream[]; subtitles: Subtitle[]; voices: Voice[];
                 currentVoice?: string | null; audioNames?: string[] }
-PlayerContext { title, subtitle, poster, media, tmdb_id, media_type, season, episode,
+PlayerContext { title, subtitle, poster, media, tmdb_id, media_type, imdb_id?, season, episode,
                 resume?: { position_sec, duration_sec }, durationHint?: number,
                 onProgress, onEnded, onVoice, onNext, onPrev, onEpisodes, onEpisode, loadAudioTracks }
 ```
@@ -113,6 +113,10 @@ The pill's value shows the dub currently playing. The picked in-stream track (`w
 Sources: sidecar files from the resolve response (`<track kind="subtitles">` appended to the video) and WebVTT renditions inside an HLS master (`hls.subtitleTracks`). Exactly one may be active; "Off" disables all. The `/relay` endpoint converts `.srt` to WebVTT on the fly (`server/internal/httpapi/relay_subtitle.go`), so SRT sidecars render like VTT.
 
 Rendering is the player's own: every text track stays `mode = 'hidden'` (hls.js keeps `subtitleDisplay: false`), and `renderCues()` paints the active cues into `player__subs` on each tick with tags stripped. Size comes from `subtitle_size` (`player--subs-small/medium/large`, adjustable from the "more" sheet and the settings screen). The chosen subtitle (`wantSub`, label first, language second) carries over to the next episode.
+
+**External subtitles.** When the context carries `imdb_id` (the title screen passes `card.external_ids.imdb_id`), the menu grows a "Зовнішні субтитри → Знайти…" section. It calls `GET /api/v1/subtitles/search?imdb_id&season&episode&langs` (UI language first, then uk/ru/en; `progress` toast while searching, `warning` when empty/disabled) and lists one row per result (flag + language name · release (truncated) · HI · downloads). A pick becomes an ordinary `Subtitle` whose `url` is `/api/v1/subtitles/<file_id>.vtt` — `mediaUrl()` stamps `?t=` on that prefix too — and goes through `applySubtitle` like a sidecar; it shows as its own row (`id: 'ext'`) until the episode changes. The pick is remembered in localStorage under `promin:extsub:<tmdb>:<season>:<episode>` and preselected on the next open of that episode (`applyStoredExt`, only when no source/in-stream track is showing; "Off" forgets it).
+
+**Offset.** The "Зсув субтитрів" row opens −2…+2 s in 0.5 s steps; `subOffset` (+ = cues appear later) resets on every voice/episode switch. With a non-zero offset `renderCues()` ignores the browser's `activeCues` and picks cues from each hidden track's `cues` list against `currentTime − subOffset`, so it applies to sidecar, in-stream (hls.js) and external tracks alike.
 
 ## Playback speed
 

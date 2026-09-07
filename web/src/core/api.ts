@@ -597,7 +597,7 @@ export function mediaUrl(url: string): string {
   if (!url) return url;
   const token = getToken();
   if (!token) return url;
-  if (url.indexOf('/relay') === 0 || url.indexOf('/remux') === 0 || url.indexOf('/stream') === 0) {
+  if (url.indexOf('/relay') === 0 || url.indexOf('/remux') === 0 || url.indexOf('/stream') === 0 || url.indexOf(API_BASE + '/subtitles/') === 0) {
     // Match the token param specifically — a bare 't=' also matches ?st=/format=ts
     // etc., which would skip stamping and 401 the media request.
     if (/[?&]t=/.test(url)) return url;
@@ -996,4 +996,26 @@ export interface QueueItem {
 
 export function postQueuePop(): Promise<QueueItem | null> {
   return post<QueueItem | null>('/queue/pop', undefined, undefined, 5000);
+}
+
+// External subtitles (OpenSubtitles through the backend). The .vtt route is
+// same-origin media for <track>: mediaUrl() stamps the token as ?t= like /relay.
+export interface SubtitleResult {
+  file_id: number | string;
+  lang: string;
+  release: string;
+  downloads: number;
+  hearing_impaired: boolean;
+  fps?: number;
+  uploader?: string;
+}
+export interface SubtitleSearchResponse {
+  enabled: boolean;
+  results: SubtitleResult[];
+}
+export function searchSubtitles(imdbId: string, season: number | null | undefined, episode: number | null | undefined, langs: string): Promise<SubtitleSearchResponse> {
+  return get<SubtitleSearchResponse>('/subtitles/search', { imdb_id: imdbId, season: season, episode: episode, langs: langs }, 25000);
+}
+export function subtitleFileUrl(fileId: number | string): string {
+  return API_BASE + '/subtitles/' + fileId + '.vtt';
 }

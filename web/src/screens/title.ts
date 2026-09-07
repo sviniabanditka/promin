@@ -1341,6 +1341,7 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
           media: media,
           tmdb_id: card.tmdb_id,
           media_type: card.type,
+          imdb_id: card.external_ids ? card.external_ids.imdb_id : undefined,
           season: seasonNum,
           episode: epNum,
           resume: tc ? { position_sec: tc.position_sec, duration_sec: tc.duration_sec } : null,
@@ -2399,6 +2400,7 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
           media: media,
           tmdb_id: card.tmdb_id,
           media_type: card.type,
+          imdb_id: card.external_ids ? card.external_ids.imdb_id : undefined,
           season: season,
           episode: episode,
           // Past the pack's last file (or a single-file torrent): the watch queue.

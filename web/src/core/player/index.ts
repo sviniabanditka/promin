@@ -41,7 +41,7 @@ import {
   ICO_MORE,
 } from './icons';
 import * as router from '../router';
-import { t } from '../i18n';
+import { t, getLang } from '../i18n';
 import { toast } from '../../ui/toast';
 import { el, empty, pad2 } from '../../ui/dom';
 import { ScreenInstance } from '../activity';
@@ -51,7 +51,7 @@ import { isResumable } from '../progress';
 import { report as diag } from '../diag';
 import { setRemoteHandler, RemoteAction } from './remote';
 import { ensureHls, HlsInstance, HlsCtor } from './hls';
-import { Stream, Subtitle, Voice, mediaUrl, postPlayerState, PlayerStateReport } from '../api';
+import { Stream, Subtitle, Voice, mediaUrl, postPlayerState, PlayerStateReport, searchSubtitles, subtitleFileUrl, SubtitleResult } from '../api';
 
 export interface PlayerMedia {
   type: 'hls' | 'mp4';
@@ -75,6 +75,8 @@ export interface PlayerContext {
   // Passed through to the Phase-3 timecode hooks (currently no-op).
   tmdb_id?: number | string;
   media_type?: string;
+  // Enables the external-subtitle search (OpenSubtitles keys on IMDb ids).
+  imdb_id?: string;
   season?: number | null;
   episode?: number | null;
   // Re-resolve for a different voice (owned by screens/sources so the player
@@ -207,6 +209,12 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     lang?: string;
   }
   let hlsSubs: HlsSubTrack[] = [];
+  // External subtitle picked from the search: a plain Subtitle whose url is the
+  // backend's /api/v1/subtitles/<id>.vtt route, so applySubtitle treats it like
+  // a sidecar. Remembered per (tmdb, season, episode) in localStorage.
+  let extSub: Subtitle | null = null;
+  // Subtitle timing shift in seconds (+ = cues appear later). Reset per media load.
+  let subOffset = 0;
   // Torrent audio tracks (from ctx.loadAudioTracks). Unlike remuxAudio (seeded
   // per-stream from the X-Remux-Audio header and reset on reload), these persist
   // for the whole session and drive the same audio=N re-mux switch.
@@ -705,6 +713,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   // ---- episode list (tv) ----
   let episodes: PlayerEpisode[] = [];
   let curEpisode: number | null = ctx.episode != null ? ctx.episode : null;
+  let curSeason: number | null = ctx.season != null ? ctx.season : null;
   function loadEpisodes(): void {
     if (!ctx.onEpisodes) return;
     ctx.onEpisodes(function (list, current) {
@@ -785,7 +794,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     applyWantSub();
   }
   function updateSubsButton(): void {
-    const any = (media.subtitles && media.subtitles.length > 0) || hlsSubs.length > 0;
+    const any = (media.subtitles && media.subtitles.length > 0) || hlsSubs.length > 0 || !!ctx.imdb_id;
     btnSubs.classList.toggle('hide', !any);
   }
   function hlsSubOff(): void {
@@ -813,15 +822,28 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   // Paint the active cues of every hidden TextTrack (ours, or hls.js's). Tags
   // are stripped; line breaks survive via white-space: pre-line.
   let lastCueText = '';
+  interface Cue {
+    text?: string;
+    startTime: number;
+    endTime: number;
+  }
   function renderCues(): void {
     let text = '';
     const tracks = video.textTracks;
+    // Cue at media time T shows at T + subOffset: pick against the shifted clock.
+    const at = video.currentTime - subOffset;
     if (tracks) {
       for (let i = 0; i < tracks.length; i++) {
-        const tr = tracks[i] as unknown as { mode: string; activeCues: ArrayLike<{ text?: string }> | null };
-        if (tr.mode !== 'hidden' || !tr.activeCues) continue;
-        for (let j = 0; j < tr.activeCues.length; j++) {
-          const c = tr.activeCues[j].text || '';
+        const tr = tracks[i] as unknown as { mode: string; activeCues: ArrayLike<Cue> | null; cues: ArrayLike<Cue> | null };
+        if (tr.mode !== 'hidden') continue;
+        // No offset: the browser's own active set. With one: scan the whole cue
+        // list (ponytail: linear, a film is ~1–2k cues at 4 Hz — nothing).
+        const list = subOffset === 0 ? tr.activeCues : tr.cues;
+        if (!list) continue;
+        for (let j = 0; j < list.length; j++) {
+          const cue = list[j];
+          if (subOffset !== 0 && (cue.startTime > at || cue.endTime <= at)) continue;
+          const c = cue.text || '';
           if (c) text += (text ? '\n' : '') + c.replace(/<[^>]+>/g, '');
         }
       }
@@ -1262,6 +1284,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       onSelect: function () {
         wantSub = null;
         applySubtitle(null);
+        rememberExt(null);
       },
     });
     const subs = media.subtitles || [];
@@ -1292,10 +1315,141 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
         });
       })(hlsSubs[i], i);
     }
+    if (extSub || ctx.imdb_id) {
+      opts.push({ label: t('player.subs_ext'), header: true, active: false, onSelect: function () {} });
+      if (extSub) {
+        const es = extSub;
+        opts.push({
+          id: 'ext',
+          label: es.label || es.lang || 'sub',
+          active: currentSub === es,
+          onSelect: function () {
+            pickExtSub(es);
+          },
+        });
+      }
+      if (ctx.imdb_id) opts.push({ label: t('player.subs_find'), active: false, onSelect: openExtSubsMenu });
+    }
+    opts.push({ label: t('player.subs_offset'), sub: fmtOffset(subOffset), active: false, onSelect: openSubOffsetMenu });
     return opts;
   }
   function openSubsMenu(): void {
     openMenu(t('player.subs'), subtitleMenuOptions());
+  }
+
+  // ---- external subtitles (search by IMDb id) ----
+  const FLAGS: { [k: string]: string } = { uk: '\uD83C\uDDFA\uD83C\uDDE6', ru: '\uD83C\uDDF7\uD83C\uDDFA', en: '\uD83C\uDDEC\uD83C\uDDE7' };
+  function langName(code: string): string {
+    const n = t('lang.' + code);
+    return n === 'lang.' + code ? (code || '').toUpperCase() : n;
+  }
+  function extKey(): string {
+    return 'promin:extsub:' + ctx.tmdb_id + ':' + (curSeason == null ? '' : curSeason) + ':' + (curEpisode == null ? '' : curEpisode);
+  }
+  function rememberExt(sub: Subtitle | null): void {
+    if (!ctx.tmdb_id) return;
+    try {
+      if (sub) window.localStorage.setItem(extKey(), JSON.stringify(sub));
+      else window.localStorage.removeItem(extKey());
+    } catch (e) {
+      /* storage unavailable */
+    }
+  }
+  // Preselect the external subtitle chosen last time for this episode — only
+  // when no source/in-stream track is showing already.
+  function applyStoredExt(): void {
+    if (!ctx.tmdb_id || subTrack) return;
+    if (hls && typeof hls.subtitleTrack === 'number' && hls.subtitleTrack !== -1) return;
+    try {
+      const raw = window.localStorage.getItem(extKey());
+      const sub = raw ? (JSON.parse(raw) as Subtitle) : null;
+      if (!sub || !sub.url) return;
+      extSub = sub;
+      wantSub = sub.label || '';
+      applySubtitle(sub);
+    } catch (e) {
+      /* ignore */
+    }
+  }
+  function pickExtSub(sub: Subtitle): void {
+    extSub = sub;
+    wantSub = sub.label || '';
+    applySubtitle(sub);
+    rememberExt(sub);
+  }
+  function openExtSubsMenu(): void {
+    const imdb = ctx.imdb_id;
+    if (!imdb) return;
+    // UI language first, then the rest.
+    const langs = [getLang() as string];
+    const all = ['uk', 'ru', 'en'];
+    for (let i = 0; i < all.length; i++) if (langs.indexOf(all[i]) === -1) langs.push(all[i]);
+    toast({ kind: 'progress', title: t('player.subs_searching'), text: ctx.title || '', duration: 0 });
+    searchSubtitles(imdb, curSeason, curEpisode, langs.join(',')).then(
+      function (res) {
+        if (destroyed) return;
+        if (res && res.enabled === false) {
+          toast({ kind: 'warning', title: t('player.subs_ext_off'), text: ctx.title || '' });
+          return;
+        }
+        const list = (res && res.results) || [];
+        if (!list.length) {
+          toast({ kind: 'warning', title: t('player.subs_none'), text: ctx.title || '' });
+          return;
+        }
+        toast({ kind: 'success', icon: '\u2713', title: t('player.subs_found', { n: list.length }), text: '', duration: 1500 });
+        const opts: MenuOption[] = [];
+        for (let i = 0; i < list.length; i++) {
+          (function (r: SubtitleResult) {
+            const release = r.release || '';
+            const rel = release.length > 36 ? release.slice(0, 35) + '\u2026' : release;
+            const name = langName(r.lang);
+            const url = subtitleFileUrl(r.file_id);
+            opts.push({
+              label:
+                (FLAGS[r.lang] ? FLAGS[r.lang] + ' ' : '') +
+                name +
+                (rel ? ' \u00B7 ' + rel : '') +
+                (r.hearing_impaired ? ' \u00B7 HI' : '') +
+                (r.downloads ? ' (' + r.downloads + ')' : ''),
+              active: !!extSub && extSub.url === url,
+              onSelect: function () {
+                pickExtSub({ url: url, lang: r.lang, label: name + (rel ? ' \u00B7 ' + rel : '') });
+              },
+            });
+          })(list[i]);
+        }
+        openMenu(t('player.subs_ext'), opts);
+      },
+      function () {
+        if (!destroyed) toast({ kind: 'error', title: t('player.subs_search_failed'), text: t('toast.try_again') });
+      }
+    );
+  }
+
+  // ---- subtitle offset ----
+  function fmtOffset(v: number): string {
+    return (v < 0 ? '-' : '+') + Math.abs(v).toFixed(1) + ' ' + t('unit.sec');
+  }
+  function setSubOffset(v: number): void {
+    subOffset = v;
+    renderCues();
+    toast({ kind: 'info', icon: '\uD83D\uDCAC', title: t('player.subs_offset'), text: fmtOffset(v) });
+  }
+  function openSubOffsetMenu(): void {
+    const opts: MenuOption[] = [];
+    for (let i = -4; i <= 4; i++) {
+      (function (val: number) {
+        opts.push({
+          label: fmtOffset(val),
+          active: Math.abs(val - subOffset) < 0.01,
+          onSelect: function () {
+            setSubOffset(val);
+          },
+        });
+      })(i / 2);
+    }
+    openMenu(t('player.subs_offset'), opts);
   }
   // Mini App remote pick: run the menu row's own onSelect so both paths stay
   // identical; false when the id is not in the current menu.
@@ -1329,11 +1483,13 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       media = newMedia;
       media.currentVoice = voiceId;
       applySubtitle(null); // don't carry the old voice's subtitle track over
+      subOffset = 0; // another source, another timing
       remuxAudioIndex = 0; // new stream: default audio track, not the old index (AUD-1)
       ctxAudio = [];
       recoverAttempts = 0; // fresh stream gets a full recovery budget (LIFE-3)
       streamIndex = pickQualityIndex(media.streams);
       applyWants(); // the user's quality/subtitle picks carry over
+      applyStoredExt();
       refreshButtons();
       lastFocused = btnVoice;
       resumeAt = keepTime;
@@ -2360,6 +2516,8 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       }
       media = newMedia;
       applySubtitle(null); // don't carry the old episode's subtitle track over
+      extSub = null; // the external file was for the old episode
+      subOffset = 0;
       remuxAudioIndex = 0; // new episode: default audio track, not the old index (AUD-1)
       ctxAudio = [];
       recoverAttempts = 0; // fresh stream gets a full recovery budget (LIFE-3)
@@ -2370,6 +2528,8 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       if (meta && meta.title) titleEl.textContent = meta.title;
       if (meta && meta.subtitle != null) subBase = meta.subtitle;
       if (meta && meta.episode != null) curEpisode = meta.episode;
+      if (meta && meta.season != null) curSeason = meta.season;
+      applyStoredExt(); // this episode's remembered external subtitle
       refreshButtons();
       loadEpisodes(); // the season may have changed; the caption follows
       loadCtxAudio(); // a torrent pack's next file has its own track list
@@ -3341,6 +3501,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   }
   loadCtxAudio();
   loadEpisodes();
+  applyStoredExt();
 
   return {
     resume: function () {
