@@ -265,6 +265,7 @@ const onboardingHTML = `<!doctype html>
     <div class="body">
       <ol class="how">
         <li data-t="s2_1"></li>
+        <li data-t="s2_setup"></li>
         <li><span data-t="s2_2"></span>
           <div class="url">
             <code id="startUrl">promin.club</code>
@@ -477,10 +478,11 @@ const onboardingHTML = `<!doctype html>
     s2_lead: ["У MSX потрібно один раз вказати стартову адресу Promin. Далі MSX завжди відкриватиме портал сам.", "В MSX нужно один раз указать стартовый адрес Promin. Дальше MSX всегда будет открывать портал сам.", "Enter the Promin start address in MSX once. From then on MSX opens the portal by itself."],
     s2_sum: ["Вказати стартову сторінку в MSX", "Указать стартовую страницу в MSX", "Set the start page in MSX"],
     s2_1: ["Відкрийте <b>Media Station X</b> → зайдіть у <b>Settings</b> (Налаштування) → <b>Start Parameter</b>.", "Откройте <b>Media Station X</b> → зайдите в <b>Settings</b> (Настройки) → <b>Start Parameter</b>.", "Open <b>Media Station X</b> → <b>Settings</b> → <b>Start Parameter</b>."],
-    s2_2: ["Введіть адресу стартового меню Promin:", "Введите адрес стартового меню Promin:", "Enter the Promin start menu address:"],
+    s2_setup: ["Натисніть <b>Setup</b>, а тоді <b>Continue</b> на попередженні MSX.", "Нажмите <b>Setup</b>, затем <b>Continue</b> на предупреждении MSX.", "Press <b>Setup</b>, then <b>Continue</b> on the MSX disclaimer."],
+    s2_2: ["Наберіть адресу Promin на екранній клавіатурі, потім натисніть ✓:", "Наберите адрес Promin на экранной клавиатуре, затем нажмите ✓:", "Type the Promin address on the on-screen keyboard, then press ✓:"],
     copy: ["Копіювати", "Копировать", "Copy"],
     copied: ["Скопійовано", "Скопировано", "Copied"],
-    s2_3: ["Збережіть і перезапустіть MSX — відкриється головний екран <b>Promin</b>.", "Сохраните и перезапустите MSX — откроется главный экран <b>Promin</b>.", "Save and restart MSX — the <b>Promin</b> home screen opens."],
+    s2_3: ["MSX покаже <b>Complete Start Parameter</b> з назвою <b>Promin</b> — натисніть <b>Yes</b>. Застосунок перезавантажиться сам і відкриє головний екран Promin.", "MSX покажет <b>Complete Start Parameter</b> с названием <b>Promin</b> — нажмите <b>Yes</b>. Приложение перезагрузится само и откроет главный экран Promin.", "MSX shows <b>Complete Start Parameter</b> with the name <b>Promin</b> — press <b>Yes</b>. The app reloads itself and opens the Promin home screen."],
     s2_note: ["Вводьте лише домен — без <code>http://</code> і без шляхів. MSX сам знайде стартове меню Promin.", "Вводите только домен — без <code>http://</code> и без путей. MSX сам найдёт стартовое меню Promin.", "Enter just the domain — no <code>http://</code> and no path. MSX finds the Promin start menu by itself."],
     s2_shot: ["скріншот: поле Start Parameter у MSX", "скриншот: поле Start Parameter в MSX", "screenshot: the Start Parameter field in MSX"],
     s2_cap: ["MSX → Settings → Start Parameter", "MSX → Settings → Start Parameter", "MSX → Settings → Start Parameter"],
