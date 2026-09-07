@@ -31,7 +31,7 @@ Request bodies are capped at 1 MiB (`maxJSONBody`).
 | GET | `/api/v1/ping` | none | — | `{pong: true, version, h1_host, main_host}` — `h1_host` is the HTTP/1.1-only host for legacy TVs, `main_host` the default; empty when not configured |
 | POST | `/api/v1/diag` | none | body `{kind, seq, host, data}` (≤ 16 KiB) | 204; logged verbatim as `msg=diag` |
 | GET | `/msx/start.json` | none | — | Media Station X start object with `action: "link:<scheme>://<host>"` |
-| GET | `/onboarding` | none | — | HTML help page |
+| GET | `/onboarding` | none | `?lang=uk\|ru\|en`, `#install\|#telegram\|#faq` | HTML help page: install MSX, Telegram bot + Mini App, tips/FAQ; self-translating (uk/ru/en switcher, remembered in localStorage) |
 | GET | `/` (any unmatched path) | none | `?v=<hash>` on assets → immutable caching + ETag | embedded SPA (`static.go`) |
 
 ## 2. Auth (`handlers_auth.go`, see `docs/auth.md`)
