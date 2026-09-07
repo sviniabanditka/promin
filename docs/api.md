@@ -241,3 +241,10 @@ Sync event `open_title` (`{tmdb_id, media_type, device_id, title}`) is delivered
 Sync events added: `player_state` (`PlayerState` + `device_id`, or `{device_id, closed:true}`); `open_title` gained optional `season`/`episode`; `remote` gained action `seek_to` (absolute seconds).
 
 | DELETE | `/api/v1/auth/devices` | bearer | Signs out every session of the profile except the caller's: `{revoked: n}` |
+
+## External subtitles (OpenSubtitles)
+
+| Method | Path | Auth | Effect |
+|---|---|---|---|
+| GET | `/api/v1/subtitles/search?imdb_id=&season=&episode=&langs=uk,ru,en` | bearer | `{enabled, results:[{file_id, lang, release, downloads, hearing_impaired, fps, uploader}]}` — most downloaded first; `enabled:false` when no API key |
+| GET | `/api/v1/subtitles/{file_id}.vtt` | media token `?t=` | The subtitle as WebVTT; downloaded once per file id (anonymous quota) and cached under `/data/subs/` |

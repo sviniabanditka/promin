@@ -20,6 +20,7 @@ import (
 	"github.com/sviniabanditka/promin/server/internal/metrics"
 	"github.com/sviniabanditka/promin/server/internal/remux"
 	"github.com/sviniabanditka/promin/server/internal/sources"
+	"github.com/sviniabanditka/promin/server/internal/subtitles"
 	"github.com/sviniabanditka/promin/server/internal/sync"
 	"github.com/sviniabanditka/promin/server/internal/telegram"
 	torrentpkg "github.com/sviniabanditka/promin/server/internal/torrent"
@@ -50,6 +51,7 @@ func NewServer(
 	h1Host string,
 	mainHost string,
 	tgBot *telegram.Bot, // nil when PROMIN_TELEGRAM_BOT_TOKEN is unset
+	subsClient *subtitles.Client, // nil/disabled when PROMIN_OPENSUBTITLES_API_KEY is unset
 ) http.Handler {
 	mux := http.NewServeMux()
 
@@ -200,6 +202,11 @@ func NewServer(
 	mux.HandleFunc("DELETE /api/v1/telegram/link", requireAuth(authSvc, tgH.unlink))
 	mux.HandleFunc("GET /api/v1/telegram/links", requireAuth(authSvc, tgH.links))
 	mux.HandleFunc("DELETE /api/v1/telegram/links/{chat_id}", requireAuth(authSvc, tgH.unlinkOne))
+
+	// External subtitles (OpenSubtitles) for the player — docs/player.md.
+	subH := &subtitlesHandlers{svc: subsClient}
+	mux.HandleFunc("GET /api/v1/subtitles/search", requireAuth(authSvc, subH.search))
+	mux.HandleFunc("GET /api/v1/subtitles/{file}", requireAuthMedia(authSvc, subH.file))
 
 	// Telegram Mini App (docs/miniapp.md): initData login, devices + player
 	// state, send-to-TV. The TV reports its player via /player/state.

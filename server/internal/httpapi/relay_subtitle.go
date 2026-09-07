@@ -59,3 +59,6 @@ func toWebVTT(body []byte) []byte {
 	out = append(out, "WEBVTT\n\n"...)
 	return append(out, body...)
 }
+
+// ToWebVTT is the SRT→WebVTT converter, shared with the subtitles package.
+func ToWebVTT(body []byte) []byte { return toWebVTT(body) }

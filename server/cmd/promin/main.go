@@ -24,6 +24,7 @@ import (
 	"github.com/sviniabanditka/promin/server/internal/remux"
 	"github.com/sviniabanditka/promin/server/internal/sources"
 	"github.com/sviniabanditka/promin/server/internal/store"
+	"github.com/sviniabanditka/promin/server/internal/subtitles"
 	"github.com/sviniabanditka/promin/server/internal/sync"
 	"github.com/sviniabanditka/promin/server/internal/telegram"
 	"github.com/sviniabanditka/promin/server/internal/torrent"
@@ -234,7 +235,11 @@ func main() {
 		}()
 	}
 
-	handler := httpapi.NewServer(version, logger, cfg.DataDir, catalogSvc, sourcesSvc, remuxQueue, torrentMgr, authSvc, syncSvc, cfg.HTTPAddr, logBuf, cfg.LogsPassword, weatherSvc, cfg.WeatherPlace, cfg.H1Host, cfg.MainHost, tgBot)
+	subsClient := subtitles.New(cfg.OpenSubtitlesAPIKey, "", filepath.Join(cfg.DataDir, "subs"), httpapi.ToWebVTT)
+	if subsClient.Enabled() {
+		logger.Info("external subtitles enabled (OpenSubtitles)")
+	}
+	handler := httpapi.NewServer(version, logger, cfg.DataDir, catalogSvc, sourcesSvc, remuxQueue, torrentMgr, authSvc, syncSvc, cfg.HTTPAddr, logBuf, cfg.LogsPassword, weatherSvc, cfg.WeatherPlace, cfg.H1Host, cfg.MainHost, tgBot, subsClient)
 	srv := &http.Server{
 		Addr:    cfg.HTTPAddr,
 		Handler: handler,
