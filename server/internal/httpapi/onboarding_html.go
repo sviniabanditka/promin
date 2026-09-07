@@ -236,14 +236,14 @@ const onboardingHTML = `<!doctype html>
       <div class="pane on" data-pane="samsung">
         <ol class="how"><li data-t="sam1"></li><li data-t="sam2"></li><li data-t="sam3"></li><li data-t="go2"></li></ol>
         <figure class="shot" data-shot="samsung-store">
-          <div class="box" data-t="sam_shot"></div>
+          <img src="/shot-samsung-store.webp?v=1" width="1264" height="698" loading="lazy" alt="" data-t-alt="sam_shot">
           <figcaption data-t="sam_cap"></figcaption>
         </figure>
       </div>
       <div class="pane" data-pane="lg">
         <ol class="how"><li data-t="lg1"></li><li data-t="lg2"></li><li data-t="lg3"></li><li data-t="go2"></li></ol>
         <figure class="shot" data-shot="lg-store">
-          <div class="box" data-t="lg_shot"></div>
+          <img src="/shot-lg-store.webp?v=1" width="1268" height="696" loading="lazy" alt="" data-t-alt="lg_shot">
           <figcaption data-t="lg_cap"></figcaption>
         </figure>
       </div>
@@ -251,7 +251,7 @@ const onboardingHTML = `<!doctype html>
         <p class="lead" data-t="oth_lead"></p>
         <ol class="how"><li data-t="oth1"></li><li data-t="oth2"></li><li data-t="oth3"></li><li data-t="oth4"></li></ol>
         <figure class="shot" data-shot="other-store">
-          <div class="box" data-t="oth_shot"></div>
+          <img src="/shot-other-store.webp?v=1" width="1264" height="713" loading="lazy" alt="" data-t-alt="oth_shot">
           <figcaption data-t="oth_cap"></figcaption>
         </figure>
       </div>
@@ -465,14 +465,14 @@ const onboardingHTML = `<!doctype html>
     lg2: ["У пошуку введіть <b>Media Station X</b>.", "В поиске введите <b>Media Station X</b>.", "Search for <b>Media Station X</b>."],
     lg3: ["Натисніть <b>Встановити</b> та дочекайтесь завершення.", "Нажмите <b>Установить</b> и дождитесь завершения.", "Press <b>Install</b> and wait for it to finish."],
     lg_shot: ["скріншот: Media Station X у LG Content Store", "скриншот: Media Station X в LG Content Store", "screenshot: Media Station X in the LG Content Store"],
-    lg_cap: ["LG Content Store → пошук «Media Station X»", "LG Content Store → поиск «Media Station X»", "LG Content Store → search “Media Station X”"],
+    lg_cap: ["LG Content Store → сторінка Media Station X", "LG Content Store → страница Media Station X", "LG Content Store → the Media Station X page"],
     oth_lead: ["Android TV, Google TV, Fire TV, приставки та інші платформи:", "Android TV, Google TV, Fire TV, приставки и другие платформы:", "Android TV, Google TV, Fire TV, set-top boxes and other platforms:"],
     oth1: ["Відкрийте магазин застосунків вашого пристрою (<b>Google Play</b>, <b>Amazon Appstore</b> тощо).", "Откройте магазин приложений вашего устройства (<b>Google Play</b>, <b>Amazon Appstore</b> и т. д.).", "Open your device’s app store (<b>Google Play</b>, <b>Amazon Appstore</b>, etc.)."],
     oth2: ["Знайдіть і встановіть <b>Media Station X</b>.", "Найдите и установите <b>Media Station X</b>.", "Find and install <b>Media Station X</b>."],
     oth3: ["Якщо застосунку немає в магазині — відкрийте <a href=\"https://msx.benzac.de/\" target=\"_blank\" rel=\"noopener\">msx.benzac.de</a> у браузері ТВ (той самий MSX у веб-версії).", "Если приложения нет в магазине — откройте <a href=\"https://msx.benzac.de/\" target=\"_blank\" rel=\"noopener\">msx.benzac.de</a> в браузере ТВ (тот же MSX в веб-версии).", "If the store does not have it, open <a href=\"https://msx.benzac.de/\" target=\"_blank\" rel=\"noopener\">msx.benzac.de</a> in the TV browser (the same MSX as a web app)."],
     oth4: ["Запустіть MSX — перейдіть до <a href=\"#step2\">Кроку 2</a>.", "Запустите MSX — перейдите к <a href=\"#step2\">Шагу 2</a>.", "Launch MSX — continue with <a href=\"#step2\">Step 2</a>."],
     oth_shot: ["скріншот: встановлення MSX на інших ТВ", "скриншот: установка MSX на других ТВ", "screenshot: installing MSX on other TVs"],
-    oth_cap: ["MSX у магазині застосунків / у браузері", "MSX в магазине приложений / в браузере", "MSX in the app store / in the browser"],
+    oth_cap: ["Google Play на Android TV → Media Station X", "Google Play на Android TV → Media Station X", "Google Play on Android TV → Media Station X"],
     s2_h: ["Підключити Promin", "Подключить Promin", "Connect Promin"],
     s2_lead: ["У MSX потрібно один раз вказати стартову адресу Promin. Далі MSX завжди відкриватиме портал сам.", "В MSX нужно один раз указать стартовый адрес Promin. Дальше MSX всегда будет открывать портал сам.", "Enter the Promin start address in MSX once. From then on MSX opens the portal by itself."],
     s2_sum: ["Вказати стартову сторінку в MSX", "Указать стартовую страницу в MSX", "Set the start page in MSX"],
