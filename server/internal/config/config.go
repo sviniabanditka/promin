@@ -15,6 +15,9 @@ import (
 type Config struct {
 	// HTTPAddr is the address the internal HTTP listener binds to.
 	HTTPAddr string
+	// MetricsAddr is the separate Prometheus /metrics listener
+	// (PROMIN_METRICS_ADDR, default :9100). Empty disables it.
+	MetricsAddr string
 	// DataDir is the root directory for images/torrents/remux storage.
 	DataDir string
 	// DBPath is the path to the SQLite database file.
@@ -124,9 +127,10 @@ type Config struct {
 func Load() Config {
 	dataDir := getenv("PROMIN_DATA_DIR", "/data")
 	return Config{
-		HTTPAddr: getenv("PROMIN_HTTP_ADDR", ":8080"),
-		DataDir:  dataDir,
-		DBPath:   getenv("PROMIN_DB_PATH", dataDir+"/promin.db"),
+		HTTPAddr:    getenv("PROMIN_HTTP_ADDR", ":8080"),
+		MetricsAddr: getenv("PROMIN_METRICS_ADDR", ":9100"),
+		DataDir:     dataDir,
+		DBPath:      getenv("PROMIN_DB_PATH", dataDir+"/promin.db"),
 		// Public JacRed API — the same upstream lampac's own JacRed module was
 		// proxying ("redapi": "http://jac.red"), minus lampac. Ф0 of docs/lampac-independence.
 		JacRedBaseURL: getenv("PROMIN_JACRED_BASE_URL", "http://jac.red"),

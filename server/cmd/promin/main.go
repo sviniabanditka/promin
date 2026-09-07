@@ -20,6 +20,7 @@ import (
 	"github.com/sviniabanditka/promin/server/internal/config"
 	"github.com/sviniabanditka/promin/server/internal/httpapi"
 	"github.com/sviniabanditka/promin/server/internal/logbuf"
+	"github.com/sviniabanditka/promin/server/internal/metrics"
 	"github.com/sviniabanditka/promin/server/internal/remux"
 	"github.com/sviniabanditka/promin/server/internal/sources"
 	"github.com/sviniabanditka/promin/server/internal/store"
@@ -220,6 +221,17 @@ func main() {
 	if cfg.TelegramBotToken != "" {
 		tgBot = telegram.New(telegram.NewClient(cfg.TelegramAPIBaseURL, cfg.TelegramBotToken), db.Telegram, catalogSvc, syncSvc, cfg.MainHost, logger)
 		go tgBot.Run(ctx)
+	}
+
+	// Prometheus on its own listener: never on the public mux (the ingress
+	// would expose it). PROMIN_METRICS_ADDR="" turns it off.
+	if cfg.MetricsAddr != "" {
+		metrics.SetBuildInfo(version)
+		go func() {
+			if err := metrics.ListenAndServe(cfg.MetricsAddr); err != nil {
+				logger.Warn("metrics listener failed", "addr", cfg.MetricsAddr, "error", err)
+			}
+		}()
 	}
 
 	handler := httpapi.NewServer(version, logger, cfg.DataDir, catalogSvc, sourcesSvc, remuxQueue, torrentMgr, authSvc, syncSvc, cfg.HTTPAddr, logBuf, cfg.LogsPassword, weatherSvc, cfg.WeatherPlace, cfg.H1Host, cfg.MainHost, tgBot)

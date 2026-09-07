@@ -39,9 +39,14 @@ spec:
         - name: promin
           image: ghcr.io/sviniabanditka/promin:latest
           imagePullPolicy: IfNotPresent
-          ports: [{ containerPort: 8080 }]
+          # 9100 = Prometheus /metrics (ServiceMonitor в k8s/monitoring.yaml); отдельный
+          # listener, наружу через Ingress не выходит (тот смотрит только на 8080).
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: metrics, containerPort: 9100 }
           env:
             - { name: PROMIN_HTTP_ADDR, value: ":8080" }
+            - { name: PROMIN_METRICS_ADDR, value: ":9100" }
             - { name: PROMIN_DATA_DIR, value: "/data" }
             # Единая ссылка promin.club для всех ТВ. Старый Samsung (Chromium ~47)
             # ломает медиа поверх HTTP/2, а Cloudflare h2 не отключает. Устройство
@@ -121,9 +126,12 @@ kind: Service
 metadata:
   name: promin
   namespace: promin
+  labels: { app: promin } # selector ServiceMonitor'а
 spec:
   selector: { app: promin }
-  ports: [{ port: 8080, targetPort: 8080 }]
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+    - { name: metrics, port: 9100, targetPort: metrics }
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress

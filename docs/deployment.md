@@ -414,11 +414,27 @@ cluster's kube-prometheus-stack (namespace `monitoring`, Grafana at
   (the last one asserts HTTP/1.1, so a broken ALPN option is caught).
 - **Probe** objects carry `release: kube-prometheus`, which is the selector the
   operator's Prometheus uses.
+- **ServiceMonitor `promin`** scrapes the application's own metrics
+  (`promin_*`) every 30 s from the `metrics` port (9100) of the `promin`
+  Service. The binary serves `/metrics` on a separate listener
+  (`PROMIN_METRICS_ADDR`, default `:9100`; empty disables it) so it never
+  reaches the public `:8080` mux / Ingress. Metrics: HTTP requests + latency
+  per mux route, native source search/resolve counts + latency per provider
+  (`outcome` = `match|nomatch|error` / `ok|empty|error`), JacRed searches
+  (`ok|error|rate_limited`), `/relay` requests by kind + upstream errors,
+  gauges for active remux jobs, torrents, WS clients, playing devices, and
+  `promin_build_info{version}`.
 - **PrometheusRule `promin`**: `ProminDown` (probe failing 3 min, critical),
-  `ProminSlow`, `ProminPodRestarting`, `ProminMemoryHigh`, `ProminDataDiskFilling`.
+  `ProminSlow`, `ProminPodRestarting`, `ProminMemoryHigh`, `ProminDataDiskFilling`,
+  plus application rules — `ProminSourceFailing` (a provider whose resolves are
+  > 80 % empty/error over 6 h with ≥ 5 attempts: a broken source, noticed before
+  the TV shows an empty list), `ProminHttp5xx` (5xx ratio > 5 % over 15 m),
+  `ProminRelayUpstreamErrors` (> 30 upstream failures in 15 m). All warning.
 - **Dashboard "Promin"** is provisioned from the ConfigMap labelled
   `grafana_dashboard=1`: availability, up/down per host, deployed image,
-  restarts, probe latency, memory vs limit, CPU, data volume, network.
+  restarts, probe latency, memory vs limit, CPU, data volume, network, and an
+  "Application" row: requests/s by status, p95 latency by route, source resolve
+  success rate and p95 per provider, active remux/torrents/WS, relay errors.
 
 Alerts are delivered to Telegram. `k8s/alerting.yaml` is an `AlertmanagerConfig`
 used as the **global** Alertmanager configuration (Helm value

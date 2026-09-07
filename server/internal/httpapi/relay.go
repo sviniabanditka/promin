@@ -7,9 +7,11 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	pathpkg "path"
 	"strings"
 	"time"
 
+	"github.com/sviniabanditka/promin/server/internal/metrics"
 	"github.com/sviniabanditka/promin/server/internal/sources"
 )
 
@@ -115,11 +117,16 @@ func relayHandler(logger *slog.Logger) http.HandlerFunc {
 
 		resp, err := relayClient.Do(req)
 		if err != nil {
+			metrics.RelayUpstreamErrors.Inc()
+			metrics.RelayRequests.WithLabelValues("other").Inc()
 			logger.Warn("relay: upstream request failed", "url", raw, "error", err)
 			writeError(w, http.StatusBadGateway, "upstream_unavailable", "джерело потоку недоступне")
 			return
 		}
 		defer resp.Body.Close()
+		if resp.StatusCode >= 500 {
+			metrics.RelayUpstreamErrors.Inc()
+		}
 
 		// Resolve children against the FINAL URL: an upstream that 307-redirects
 		// its playlist to a CDN (VeoVeo does) writes root-relative segment paths
@@ -129,10 +136,12 @@ func relayHandler(logger *slog.Logger) http.HandlerFunc {
 			final = resp.Request.URL
 		}
 		if isSubtitle(final.Path, resp.Header.Get("Content-Type")) {
+			metrics.RelayRequests.WithLabelValues("subtitle").Inc()
 			relaySubtitle(w, resp, logger)
 			return
 		}
 		if isManifest(final.Path, resp.Header.Get("Content-Type")) {
+			metrics.RelayRequests.WithLabelValues("manifest").Inc()
 			// Propagate the caller's media token into every rewritten child
 			// URL: after the hard gate /relay needs ?t=, and hls.js fetches the
 			// rewritten segment/variant URLs directly (mediaUrl only stamps the
@@ -143,8 +152,18 @@ func relayHandler(logger *slog.Logger) http.HandlerFunc {
 			relayManifest(w, resp, final, tokenFromRequest(r, true), logger)
 			return
 		}
+		metrics.RelayRequests.WithLabelValues(relayKind(final.Path)).Inc()
 		relayPassthrough(w, resp)
 	}
+}
+
+// relayKind: HLS media segments vs everything else (whole mp4, keys, …).
+func relayKind(path string) string {
+	switch strings.ToLower(pathpkg.Ext(path)) {
+	case ".ts", ".m4s", ".aac", ".m4a", ".mp4a":
+		return "segment"
+	}
+	return "other"
 }
 
 func isManifest(path, contentType string) bool {
@@ -183,6 +202,7 @@ func copyHeader(dst, src http.Header, keys ...string) {
 func relayManifest(w http.ResponseWriter, resp *http.Response, base *url.URL, token string, logger *slog.Logger) {
 	body, err := io.ReadAll(io.LimitReader(resp.Body, manifestReadLimit))
 	if err != nil {
+		metrics.RelayUpstreamErrors.Inc()
 		logger.Warn("relay: failed reading manifest", "url", base.String(), "error", err)
 		writeError(w, http.StatusBadGateway, "upstream_unavailable", "не вдалося прочитати плейлист")
 		return

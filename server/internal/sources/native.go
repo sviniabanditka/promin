@@ -21,6 +21,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/sviniabanditka/promin/server/internal/metrics"
 	"github.com/sviniabanditka/promin/server/internal/sources/provider"
 	"github.com/sviniabanditka/promin/server/internal/store"
 )
@@ -411,6 +412,7 @@ func (s *Service) matchSource(ctx context.Context, np NativeProvider, req Online
 		lastErr  error
 		anyReply bool
 	)
+	start := time.Now()
 	// Exact lookup by imdb id when the provider has an id map — no ranking
 	// heuristics can beat a shared identifier.
 	if lk, isLk := np.P.(provider.Lookuper); isLk && req.IMDbID != "" {
@@ -426,6 +428,7 @@ func (s *Service) matchSource(ctx context.Context, np NativeProvider, req Online
 	if len(queries) == 0 && !ok {
 		return "", false
 	}
+	defer func() { metrics.ObserveSourceSearch(np.P.ID(), metrics.SearchOutcome(ok, anyReply), time.Since(start)) }()
 	for _, query := range queries {
 		if ok {
 			break
@@ -555,6 +558,8 @@ func (s *Service) nativeProvider(balancer string) (NativeProvider, bool) {
 // wrapped in /relay exactly like a lampac one, so the TV never talks to the
 // source directly.
 func (s *Service) resolveNative(ctx context.Context, np NativeProvider, req ResolveRequest) (ResolveResponse, error) {
+	start, outcome := time.Now(), metrics.OutcomeError
+	defer func() { metrics.ObserveSourceResolve(np.P.ID(), outcome, time.Since(start)) }()
 	sourceID, ok := s.matchSource(ctx, np, OnlineRequest{
 		TMDBID: req.TMDBID, TitleRU: req.TitleRU,
 		Type:          req.Type,
@@ -564,6 +569,7 @@ func (s *Service) resolveNative(ctx context.Context, np NativeProvider, req Reso
 		IMDbID:        req.IMDbID,
 	})
 	if !ok {
+		outcome = metrics.OutcomeEmpty
 		return ResolveResponse{Streams: []Stream{}, Unresolved: "not_found"}, nil
 	}
 
@@ -618,6 +624,7 @@ func (s *Service) resolveNative(ctx context.Context, np NativeProvider, req Reso
 	if voice == "" {
 		voice = st.Audio
 	}
+	outcome = metrics.OutcomeOK
 	return ResolveResponse{
 		Streams:    streams,
 		Subtitles:  subs,

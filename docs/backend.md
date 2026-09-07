@@ -72,6 +72,7 @@ All configuration is environment variables. Durations use Go syntax (`30s`, `24h
 | Variable | Default | Meaning |
 |---|---|---|
 | `PROMIN_HTTP_ADDR` | `:8080` | Listen address |
+| `PROMIN_METRICS_ADDR` | `:9100` | Separate Prometheus `/metrics` listener (`promin_*`); empty disables it. Never on the public mux |
 | `PROMIN_DATA_DIR` | `/data` | Root for `img/`, `torrents/`, `remux/`, `backups/`, `pin_secret`, `veoveo.json.gz` |
 | `PROMIN_DB_PATH` | `$PROMIN_DATA_DIR/promin.db` | SQLite file |
 | `PROMIN_LOG_LEVEL` | `info` | slog level: `debug`, `info`, `warn`, `error` |

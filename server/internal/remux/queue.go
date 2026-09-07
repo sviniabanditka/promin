@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/sviniabanditka/promin/server/internal/metrics"
 )
 
 // Config configures a Queue, per docs/backend.md
@@ -226,7 +228,8 @@ func (q *Queue) run(job *Job) {
 	defer cancel()
 	select {
 	case sem <- struct{}{}:
-		defer func() { <-sem }()
+		metrics.RemuxJobsActive.Inc()
+		defer func() { <-sem; metrics.RemuxJobsActive.Dec() }()
 	case <-ctx.Done():
 		job.setFailed(context.Canceled)
 		return

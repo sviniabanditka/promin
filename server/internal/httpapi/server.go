@@ -17,6 +17,7 @@ import (
 	"github.com/sviniabanditka/promin/server/internal/auth"
 	"github.com/sviniabanditka/promin/server/internal/catalog"
 	"github.com/sviniabanditka/promin/server/internal/logbuf"
+	"github.com/sviniabanditka/promin/server/internal/metrics"
 	"github.com/sviniabanditka/promin/server/internal/remux"
 	"github.com/sviniabanditka/promin/server/internal/sources"
 	"github.com/sviniabanditka/promin/server/internal/sync"
@@ -206,7 +207,7 @@ func NewServer(
 
 	mux.Handle("/", staticHandler())
 
-	return withSecurityHeaders(withLogging(logger, mux))
+	return withSecurityHeaders(withLogging(logger, metrics.HTTP(mux)))
 }
 
 func handleHealthz(w http.ResponseWriter, r *http.Request) {

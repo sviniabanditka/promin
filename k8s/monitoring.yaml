@@ -103,6 +103,21 @@ spec:
       static:
         - https://h1.promin.club/healthz
 ---
+# Application metrics (promin_*) from the binary's own :9100 listener
+# (PROMIN_METRICS_ADDR); the Service port is named `metrics` in k8s/promin.yaml.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: promin
+  namespace: monitoring
+  labels: { release: kube-prometheus }
+spec:
+  namespaceSelector: { matchNames: [promin] }
+  selector: { matchLabels: { app: promin } }
+  endpoints:
+    - port: metrics
+      interval: 30s
+---
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -143,6 +158,31 @@ spec:
           labels: { severity: warning }
           annotations:
             summary: "promin data volume under 10% free"
+        # A source whose resolves mostly come back empty/failed for 6 h is
+        # broken (markup changed, host blocked) — catch it before the TV shows
+        # an empty list. ≥ 5 attempts so one unlucky title doesn't page.
+        - alert: ProminSourceFailing
+          expr: |
+            (
+              sum by (provider) (increase(promin_source_resolve_total{outcome!="ok"}[6h]))
+                / sum by (provider) (increase(promin_source_resolve_total[6h]))
+            ) > 0.8
+            and sum by (provider) (increase(promin_source_resolve_total[6h])) >= 5
+          labels: { severity: warning }
+          annotations:
+            summary: "source {{ $labels.provider }} failing: {{ $value | humanizePercentage }} of resolves empty/error over 6h"
+        - alert: ProminHttp5xx
+          expr: |
+            sum(rate(promin_http_requests_total{status=~"5.."}[15m]))
+              / sum(rate(promin_http_requests_total[15m])) > 0.05
+          labels: { severity: warning }
+          annotations:
+            summary: "promin 5xx ratio {{ $value | humanizePercentage }} over 15m"
+        - alert: ProminRelayUpstreamErrors
+          expr: increase(promin_relay_upstream_errors_total[15m]) > 30
+          labels: { severity: warning }
+          annotations:
+            summary: "/relay: {{ $value | humanize }} upstream failures in 15m"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -193,6 +233,35 @@ data:
           "fieldConfig": { "defaults": { "unit": "Bps" } },
           "targets": [
             { "expr": "sum(rate(container_network_transmit_bytes_total{namespace=\"promin\"}[5m]))", "legendFormat": "tx" },
-            { "expr": "sum(rate(container_network_receive_bytes_total{namespace=\"promin\"}[5m]))", "legendFormat": "rx" } ] }
+            { "expr": "sum(rate(container_network_receive_bytes_total{namespace=\"promin\"}[5m]))", "legendFormat": "rx" } ] },
+        { "id": 10, "type": "row", "title": "Application (promin_*)", "collapsed": false, "gridPos": { "x": 0, "y": 28, "w": 24, "h": 1 } },
+        { "id": 11, "type": "timeseries", "title": "Requests/s by status", "gridPos": { "x": 0, "y": 29, "w": 12, "h": 8 },
+          "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "stacking": { "mode": "normal" } } } },
+          "targets": [ { "expr": "sum by (status) (rate(promin_http_requests_total[5m]))", "legendFormat": "{{status}}" } ] },
+        { "id": 12, "type": "timeseries", "title": "p95 latency by route (top 10)", "gridPos": { "x": 12, "y": 29, "w": 12, "h": 8 },
+          "fieldConfig": { "defaults": { "unit": "s" } },
+          "targets": [ { "expr": "topk(10, histogram_quantile(0.95, sum by (le, route) (rate(promin_http_request_duration_seconds_bucket[5m]))))", "legendFormat": "{{route}}" } ] },
+        { "id": 13, "type": "bargauge", "title": "Source resolve success (6h)", "gridPos": { "x": 0, "y": 37, "w": 8, "h": 8 },
+          "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1,
+            "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "orange", "value": 0.2 }, { "color": "green", "value": 0.5 } ] } } },
+          "options": { "orientation": "horizontal", "displayMode": "gradient" },
+          "targets": [ { "expr": "sum by (provider) (increase(promin_source_resolve_total{outcome=\"ok\"}[6h])) / sum by (provider) (increase(promin_source_resolve_total[6h]))", "legendFormat": "{{provider}}", "instant": true } ] },
+        { "id": 14, "type": "timeseries", "title": "Source resolve p95 by provider", "gridPos": { "x": 8, "y": 37, "w": 8, "h": 8 },
+          "fieldConfig": { "defaults": { "unit": "s" } },
+          "targets": [ { "expr": "histogram_quantile(0.95, sum by (le, provider) (rate(promin_source_resolve_duration_seconds_bucket[15m])))", "legendFormat": "{{provider}}" } ] },
+        { "id": 15, "type": "timeseries", "title": "Active: remux jobs / torrents / WS clients", "gridPos": { "x": 16, "y": 37, "w": 8, "h": 8 },
+          "targets": [
+            { "expr": "promin_remux_jobs_active", "legendFormat": "remux jobs" },
+            { "expr": "promin_torrents_active", "legendFormat": "torrents" },
+            { "expr": "promin_ws_clients", "legendFormat": "ws clients" },
+            { "expr": "promin_player_devices_playing", "legendFormat": "playing" } ] },
+        { "id": 16, "type": "timeseries", "title": "Relay: upstream errors (5m) / requests by kind", "gridPos": { "x": 0, "y": 45, "w": 12, "h": 8 },
+          "targets": [
+            { "expr": "increase(promin_relay_upstream_errors_total[5m])", "legendFormat": "upstream errors" },
+            { "expr": "sum by (kind) (rate(promin_relay_requests_total[5m]))", "legendFormat": "{{kind}}/s" } ] },
+        { "id": 17, "type": "timeseries", "title": "Source searches + torrent searches (outcome/s)", "gridPos": { "x": 12, "y": 45, "w": 12, "h": 8 },
+          "targets": [
+            { "expr": "sum by (provider, outcome) (rate(promin_source_search_total[15m]))", "legendFormat": "{{provider}} {{outcome}}" },
+            { "expr": "sum by (outcome) (rate(promin_torrent_search_total[15m]))", "legendFormat": "jacred {{outcome}}" } ] }
       ]
     }

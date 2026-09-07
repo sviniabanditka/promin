@@ -5,6 +5,7 @@
 package sync
 
 import (
+	"github.com/sviniabanditka/promin/server/internal/metrics"
 	"sort"
 	"sync"
 	"time"
@@ -175,11 +176,13 @@ func (h *Hub) Subscribe(userID int64, deviceID, deviceName string) (ch chan Even
 		h.subs[userID] = map[chan Event]DeviceInfo{}
 	}
 	h.subs[userID][ch] = DeviceInfo{ID: deviceID, Name: deviceName}
+	metrics.WSClients.Inc()
 	h.mu.Unlock()
 
 	cancel = func() {
 		h.mu.Lock()
 		delete(h.subs[userID], ch)
+		metrics.WSClients.Dec()
 		if len(h.subs[userID]) == 0 {
 			delete(h.subs, userID)
 		}

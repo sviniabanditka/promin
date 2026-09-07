@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"github.com/sviniabanditka/promin/server/internal/metrics"
 	stdsync "sync"
 	"time"
 )
@@ -86,6 +87,7 @@ func (h *Hub) SetPlayerState(userID int64, deviceID string, st PlayerState) {
 	if publish {
 		e.lastPub = now
 	}
+	h.updatePlayingGauge(now)
 	h.mu.Unlock()
 	if publish {
 		h.Publish(userID, EventPlayerState, PlayerStatePayload{PlayerState: &st, DeviceID: deviceID})
@@ -100,6 +102,7 @@ func (h *Hub) ClearPlayerState(userID int64, deviceID string) {
 	if len(h.players[userID]) == 0 {
 		delete(h.players, userID)
 	}
+	h.updatePlayingGauge(h.now())
 	h.mu.Unlock()
 	h.Publish(userID, EventPlayerState, PlayerStatePayload{DeviceID: deviceID, Closed: true})
 }
@@ -152,4 +155,17 @@ func (h *Hub) DeviceSettings(userID int64, deviceID string) map[string]string {
 	devSettingsMu.Lock()
 	defer devSettingsMu.Unlock()
 	return devSettings[deviceKey{userID, deviceID}]
+}
+
+// updatePlayingGauge: devices currently playing (not paused, fresh). Caller holds h.mu.
+func (h *Hub) updatePlayingGauge(now time.Time) {
+	n := 0
+	for _, devs := range h.players {
+		for _, e := range devs {
+			if !e.state.Paused && now.Sub(time.Unix(e.state.UpdatedAt, 0)) <= playerStateTTL {
+				n++
+			}
+		}
+	}
+	metrics.PlayerDevicesPlaying.Set(float64(n))
 }

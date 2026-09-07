@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/sviniabanditka/promin/server/internal/metrics"
 )
 
 // jacredTimeout bounds the JacRed search round-trip through Lampac's
@@ -166,8 +168,14 @@ func (s *Service) searchTorrentsCached(ctx context.Context, query string) ([]jac
 		items, err = s.client.SearchTorrents(ctx, query)
 	}
 	if err != nil {
+		outcome := metrics.OutcomeError
+		if strings.Contains(err.Error(), "status 429") {
+			outcome = metrics.OutcomeRateLimited
+		}
+		metrics.TorrentSearches.WithLabelValues(outcome).Inc()
 		return nil, err
 	}
+	metrics.TorrentSearches.WithLabelValues(metrics.OutcomeOK).Inc()
 	if s.nativeCache != nil {
 		if raw, e := json.Marshal(items); e == nil {
 			s.nativeCache.Set(key, string(raw), torrentsCacheTTL)

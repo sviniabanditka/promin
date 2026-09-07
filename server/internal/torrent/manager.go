@@ -21,6 +21,7 @@ import (
 	anacrolix "github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/metainfo"
 
+	"github.com/sviniabanditka/promin/server/internal/metrics"
 	"github.com/sviniabanditka/promin/server/internal/store"
 )
 
@@ -268,6 +269,7 @@ func (m *Manager) AddMagnet(ctx context.Context, magnet string) (string, error) 
 	m.mu.Lock()
 	m.entries[ih] = e
 	activeCount := len(m.entries)
+	metrics.TorrentsActive.Set(float64(activeCount))
 	m.mu.Unlock()
 
 	if err := m.cfg.Repo.Upsert(ih, t.Info().BestName(), t.Length(), now.Unix()); err != nil {
@@ -344,6 +346,7 @@ func (m *Manager) dropEntry(ih string) {
 	if ok {
 		delete(m.entries, ih)
 	}
+	metrics.TorrentsActive.Set(float64(len(m.entries)))
 	m.mu.Unlock()
 	if ok {
 		e.t.Drop()
@@ -556,6 +559,7 @@ func (m *Manager) Remove(infoHash string) error {
 	if ok {
 		delete(m.entries, infoHash)
 	}
+	metrics.TorrentsActive.Set(float64(len(m.entries)))
 	m.mu.Unlock()
 	if !ok {
 		return ErrNotFound
