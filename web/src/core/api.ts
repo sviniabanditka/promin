@@ -993,3 +993,18 @@ export function revokeOtherDevices(): Promise<{ revoked: number }> {
 export function postDeviceSettings(settings: { [k: string]: string }): Promise<void> {
   return post<void>('/device/settings', settings, undefined, 5000);
 }
+
+// Watch queue (docs/miniapp.md). The TV only mirrors it from the bootstrap /
+// queue_updated event and pops the head when playback moves on to it.
+export interface QueueItem {
+  id: number;
+  tmdb_id: number;
+  media_type: 'movie' | 'tv';
+  season: number | null;
+  episode: number | null;
+  position: number;
+}
+
+export function postQueuePop(): Promise<QueueItem | null> {
+  return post<QueueItem | null>('/queue/pop', undefined, undefined, 5000);
+}

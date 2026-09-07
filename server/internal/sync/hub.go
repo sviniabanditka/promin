@@ -46,6 +46,8 @@ const (
 	// (docs/miniapp.md). Payload PlayerStatePayload (player_state.go).
 	EventDeviceSettings = "device_settings" // payload {device_id, settings}
 	EventPlayerState    = "player_state"
+	// EventQueueUpdated carries the whole watch queue ({items}) after any change.
+	EventQueueUpdated = "queue_updated"
 )
 
 // DeviceInfo identifies a connected device: ID is auth.TokenID of its

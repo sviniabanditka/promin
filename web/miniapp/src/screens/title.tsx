@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { ApiError, getTitle, type Card, type Episode, type MediaType, type Timecode } from '../api';
 import { fmtTime, t } from '../i18n';
-import { isBookmarked, sendOpen, targetDevice, toggleBookmark, useStore, type State } from '../store';
+import { isBookmarked, queuedItem, queueToggle, sendOpen, targetDevice, toggleBookmark, useStore, type State } from '../store';
 import { haptic, tg } from '../tg';
 import { Empty, Poster, Progress, Skeleton } from '../ui';
 
@@ -133,6 +133,11 @@ export function Title({ type, id }: { type: MediaType; id: number }) {
         <button class={'btn' + (tc ? ' btn-ghost' : '')} disabled={!canSend} onClick={doWatch}>
           {type === 'movie' ? t('title.watch') : t('title.on_tv')}
         </button>
+        {type === 'movie' && (
+          <button class={'btn btn-ghost' + (queuedItem(s, card.tmdb_id, card.type) ? ' on' : '')} onClick={() => queueToggle(card.tmdb_id, card.type)}>
+            {queuedItem(s, card.tmdb_id, card.type) ? t('queue.in_queue') : t('queue.add')}
+          </button>
+        )}
       </div>
       {!canSend && <div class="note">{t(dev ? 'remote.offline' : 'remote.no_device')}</div>}
 
@@ -176,6 +181,13 @@ export function Title({ type, id }: { type: MediaType; id: number }) {
                       {[e.runtime_minutes ? e.runtime_minutes + ' ' + t('common.min') : '', e.rating ? '★ ' + e.rating.toFixed(1) : ''].filter(Boolean).join(' · ')}
                     </div>
                   </div>
+                  <button
+                    class={'ep-play ep-queue' + (queuedItem(s, card.tmdb_id, card.type, season, e.episode) ? ' on' : '')}
+                    aria-label="queue"
+                    onClick={() => queueToggle(card.tmdb_id, card.type, season, e.episode)}
+                  >
+                    {queuedItem(s, card.tmdb_id, card.type, season, e.episode) ? '✓' : '＋'}
+                  </button>
                   <button
                     class="ep-play"
                     disabled={!canSend}

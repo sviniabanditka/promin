@@ -97,8 +97,9 @@ export function openCatalog(category: string): void {
 
 // resume: open the title AND immediately continue playback from the saved
 // position (Library's "continue" lane) — Back from the player lands on the
-// title, so details stay one press away.
-export function openTitle(type: 'movie' | 'tv', id: number, resume?: boolean, season?: number | null, episode?: number | null): void {
+// title, so details stay one press away. autoplay: start a movie from the top
+// as soon as the title renders (watch queue).
+export function openTitle(type: 'movie' | 'tv', id: number, resume?: boolean, season?: number | null, episode?: number | null, autoplay?: boolean): void {
   router.push(function (container: HTMLElement) {
     return mountTitle(container, {
       type: type,
@@ -106,6 +107,7 @@ export function openTitle(type: 'movie' | 'tv', id: number, resume?: boolean, se
       resume: !!resume,
       season: season != null ? season : undefined,
       episode: episode != null ? episode : undefined,
+      autoplay: !!autoplay,
     });
   });
 }

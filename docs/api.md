@@ -174,11 +174,24 @@ unix seconds.
 | GET | `/api/v1/settings` | bearer | — | `{settings: {key: value, …}}` |
 | PUT | `/api/v1/settings/{key}` | bearer | body `{value}` (string) | `{key, value}` |
 
+### Watch queue (`handlers_queue.go`, docs/miniapp.md)
+
+| Method | Path | Auth | Params | Response |
+|---|---|---|---|---|
+| GET | `/api/v1/queue` | bearer | — | `{items: [{id, tmdb_id, media_type, season, episode, position}]}` head first; `season`/`episode` are `null` for a movie |
+| POST | `/api/v1/queue` | bearer | body `{tmdb_id, media_type, season?, episode?}` | `201` item (appended) or `200` the existing item when the same title/episode is already queued (no event) |
+| DELETE | `/api/v1/queue/{id}` | bearer | — | 204; `404 not_found` |
+| PUT | `/api/v1/queue/{id}/move` | bearer | body `{position}` (0-based, clamped) | 204; `404 not_found` |
+| DELETE | `/api/v1/queue` | bearer | — | 204 (clear) |
+| POST | `/api/v1/queue/pop` | bearer | — | `200` the head item, removed from the queue; `204` when the queue is empty |
+
+Every change publishes `queue_updated` with the whole queue: `{items: [...]}`.
+
 ### Sync channel
 
 | Method | Path | Auth | Params | Response |
 |---|---|---|---|---|
-| GET | `/api/v1/sync/bootstrap` | bearer | — | `{bookmarks[], playlists[], history[], timecodes[], settings{}, cursor}` |
+| GET | `/api/v1/sync/bootstrap` | bearer | — | `{bookmarks[], playlists[], history[], timecodes[], settings{}, queue[], cursor}` |
 | GET | `/api/v1/sync/events` | bearer | `since=<cursor>` | `{events: [{id, type, payload}], cursor}`; `410 gone` when the cursor is older than the hub's buffer → bootstrap again |
 | GET | `/api/v1/ws` | media (`?t=`) | WebSocket upgrade | server → client: one `{id, type, payload}` frame per event for this user; client → server: `{"type":"ping"}` answered with `{"type":"pong"}` |
 
@@ -186,7 +199,8 @@ Event `type` values: `bookmark_added`, `bookmark_removed` (payload: bookmark),
 `playlist_created`, `playlist_updated` (playlist, or `{id, deleted: true}`),
 `playlist_item_added` (`{playlist_id, item}`), `playlist_item_removed`
 (`{playlist_id, item_id}`), `history_added` (history item), `timecode_updated`
-(timecode), `settings_updated` (`{key, value}`).
+(timecode), `settings_updated` (`{key, value}`), `queue_updated` (`{items}` — the
+full watch queue).
 
 ## 9. Logs (`logs.go`; registered only when `PROMIN_LOGS_PASSWORD` is set)
 

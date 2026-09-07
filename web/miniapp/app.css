@@ -262,3 +262,14 @@ h1, h2, p { margin: 0; }
 @keyframes sk { to { background-position: -200% 0; } }
 .sk.rail-title { margin: 0 16px 8px; padding: 0; }
 .sk + .sk { margin-top: 6px; }
+
+/* Watch queue (Library → Queue) */
+.q-bar { display: flex; align-items: center; gap: 8px; padding: 4px 16px 8px; }
+.q-count { flex: 1; font-size: 13px; color: var(--hint); }
+.q-ctl { display: flex; gap: 4px; }
+.q-btn { width: 32px; height: 32px; border-radius: 16px; background: var(--bg2); color: var(--text); font-size: 12px; display: grid; place-items: center; }
+.q-btn:disabled { opacity: 0.3; }
+.q-del { color: var(--danger, #e5484d); }
+.ep-queue { font-size: 20px; color: var(--text); }
+.ep-queue.on { color: var(--accent); }
+.btn.on { color: var(--accent); }

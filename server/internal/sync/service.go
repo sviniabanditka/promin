@@ -30,6 +30,7 @@ type Service struct {
 	history   *store.HistoryRepo
 	timecodes *store.TimecodesRepo
 	settings  *store.SettingsRepo
+	queue     *store.QueueRepo
 	hub       *Hub
 	now       func() time.Time
 }
@@ -42,6 +43,7 @@ func NewService(db *store.DB, hub *Hub) *Service {
 		history:   db.History,
 		timecodes: db.Timecodes,
 		settings:  db.Settings,
+		queue:     db.Queue,
 		hub:       hub,
 		now:       time.Now,
 	}
@@ -352,6 +354,10 @@ func (s *Service) Bootstrap(userID int64) (BootstrapDTO, error) {
 	if err != nil {
 		return BootstrapDTO{}, err
 	}
+	queue, err := s.ListQueue(userID)
+	if err != nil {
+		return BootstrapDTO{}, err
+	}
 
 	timecodes := make([]TimecodeDTO, 0, len(timecodeRows))
 	for _, t := range timecodeRows {
@@ -367,6 +373,7 @@ func (s *Service) Bootstrap(userID int64) (BootstrapDTO, error) {
 		History:   toHistoryDTOs(historyRows),
 		Timecodes: timecodes,
 		Settings:  settings,
+		Queue:     queue,
 		Cursor:    s.hub.Cursor(userID),
 	}, nil
 }
@@ -403,7 +410,7 @@ func (s *Service) ClearHistory(userID int64) error {
 // (httpapi) then revokes every session so all devices fall back to the PIN gate.
 func (s *Service) ClearAll(userID int64) error {
 	for _, f := range []func(int64) error{
-		s.bookmarks.ClearUser, s.playlists.ClearUser, s.history.ClearUser, s.timecodes.ClearUser, s.settings.ClearUser,
+		s.bookmarks.ClearUser, s.playlists.ClearUser, s.history.ClearUser, s.timecodes.ClearUser, s.settings.ClearUser, s.queue.ClearUser,
 	} {
 		if err := f(userID); err != nil {
 			return err

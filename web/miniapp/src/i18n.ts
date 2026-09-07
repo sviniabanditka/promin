@@ -90,6 +90,20 @@ const D: Record<string, Entry> = {
   'lib.watched': ['Переглянуто', 'Просмотрено', 'Watched'],
   'lib.empty': ['Тут поки порожньо', 'Здесь пока пусто', 'Nothing here yet'],
   'lib.items': ['{n} тайтлів', '{n} тайтлов', '{n} titles'],
+  'lib.queue': ['Черга', 'Очередь', 'Queue'],
+
+  'queue.add': ['＋ У чергу', '＋ В очередь', '＋ To queue'],
+  'queue.in_queue': ['✓ У черзі', '✓ В очереди', '✓ In queue'],
+  'queue.added': ['Додано в чергу', 'Добавлено в очередь', 'Added to queue'],
+  'queue.play': ['▶ Грати на ТБ', '▶ Играть на ТВ', '▶ Play on TV'],
+  'queue.clear': ['Очистити', 'Очистить', 'Clear'],
+  'queue.count': ['{n} у черзі', '{n} в очереди', '{n} queued'],
+  'queue.empty': ['Черга порожня', 'Очередь пуста', 'The queue is empty'],
+  'queue.empty_hint': [
+    'Додавайте фільми та серії з екрана тайтлу — телевізор програє їх по черзі, коли поточне закінчиться',
+    'Добавляйте фильмы и серии с экрана тайтла — телевизор проиграет их по очереди, когда текущее закончится',
+    'Add movies and episodes from a title screen — the TV plays them in order once the current one ends',
+  ],
 
   'set.language': ['Мова', 'Язык', 'Language'],
   'set.devices': ['Пристрої', 'Устройства', 'Devices'],

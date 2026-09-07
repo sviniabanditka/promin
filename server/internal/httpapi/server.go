@@ -177,6 +177,15 @@ func NewServer(
 
 	mux.HandleFunc("GET /api/v1/sync/bootstrap", requireAuth(authSvc, syncH.bootstrap))
 
+	// Watch queue (docs/miniapp.md): phone adds, TV pops the head.
+	qh := &queueHandlers{svc: syncSvc}
+	mux.HandleFunc("GET /api/v1/queue", requireAuth(authSvc, qh.list))
+	mux.HandleFunc("POST /api/v1/queue", requireAuth(authSvc, qh.add))
+	mux.HandleFunc("DELETE /api/v1/queue", requireAuth(authSvc, qh.clear))
+	mux.HandleFunc("POST /api/v1/queue/pop", requireAuth(authSvc, qh.pop))
+	mux.HandleFunc("DELETE /api/v1/queue/{id}", requireAuth(authSvc, qh.remove))
+	mux.HandleFunc("PUT /api/v1/queue/{id}/move", requireAuth(authSvc, qh.move))
+
 	// Settings → Danger zone (docs/auth.md).
 	meH := &meHandlers{svc: syncSvc, auth: authSvc, logger: logger}
 	mux.HandleFunc("DELETE /api/v1/me/history", requireAuth(authSvc, meH.clearHistory))

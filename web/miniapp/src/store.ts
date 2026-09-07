@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'preact/hooks';
 import * as api from './api';
-import type { Bookmark, Device, HistoryItem, HomeResponse, LocalKey, OpenCmd, PlayerState, Playlist, RemoteAction, RemoteStrAction, TimecodeItem } from './api';
+import type { Bookmark, Device, HistoryItem, HomeResponse, LocalKey, OpenCmd, PlayerState, Playlist, QueueItem, RemoteAction, RemoteStrAction, TimecodeItem } from './api';
 import { isLang, t, type Lang } from './i18n';
 import { haptic } from './tg';
 
@@ -27,6 +27,7 @@ export interface State {
   playlists: Playlist[] | null;
   history: HistoryItem[] | null;
   timecodes: TimecodeItem[] | null;
+  queue: QueueItem[] | null;
   settings: Record<string, string>;
   toast: string | null;
 }
@@ -53,6 +54,7 @@ let state: State = {
   playlists: null,
   history: null,
   timecodes: null,
+  queue: null,
   settings: {},
   toast: null,
 };
@@ -161,7 +163,7 @@ export function setLang(lang: Lang): void {
 export async function loadBootstrap(): Promise<void> {
   try {
     const b = await api.getBootstrap();
-    setState({ bookmarks: b.bookmarks ?? [], playlists: b.playlists ?? [], history: b.history ?? [], timecodes: b.timecodes ?? [], settings: b.settings ?? {} });
+    setState({ bookmarks: b.bookmarks ?? [], playlists: b.playlists ?? [], history: b.history ?? [], timecodes: b.timecodes ?? [], queue: b.queue ?? [], settings: b.settings ?? {} });
     if (isLang(b.settings?.lang) && b.settings.lang !== state.lang) {
       setLang(b.settings.lang);
       setState({ home: null }); // home rows are language-dependent
@@ -217,6 +219,67 @@ export async function toggleBookmark(tmdbId: number, type: api.MediaType, curren
     patch(current);
     toast(t('common.error'));
   }
+}
+
+// ---- watch queue ------------------------------------------------------------------
+// The server echoes every change as queue_updated (full list) — writes below only
+// patch optimistically where the lag would be visible (reorder, remove).
+
+export function queuedItem(s: State, tmdbId: number, type: api.MediaType, season?: number | null, episode?: number | null): QueueItem | undefined {
+  return (s.queue ?? []).find((q) => q.tmdb_id === tmdbId && q.media_type === type && (q.season ?? null) === (season ?? null) && (q.episode ?? null) === (episode ?? null));
+}
+
+export async function queueToggle(tmdbId: number, type: api.MediaType, season?: number | null, episode?: number | null): Promise<void> {
+  haptic('select');
+  const cur = queuedItem(state, tmdbId, type, season, episode);
+  try {
+    if (cur) await queueRemove(cur.id);
+    else {
+      await api.addQueue(tmdbId, type, season, episode);
+      toast(t('queue.added'));
+    }
+  } catch {
+    toast(t('common.error'));
+  }
+}
+
+export async function queueRemove(id: number): Promise<void> {
+  setState((s) => ({ queue: (s.queue ?? []).filter((q) => q.id !== id) }));
+  await api.removeQueue(id);
+}
+
+export async function queueMove(id: number, position: number): Promise<void> {
+  haptic('select');
+  setState((s) => {
+    const list = [...(s.queue ?? [])];
+    const from = list.findIndex((q) => q.id === id);
+    if (from < 0) return {};
+    const [it] = list.splice(from, 1);
+    list.splice(Math.max(0, Math.min(position, list.length)), 0, it);
+    return { queue: list.map((q, i) => ({ ...q, position: i })) };
+  });
+  try {
+    await api.moveQueue(id, position);
+  } catch {
+    toast(t('common.error'));
+  }
+}
+
+export async function queueClear(): Promise<void> {
+  setState({ queue: [] });
+  try {
+    await api.clearQueue();
+  } catch {
+    toast(t('common.error'));
+  }
+}
+
+// Open the head on the TV, then drop it from the queue (only when the send went through).
+export async function queuePlayHead(): Promise<void> {
+  const head = state.queue?.[0];
+  if (!head) return;
+  const ok = await sendOpen({ tmdb_id: head.tmdb_id, media_type: head.media_type, season: head.season ?? undefined, episode: head.episode ?? undefined });
+  if (ok) queueRemove(head.id).catch(() => {});
 }
 
 // ---- send to TV -----------------------------------------------------------------

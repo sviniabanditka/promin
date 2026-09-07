@@ -119,6 +119,9 @@ function handle(type: string, p: Record<string, any>): void {
     case 'device_settings':
       setState((s) => ({ devices: s.devices.map((d) => (d.id === p.device_id ? { ...d, settings: p.settings ?? {} } : d)) }));
       break;
+    case 'queue_updated':
+      setState({ queue: Array.isArray(p.items) ? p.items : [] });
+      break;
     case 'data_cleared':
       loadBootstrap();
       break;

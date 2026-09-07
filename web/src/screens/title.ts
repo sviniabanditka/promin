@@ -46,14 +46,14 @@ import { buildMenu, Menu } from '../ui/menu';
 import { buildHead, Head } from '../ui/head';
 import { buildFooter } from '../ui/shell';
 import { iconEl, ICON_PLAY, ICON_TORRENT, ICON_BOOKMARK, ICON_PLAYLIST, ICON_CHECK, ICON_TRAILER, ICON_FOLDER } from '../ui/icons';
-import { openLogin } from './nav';
+import { openLogin, openTitle } from './nav';
 import { toast } from '../ui/toast';
 import { isLogged } from '../core/auth';
 import * as sync from '../core/sync';
 import { fmtClock, runtimeText, qBadge, seedClass, parseMeta } from './titleMeta';
 import { openNameModal } from './playlists';
 import { torrentMedia, parseEpisode } from '../core/torrentPlay';
-import { openPlayer, PlayerMedia } from '../core/player';
+import { openPlayer, PlayerMedia, EpisodeMeta, PlayerEpisode } from '../core/player';
 import { isFinished, isResumable } from '../core/progress';
 
 export interface TitleParams {
@@ -64,6 +64,62 @@ export interface TitleParams {
   // Start this episode as soon as the title renders (Telegram "▶ on TV").
   season?: number;
   episode?: number;
+  // Start the movie from the top as soon as the title renders (watch queue).
+  autoplay?: boolean;
+}
+
+type NextDone = (m: PlayerMedia | null, meta?: EpisodeMeta) => void;
+
+// ---- watch queue fallback (docs/miniapp.md) --------------------------------
+// When what plays has no next episode (movie, last episode of the show, last
+// file of a pack) the player's "next" falls through to the queue head: pop it
+// and open that title with the deep-link autoplay. false = queue empty, the
+// caller keeps its own dead-end handling.
+function playQueueHead(): boolean {
+  const head = sync.queueHead();
+  if (!head) return false;
+  sync.popQueue();
+  const type: 'movie' | 'tv' = head.media_type === 'tv' ? 'tv' : 'movie';
+  getTitleCached(type, head.tmdb_id).then(
+    function (c) {
+      toast({ kind: 'info', icon: '⏭', title: t('queue.opened'), text: c.title });
+    },
+    function () {
+      /* label only */
+    }
+  );
+  router.back(); // leave the player; its title stays beneath the new one
+  openTitle(type, head.tmdb_id, false, head.season, head.episode, type === 'movie');
+  return true;
+}
+// Player onNext for something that has no next episode of its own.
+function queueNext(done: NextDone): void {
+  if (!playQueueHead()) done(null);
+}
+// Append a synthetic trailing episode naming the queue head, so the player's
+// "Next: …" caption and the end-of-episode countdown say what really follows
+// (the player only knows episodes). Picking it jumps past the season's last
+// episode → crossSeason → playQueueHead.
+function withQueueTail(eps: PlayerEpisode[], then: () => void): void {
+  const head = sync.queueHead();
+  if (!head || !eps.length) {
+    then();
+    return;
+  }
+  let last = 0;
+  for (let i = 0; i < eps.length; i++) if (eps[i].episode > last) last = eps[i].episode;
+  function push(name: string): void {
+    eps.push({ episode: last + 1, name: t('queue.next_from', { n: name }) });
+    then();
+  }
+  getTitleCached(head.media_type, head.tmdb_id).then(
+    function (c) {
+      push(c.title);
+    },
+    function () {
+      push('');
+    }
+  );
 }
 
 export function mountTitle(container: HTMLElement, params: TitleParams): ScreenInstance {
@@ -121,7 +177,7 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
   // The "Continue" action button (null when there is nothing to continue).
   let continueBtn: HTMLElement | null = null;
   // Set by render(): opens the watch modal on a given episode (deep links).
-  let openEpisode: ((season: number, episode: number) => void) | null = null;
+  let openEpisode: ((season: number | null, episode: number | null) => void) | null = null;
 
   // Pre-resolve: while the user reads the page, resolve the remembered source
   // for the episode "Продовжити"/"Дивитись" would start with. The watch modal's
@@ -904,7 +960,7 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
     on(torrents, 'hover:enter', function () {
       openWatchModal(card, seasons, 'torrents');
     });
-    openEpisode = function (season: number, episode: number) {
+    openEpisode = function (season: number | null, episode: number | null) {
       openWatchModal(card, seasons, 'online', { season: season, episode: episode });
     };
 
@@ -1307,12 +1363,15 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
               }
             );
           },
-          onNext:
-            isSeries && epNum != null
-              ? function (done) {
-                  switchEp((epNum as number) + 1, done);
-                }
-              : undefined,
+          // Movies: "next" is the watch queue head. A getter, so the phone adding
+          // to the queue mid-film reaches the player's ended/skip paths live.
+          get onNext() {
+            if (isSeries && epNum != null)
+              return function (done: NextDone) {
+                switchEp((epNum as number) + 1, done);
+              };
+            return sync.queueLength() ? queueNext : undefined;
+          },
           onPrev:
             isSeries && epNum != null
               ? function (done) {
@@ -1326,7 +1385,13 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
                   ensureSeason(sn).then(
                     function (list) {
                       if (closed) return;
-                      done(toPlayerEpisodes(sn, list), epNum as number);
+                      const eps = toPlayerEpisodes(sn, list);
+                      if (adjacentSeason(sn, 1) == null) {
+                        // last season: the queue head is what follows the finale
+                        withQueueTail(eps, function () {
+                          done(eps, epNum as number);
+                        });
+                      } else done(eps, epNum as number);
                     },
                     function () {
                       done([], epNum as number);
@@ -1379,7 +1444,9 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
           done: (m: PlayerMedia | null, meta?: import('../core/player').EpisodeMeta) => void
         ): void {
           if (ns == null) {
-            done(null); // true edge of the show — player shows the toast
+            // true edge of the show: forward → the watch queue, else the player's toast
+            if (which === 'first' && playQueueHead()) return;
+            done(null);
             return;
           }
           ensureSeason(ns).then(
@@ -2334,11 +2401,16 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
           media_type: card.type,
           season: season,
           episode: episode,
-          onNext: hasPack
-            ? function (done) {
-                switchFile(packEps[packIndex(cur) + 1], done);
-              }
-            : undefined,
+          // Past the pack's last file (or a single-file torrent): the watch queue.
+          get onNext() {
+            if (hasPack)
+              return function (done: NextDone) {
+                const nx = packEps[packIndex(cur) + 1];
+                if (!nx && playQueueHead()) return;
+                switchFile(nx, done);
+              };
+            return sync.queueLength() ? queueNext : undefined;
+          },
           onPrev: hasPack
             ? function (done) {
                 switchFile(packEps[packIndex(cur) - 1], done);
@@ -2445,6 +2517,7 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
           // nothing to continue.
           if (params.resume && continueBtn) trigger(continueBtn, 'hover:enter');
           else if (params.episode != null && openEpisode) openEpisode(params.season != null ? params.season : 1, params.episode);
+          else if (params.autoplay && openEpisode) openEpisode(null, null);
         } else showError();
       },
       function () {

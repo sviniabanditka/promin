@@ -110,6 +110,40 @@ Danger zone actions are the same endpoints the TV uses: `DELETE /api/v1/me/histo
 and `DELETE /api/v1/me/data` (the latter revokes every session — the Mini App
 re-authenticates through initData afterwards, the TVs ask for the PIN).
 
+## Watch queue
+
+A per-profile ordered list of movies and episodes the phone lines up for the
+TV. Table `watch_queue` (migration `0008_queue.sql`: `id, user_id, tmdb_id,
+media_type, season, episode, position, created_at`; one row per
+(profile, title, season, episode) — `NULL` season/episode is the movie itself).
+Endpoints in docs/api.md ("Watch queue"); the bootstrap carries `queue[]` and
+every change fans out `queue_updated {items}` with the whole list, so the TV and
+every phone hold the same snapshot with no merging.
+
+**Mini App.** Library → *Queue* tab: rows with posters, `S2 E5` label, ▲▼
+reorder (`PUT /queue/{id}/move`), ✕ remove, *Clear*, and *▶ Play on TV* for the
+head — it sends `open` with the head's season/episode to the target TV and, once
+the send succeeded, removes the item. The Title screen has *＋ To queue* for a
+movie and a ＋ on every episode row (a second tap removes the item).
+
+**TV.** `core/sync.ts` mirrors the queue (`queueHead()`, `queueLength()`,
+`popQueue()`). `screens/title.ts` plugs it into the player's existing next-episode
+hooks, so the 10 s "next episode" countdown, the ⏭ button and the "▲ next" skip
+prompt during the credits all work without player changes:
+
+- movies (online or torrent) get an `onNext` that exists only while the queue is
+  non-empty (a getter — items added from the phone mid-film are picked up);
+- a series at the true edge of the show (`crossSeason` finds no next season) or
+  a torrent pack past its last file falls through to the queue instead of the
+  "no source" toast; the last season's episode list gets a synthetic trailing
+  entry "From queue: <title>" so the player's caption/countdown name what comes
+  next (picking it also jumps to the queue).
+
+On advance the TV calls `POST /api/v1/queue/pop`, leaves the player
+(`router.back()`) and opens the head with the deep-link autoplay
+(`openTitle(type, id, false, season, episode, autoplay)` — `autoplay` starts a
+movie from the top; episodes use the existing `season`/`episode` deep link).
+
 ## Bot menu button
 
 At start the bot calls `setChatMenuButton` with `web_app.url =

@@ -51,6 +51,16 @@ type TimecodeUpsertResult struct {
 	UpdatedAt   int64   `json:"updated_at"`
 }
 
+// QueueItemDTO is one watch-queue row (GET /api/v1/queue, event queue_updated).
+type QueueItemDTO struct {
+	ID        int64  `json:"id"`
+	TMDBID    int64  `json:"tmdb_id"`
+	MediaType string `json:"media_type"`
+	Season    *int   `json:"season"`
+	Episode   *int   `json:"episode"`
+	Position  int    `json:"position"`
+}
+
 // BootstrapDTO is the response for GET /api/v1/sync/bootstrap
 // (docs/api.md).
 type BootstrapDTO struct {
@@ -59,5 +69,6 @@ type BootstrapDTO struct {
 	History   []HistoryItemDTO  `json:"history"`
 	Timecodes []TimecodeDTO     `json:"timecodes"`
 	Settings  map[string]string `json:"settings"`
+	Queue     []QueueItemDTO    `json:"queue"`
 	Cursor    int64             `json:"cursor"`
 }

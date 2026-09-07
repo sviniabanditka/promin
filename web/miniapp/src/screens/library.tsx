@@ -4,8 +4,9 @@ import { fmtDate, seLabel, t } from '../i18n';
 import { loadBootstrap, useStore } from '../store';
 import { haptic } from '../tg';
 import { cardKey, Empty, MediaRow, Segmented, SkeletonRow, useCards } from '../ui';
+import { Queue } from './queue';
 
-type Tab = 'bookmarks' | 'playlists' | 'history';
+type Tab = 'bookmarks' | 'playlists' | 'history' | 'queue';
 
 // Watch history = the resume positions the TV saves (the separate `history`
 // table is never written). Latest row per title, newest first.
@@ -90,6 +91,7 @@ export function Library() {
             { value: 'bookmarks', label: t('lib.bookmarks') },
             { value: 'playlists', label: t('lib.playlists') },
             { value: 'history', label: t('lib.history') },
+            { value: 'queue', label: t('lib.queue') + (s.queue?.length ? ' ' + s.queue.length : '') },
           ]}
         />
       </div>
@@ -103,6 +105,8 @@ export function Library() {
         <Rows items={s.bookmarks!.slice(0, LIMIT)} lang={s.lang} />
       ) : tab === 'playlists' ? (
         <Playlists lang={s.lang} />
+      ) : tab === 'queue' ? (
+        <Queue />
       ) : (
         <Rows
           items={historyFromTimecodes(s.timecodes ?? []).slice(0, LIMIT)}

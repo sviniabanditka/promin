@@ -17,9 +17,12 @@ import {
   addBookmark,
   removeBookmark,
   upsertTimecode,
+  postQueuePop,
   Bookmark,
   TimecodeRecord,
   SyncEvent,
+  SyncBootstrap,
+  QueueItem,
 } from './api';
 import { getToken, isLogged, onAuthChange } from './auth';
 import { applyRemoteSetting } from './settings';
@@ -38,6 +41,9 @@ const CACHE_KEY = 'promin:sync-cache';
 // bookmarks keyed "tmdb:media_type"; timecodes keyed "tmdb:media_type:s:e".
 let bookmarks: { [key: string]: Bookmark } = {};
 let timecodes: { [key: string]: CachedTimecode } = {};
+// Watch queue (docs/miniapp.md): server snapshot only, never persisted — it is
+// only useful with a live session anyway.
+let queue: QueueItem[] = [];
 let cursor = 0;
 
 function bkey(tmdbId: number, mediaType: string): string {
@@ -100,6 +106,7 @@ function resetCache(): void {
   persistTimer = 0;
   bookmarks = {};
   timecodes = {};
+  queue = [];
   cursor = 0;
   try {
     window.localStorage.removeItem(CACHE_KEY);
@@ -110,7 +117,7 @@ function resetCache(): void {
 
 // ---- event emitter -----------------------------------------------------
 
-type Topic = 'bookmarks' | 'timecodes';
+type Topic = 'bookmarks' | 'timecodes' | 'queue';
 const subscribers: { [topic: string]: Array<() => void> } = {};
 
 // Subscribe a screen to cache changes for a topic. Returns an unsubscribe fn.
@@ -176,6 +183,26 @@ export function getTimecodeCached(
 ): CachedTimecode | null {
   const k = tkey(tmdbId, mediaType, season, episode);
   return Object.prototype.hasOwnProperty.call(timecodes, k) ? timecodes[k] : null;
+}
+
+// ---- watch queue -------------------------------------------------------
+
+export function queueHead(): QueueItem | null {
+  return queue.length ? queue[0] : null;
+}
+
+export function queueLength(): number {
+  return queue.length;
+}
+
+// The TV moved on to the head: drop it locally at once and on the server; the
+// queue_updated echo reconciles every device.
+export function popQueue(): void {
+  queue.shift();
+  notify('queue');
+  postQueuePop().then(null, function () {
+    /* offline: the server still holds it; the next bootstrap re-syncs */
+  });
 }
 
 // ---- writes (optimistic; server confirms via REST + WS echo) -----------
@@ -356,6 +383,9 @@ function applyEvent(ev: SyncEvent): void {
     if (remoteHandler && p.device_id && tok.slice(0, 12) === String(p.device_id)) {
       remoteHandler(String(p.action || ''), Number(p.value) || 0, String(p.key || ''), String(p.str || ''));
     }
+  } else if (ev.type === 'queue_updated') {
+    queue = (p.items as QueueItem[]) || [];
+    notify('queue');
   } else if (ev.type === 'settings_updated') {
     applyRemoteSetting(String(p.key || ''), String(p.value || ''));
   } else if (ev.type === 'data_cleared') {
@@ -364,7 +394,9 @@ function applyEvent(ev: SyncEvent): void {
     notify('timecodes');
     if (p.scope === 'all') {
       bookmarks = {};
+      queue = [];
       notify('bookmarks');
+      notify('queue');
     }
     persist();
   }
@@ -395,10 +427,12 @@ function bootstrap(): void {
           updated_at: r.updated_at,
         };
       }
+      queue = (snap as SyncBootstrap & { queue?: QueueItem[] }).queue || [];
       if (typeof snap.cursor === 'number') cursor = snap.cursor;
       bookmarksReady = true;
       notify('bookmarks');
       notify('timecodes');
+      notify('queue');
       persist();
     },
     function () {
@@ -588,6 +622,7 @@ export function stop(): void {
   resetCache();
   notify('bookmarks');
   notify('timecodes');
+  notify('queue');
 }
 
 // Re-wire the transport whenever login state flips (login → start, logout →

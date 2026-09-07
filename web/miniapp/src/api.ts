@@ -226,12 +226,21 @@ export interface TimecodeItem {
   duration_sec: number;
   updated_at: number;
 }
+export interface QueueItem {
+  id: number;
+  tmdb_id: number;
+  media_type: MediaType;
+  season: number | null;
+  episode: number | null;
+  position: number;
+}
 export interface Bootstrap {
   bookmarks: Bookmark[];
   playlists: Playlist[];
   history: HistoryItem[];
   timecodes: TimecodeItem[];
   settings: Record<string, string>;
+  queue?: QueueItem[];
   cursor: number;
 }
 export interface AuthDevice {
@@ -301,6 +310,12 @@ export const getBootstrap = () => get<Bootstrap>('/sync/bootstrap');
 export const addBookmark = (tmdb_id: number, media_type: MediaType) => post<Bookmark>('/bookmarks', { tmdb_id, media_type });
 export const removeBookmark = (tmdb_id: number, media_type: MediaType) => del<void>('/bookmarks/' + tmdb_id, { media_type });
 export const getPlaylistItems = (id: number) => get<{ items: PlaylistItem[] }>('/playlists/' + id + '/items');
+// Watch queue (docs/miniapp.md).
+export const addQueue = (tmdb_id: number, media_type: MediaType, season?: number | null, episode?: number | null) =>
+  post<QueueItem>('/queue', { tmdb_id, media_type, season: season ?? undefined, episode: episode ?? undefined });
+export const removeQueue = (id: number) => del<void>('/queue/' + id);
+export const moveQueue = (id: number, position: number) => put<void>('/queue/' + id + '/move', { position });
+export const clearQueue = () => del<void>('/queue');
 export const putSetting = (key: string, value: string) => put<{ key: string; value: string }>('/settings/' + encodeURIComponent(key), { value });
 
 export const getAuthDevices = () => get<{ devices: AuthDevice[] }>('/auth/devices');
