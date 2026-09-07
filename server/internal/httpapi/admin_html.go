@@ -9,6 +9,7 @@ const adminHTML = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Promin · Адмін</title>
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
 <style>
   :root { color-scheme: dark; --bg:#0a0c10; --panel:#141821; --line:#232a36; --ink:#f3f5f9; --muted:#98a2b3; --accent:#7ca8ff; --danger:#ff6b6b; --good:#57c66a; }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
@@ -41,7 +42,7 @@ const adminHTML = `<!doctype html>
 <body>
 <div class="wrap">
   <div id="loginView" class="hidden">
-    <h1>Promin · Адмін</h1>
+    <h1><img src="/logo.svg" alt="" style="width:36px;height:36px;vertical-align:-8px;margin-right:10px">Promin · Адмін</h1>
     <div class="card">
       <label>Пароль адміна</label>
       <input id="pw" type="password" autocomplete="current-password" inputmode="text">

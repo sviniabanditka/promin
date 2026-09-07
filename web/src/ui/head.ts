@@ -23,7 +23,14 @@ export interface Head {
 
 export function buildHead(): Head {
   const head = el('div', 'head');
-  head.appendChild(el('div', 'head__logo', t('home.title')));
+  const logo = el('div', 'head__logo');
+  const logoImg = document.createElement('img');
+  logoImg.className = 'head__logo-img';
+  logoImg.src = '/logo.svg';
+  logoImg.alt = '';
+  logo.appendChild(logoImg);
+  logo.appendChild(el('span', '', t('home.title')));
+  head.appendChild(logo);
 
   const time = el('div', 'head__time');
   const timeNow = el('div', 'head__time-now', '--:--');

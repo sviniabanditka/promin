@@ -20,6 +20,7 @@ const onboardingHTML = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Promin · Інструкція</title>
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
 <style>
   :root {
     color-scheme: dark;
@@ -52,9 +53,7 @@ const onboardingHTML = `<!doctype html>
     display:inline-flex; align-items:center; gap:12px; font-weight:800;
     font-size:30px; letter-spacing:.5px;
   }
-  .logo .dot { width:14px; height:14px; border-radius:50%;
-    background:linear-gradient(135deg,var(--accent),var(--accent2));
-    box-shadow:0 0 24px rgba(124,168,255,.8); }
+  .logo img { width:44px; height:44px; }
   .hero p { max-width:520px; margin:14px auto 0; color:var(--muted); font-size:17px; }
   .hero .badge { display:inline-block; margin-bottom:18px; font-size:12.5px;
     letter-spacing:1.5px; text-transform:uppercase; color:var(--accent);
@@ -171,7 +170,7 @@ const onboardingHTML = `<!doctype html>
 
   <header class="hero">
     <div class="badge">Домашній кінотеатр</div>
-    <div class="logo"><span class="dot"></span>Promin</div>
+    <div class="logo"><img src="/logo.svg" alt="">Promin</div>
     <p>Ваш особистий медіапортал для Smart-TV: фільми, серіали, онлайн-джерела й торренти в одному застосунку. Керується пультом. Ця сторінка — як усе встановити та почати.</p>
     <nav class="steps-map">
       <a href="#step1">1 · Встановити MSX</a>

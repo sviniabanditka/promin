@@ -122,6 +122,11 @@ function main() {
 
   fs.copyFileSync(path.join(WEB_DIR, 'msx', 'start.json'), path.join(OUT_DIR, 'msx', 'start.json'));
 
+  // Brand assets (favicon / touch icon / head logo) — served from the bundle
+  // root, referenced by both index.html files and the admin/onboarding pages.
+  for (const f of fs.readdirSync(path.join(WEB_DIR, 'assets')))
+    fs.copyFileSync(path.join(WEB_DIR, 'assets', f), path.join(OUT_DIR, f));
+
   // hls.js is NOT bundled into app.js — it's lazy-loaded as a separate
   // <script> only on engines that need it (webOS/Android TV/desktop; Tizen
   // uses native HLS). We ship the "light" build (no alt-audio/subtitle/EME

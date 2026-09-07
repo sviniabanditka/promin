@@ -11,7 +11,7 @@ The Promin client is a vanilla TypeScript single-page app in `web/src`. It is se
 | Bundle | esbuild, `src/app.ts` → single IIFE, `target: es2017`, minified, `charset: utf8` | in-memory |
 | Transpile | `@swc/core` with `web/.swcrc` (`target: es5`, minify) — one pass over the whole bundle | `app.js` (+ `.gz`) |
 | CSS | `inlineCssVars()` + forbidden-property guard + esbuild whitespace minify | `styles.css` (+ `.gz`) |
-| Assets | `index.html` with `?v=<sha1>` on `app.js`/`styles.css`; `vendor/hls.min.js?v=` rewritten inside the bundle; `msx/start.json` copied | `index.html`, `vendor/hls.min.js` (+ `.gz`) |
+| Assets | `index.html` with `?v=<sha1>` on `app.js`/`styles.css`; `vendor/hls.min.js?v=` rewritten inside the bundle; `msx/start.json` and `web/assets/*` (brand: `logo.svg`, `icon-{32,192,512}.png` → favicon, touch icon, head/PIN logo; also used by the admin and onboarding pages and the Mini App header) copied to the bundle root | `index.html`, `vendor/hls.min.js` (+ `.gz`) |
 
 Scripts: `npm run typecheck` (tsc, `noEmit`), `npm run build`, `npm run check:es5` (`es-check es5` on the built bundle). The build only overwrites its own artifacts; it never wipes `webdist/`.
 

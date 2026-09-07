@@ -1,3 +1,5 @@
+<p align="center"><img src="web/assets/logo.svg" width="128" alt="Promin"></p>
+
 # Promin
 
 Self-hosted media portal for Smart TVs. One Go binary serves a D-pad-first UI,

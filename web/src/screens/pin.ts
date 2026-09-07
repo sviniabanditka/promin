@@ -22,6 +22,11 @@ export function mountPinEntry(container: HTMLElement): ScreenInstance {
   container.className += ' pin-screen';
 
   const box = el('div', 'pin-box');
+  const logo = document.createElement('img');
+  logo.className = 'pin-logo';
+  logo.src = '/logo.svg';
+  logo.alt = '';
+  box.appendChild(logo);
   box.appendChild(el('div', 'pin-title', t('pin.title')));
 
   const dots = el('div', 'pin-dots');

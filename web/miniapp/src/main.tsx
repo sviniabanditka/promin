@@ -163,7 +163,9 @@ function App() {
   return (
     <div class="app">
       <header class="hdr">
-        <div class="hdr-title">{route.screen === 'home' || route.screen === 'title' ? 'Promin' : t('tab.' + route.screen)}</div>
+        <div class="hdr-title">
+          {route.screen === 'home' || route.screen === 'title' ? <><img class="hdr-logo" src="/logo.svg" alt="" />Promin</> : t('tab.' + route.screen)}
+        </div>
         <DeviceChip />
       </header>
       <main id="main" class="main">

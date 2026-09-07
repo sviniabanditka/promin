@@ -45,7 +45,8 @@ h1, h2, p { margin: 0; }
   height: calc(var(--hdr-h) + var(--sat)); padding: var(--sat) 16px 0;
   background: var(--hdr); border-bottom: 1px solid var(--line);
 }
-.hdr-title { font-weight: 600; font-size: 17px; }
+.hdr-title { font-weight: 600; font-size: 17px; display: flex; align-items: center; gap: 8px; }
+.hdr-logo { width: 24px; height: 24px; }
 .main { flex: 1; padding-bottom: calc(var(--tabs-h) + var(--sab) + 8px); }
 .screen { padding: 8px 0 16px; }
 .tabs {

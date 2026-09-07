@@ -269,12 +269,15 @@ html, body {
 }
 
 .head__logo {
+  display: flex;
+  align-items: center;
   font-size: 2.2rem;
   font-weight: bold;
   letter-spacing: 0.2rem;
   color: #ffffff;
   margin-right: auto;
 }
+.head__logo-img { width: 3.2rem; height: 3.2rem; margin-right: 1rem; }
 
 .head__time {
   display: flex;
@@ -3590,6 +3593,7 @@ html.is-phone, html.is-phone body { touch-action: pan-x pan-y; }
   20%, 60% { transform: translateX(-1rem); }
   40%, 80% { transform: translateX(1rem); }
 }
+.pin-logo { display: block; width: 9.6rem; height: 9.6rem; margin: 0 auto 2rem; }
 .pin-title { font-size: 2.4rem; color: var(--ink); margin-bottom: 2.4rem; }
 .pin-dots { display: flex; flex-direction: row; justify-content: center; margin-bottom: 1.4rem; }
 .pin-dots > * + * { margin-left: 1.2rem; }
