@@ -18,7 +18,6 @@ var texts = map[string]map[string]string{
 		"menu.watch":     "🔥 Що подивитись",
 		"menu.remote":    "🎛 Пульт",
 		"menu.settings":  "⚙ Налаштування",
-		"menu.app":       "Відкрити Promin",
 
 		"cmd.start":  "Почати / прив'язати чат",
 		"cmd.help":   "Підказка",
@@ -75,7 +74,6 @@ var texts = map[string]map[string]string{
 		"menu.watch":     "🔥 Что посмотреть",
 		"menu.remote":    "🎛 Пульт",
 		"menu.settings":  "⚙ Настройки",
-		"menu.app":       "Открыть Promin",
 
 		"cmd.start":  "Начать / привязать чат",
 		"cmd.help":   "Подсказка",
@@ -132,7 +130,6 @@ var texts = map[string]map[string]string{
 		"menu.watch":     "🔥 What to watch",
 		"menu.remote":    "🎛 Remote",
 		"menu.settings":  "⚙ Settings",
-		"menu.app":       "Open Promin",
 
 		"cmd.start":  "Start / link this chat",
 		"cmd.help":   "Help",

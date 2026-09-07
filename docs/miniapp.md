@@ -146,9 +146,10 @@ movie from the top; episodes use the existing `season`/`episode` deep link).
 
 ## Bot menu button
 
-At start the bot calls `setChatMenuButton` with `web_app.url =
-https://<PROMIN_MAIN_HOST>/tg/` (when `PROMIN_MAIN_HOST` is set), so the Mini
-App is one tap away in the chat.
+The chat menu button that opens the Mini App is configured once by the bot
+owner in BotFather (`/setmenubutton` → the Mini App URL, `https://promin.club/tg/`
+in production). The server never calls `setChatMenuButton`: it used to do so on
+every start, which overwrote whatever the owner had set.
 
 ## Serving
 
