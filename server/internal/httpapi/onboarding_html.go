@@ -154,6 +154,8 @@ const onboardingHTML = `<!doctype html>
     color:var(--faint); font-size:13.5px; text-align:center; padding:16px;
   }
   figure.shot img { width:100%; height:auto; border-radius:var(--radius-sm); border:1px solid var(--line); display:block; }
+  /* portrait phone capture: cap the height, else it dwarfs the step it illustrates */
+  figure.shot--phone img { width:auto; max-width:100%; max-height:560px; margin:0 auto; }
   figure.shot figcaption { color:var(--faint); font-size:13px; margin-top:8px; text-align:center; }
 
   .note { display:flex; gap:10px; padding:14px 16px; border-radius:var(--radius-sm);
@@ -325,7 +327,7 @@ const onboardingHTML = `<!doctype html>
     <div class="body">
       <ol class="how"><li data-t="tg1_1"></li><li data-t="tg1_2"></li><li data-t="tg1_3"></li><li data-t="tg1_4"></li><li data-t="tg1_5"></li></ol>
       <figure class="shot" data-shot="tg-link">
-          <div class="box" data-t="tg1_shot"></div>
+          <img src="/shot-tg-link.webp?v=1" width="1440" height="807" loading="lazy" alt="" data-t-alt="tg1_shot">
           <figcaption data-t="tg1_cap"></figcaption>
         </figure>
     </div>
@@ -347,8 +349,8 @@ const onboardingHTML = `<!doctype html>
     <summary><span data-t="tg3_sum"></span> <span class="chev">▾</span></summary>
     <div class="body">
       <ol class="how"><li data-t="m1"></li><li data-t="m2"></li><li data-t="m3"></li><li data-t="m4"></li></ol>
-      <figure class="shot" data-shot="tg-miniapp">
-          <div class="box" data-t="tg3_shot"></div>
+      <figure class="shot shot--phone" data-shot="tg-miniapp">
+          <img src="/shot-tg-miniapp.webp?v=1" width="640" height="1095" loading="lazy" alt="" data-t-alt="tg3_shot">
           <figcaption data-t="tg3_cap"></figcaption>
         </figure>
     </div>
