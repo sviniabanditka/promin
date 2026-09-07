@@ -971,6 +971,14 @@ export interface PlayerStateReport {
   duration_sec?: number;
   paused?: boolean;
   voice?: string;
+  // Menus for the Mini App remote; sent with lists:true only when changed / every 30 s.
+  lists?: boolean;
+  voices?: { id: string; name: string }[];
+  voice_id?: string;
+  subtitles?: { id: string; label: string }[];
+  subtitle_id?: string;
+  volume?: number; // 0..100
+  muted?: boolean;
 }
 export function postPlayerState(state: PlayerStateReport): Promise<void> {
   return post<void>('/player/state', state, undefined, 5000);

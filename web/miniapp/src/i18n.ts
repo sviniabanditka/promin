@@ -74,6 +74,10 @@ const D: Record<string, Entry> = {
   ],
   'remote.offline': ['Телевізор офлайн', 'Телевизор офлайн', 'The TV is offline'],
   'remote.send_failed': ['Не вдалося надіслати', 'Не удалось отправить', 'Could not send'],
+  'remote.voice': ['Озвучення', 'Озвучка', 'Audio'],
+  'remote.subs': ['Субтитри', 'Субтитры', 'Subtitles'],
+  'remote.volume': ['Гучність', 'Громкость', 'Volume'],
+  'remote.no_lists': ['Телевізор ще не надіслав список', 'Телевизор ещё не отправил список', 'The TV has not sent the list yet'],
 
   'device.pick': ['Оберіть телевізор', 'Выберите телевизор', 'Choose a TV'],
   'device.none': ['Немає ТБ', 'Нет ТВ', 'No TV'],

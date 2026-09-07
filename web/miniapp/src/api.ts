@@ -172,6 +172,13 @@ export interface PlayerState {
   paused: boolean;
   source?: string;
   voice?: string;
+  // Audio / subtitle menus of the TV player (ids for set_voice / set_subtitle).
+  voices?: { id: string; name: string }[];
+  voice_id?: string;
+  subtitles?: { id: string; label: string }[];
+  subtitle_id?: string; // "off" when none
+  volume?: number; // 0..100
+  muted?: boolean;
   updated_at: number;
   device_id?: string;
   closed?: boolean;
@@ -240,7 +247,8 @@ export interface AuthUser {
   login: string;
 }
 
-export type RemoteAction = 'toggle_play' | 'seek' | 'seek_to' | 'prev' | 'next' | 'mute' | 'night' | 'sleep';
+export type RemoteAction = 'toggle_play' | 'seek' | 'seek_to' | 'prev' | 'next' | 'mute' | 'night' | 'sleep' | 'volume';
+export type RemoteStrAction = 'set_voice' | 'set_subtitle';
 export interface OpenCmd {
   tmdb_id: number;
   media_type: MediaType;
@@ -251,6 +259,7 @@ export interface OpenCmd {
 export type SendBody = { device_id: string } & (
   | { open: OpenCmd }
   | { remote: { action: RemoteAction; value?: number } }
+  | { remote: { action: RemoteStrAction; str: string } }
   | { remote: { action: 'set_local'; key: LocalKey; str: 'true' | 'false' } }
 );
 

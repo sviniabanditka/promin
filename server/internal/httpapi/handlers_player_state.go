@@ -21,6 +21,7 @@ func (h *playerStateHandlers) set(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		sync.PlayerState
 		Closed bool `json:"closed"`
+		Lists  bool `json:"lists"` // voices/subtitles present in this report
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeBadRequest(w, "невірне тіло запиту")
@@ -35,6 +36,16 @@ func (h *playerStateHandlers) set(w http.ResponseWriter, r *http.Request) {
 	if req.TMDBID <= 0 || (req.MediaType != "movie" && req.MediaType != "tv") {
 		writeBadRequest(w, "tmdb_id і media_type (movie|tv) обов'язкові")
 		return
+	}
+	if req.Volume < 0 || req.Volume > 100 {
+		writeBadRequest(w, "volume: 0..100")
+		return
+	}
+	if !req.Lists {
+		// Position-only tick: keep the menus from the last full report.
+		if prev := h.hub.PlayerState(info.User.ID, dev); prev != nil {
+			req.Voices, req.Subtitles = prev.Voices, prev.Subtitles
+		}
 	}
 	h.hub.SetPlayerState(info.User.ID, dev, req.PlayerState)
 	w.WriteHeader(http.StatusNoContent)

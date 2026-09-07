@@ -1,9 +1,9 @@
-import { useRef, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { fmtTime, seLabel, t } from '../i18n';
 import { navigate, titlePath } from '../router';
-import { livePos, sendOpen, sendRemote, targetDevice, toast, useStore, type LiveState } from '../store';
+import { livePos, sendOpen, sendRemote, sendRemoteStr, targetDevice, toast, useStore, type LiveState } from '../store';
 import { haptic } from '../tg';
-import { Empty, MediaRow, useNow } from '../ui';
+import { Empty, MediaRow, Sheet, useNow } from '../ui';
 
 const SLEEP = [15, 30, 45, 60, 90];
 
@@ -47,6 +47,84 @@ function Scrubber({ st }: { st: LiveState }) {
         <span>-{fmtTime(Math.max(0, dur - pos))}</span>
       </div>
     </div>
+  );
+}
+
+// Audio / subtitles / volume chips under the transport row; each opens a sheet.
+function Tracks({ st }: { st: LiveState }) {
+  const [open, setOpen] = useState<'voice' | 'subs' | 'vol' | null>(null);
+  const voices = st.voices ?? [];
+  const subs = st.subtitles ?? [];
+  const voice = voices.find((v) => v.id === st.voice_id)?.name ?? st.voice ?? '';
+  const sub = subs.find((x) => x.id === st.subtitle_id);
+  const subLabel = !sub || sub.id === 'off' ? t('common.off') : sub.label;
+  const vol = st.volume ?? 0;
+  // Slider: local value while dragging, one `volume` send 150 ms after the last change.
+  const [drag, setDrag] = useState<number | null>(null);
+  const timer = useRef(0);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const onVol = (v: number) => {
+    setDrag(v);
+    clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => {
+      setDrag(null);
+      sendRemote('volume', v);
+    }, 150);
+  };
+  const chip = (kind: 'voice' | 'subs' | 'vol', icon: string, val: string, enabled: boolean, label: string) => (
+    <button
+      class="chip"
+      disabled={!enabled}
+      aria-label={label}
+      onClick={() => {
+        haptic('select');
+        setOpen(kind);
+      }}
+    >
+      {icon}
+      <span class="chip-val">{val}</span>
+    </button>
+  );
+  const rows = (list: { id: string; label: string }[], cur: string, action: 'set_voice' | 'set_subtitle') =>
+    list.map((x) => (
+      <button
+        key={x.id}
+        class={'sheet-row' + (x.id === cur ? ' on' : '')}
+        onClick={() => {
+          setOpen(null);
+          if (x.id !== cur) sendRemoteStr(action, x.id);
+        }}
+      >
+        <span class="sheet-row-name">{x.id === 'off' ? t('common.off') : x.label}</span>
+      </button>
+    ));
+  return (
+    <>
+      <div class="chips tracks">
+        {chip('voice', '🎙', voice || t('remote.voice'), voices.length > 0, t('remote.voice'))}
+        {chip('subs', '💬', subLabel, subs.length > 0, t('remote.subs'))}
+        {chip('vol', st.muted ? '🔇' : '🔊', (drag ?? vol) + '%', true, t('remote.volume'))}
+      </div>
+      <Sheet open={open === 'voice'} title={t('remote.voice')} onClose={() => setOpen(null)}>
+        {rows(
+          voices.map((v) => ({ id: v.id, label: v.name })),
+          st.voice_id ?? '',
+          'set_voice'
+        )}
+      </Sheet>
+      <Sheet open={open === 'subs'} title={t('remote.subs')} onClose={() => setOpen(null)}>
+        {rows(subs, st.subtitle_id ?? 'off', 'set_subtitle')}
+      </Sheet>
+      <Sheet open={open === 'vol'} title={t('remote.volume')} onClose={() => setOpen(null)}>
+        <div class="vol">
+          <button class="key" onClick={() => sendRemote('mute')} aria-label="mute">
+            {st.muted ? '🔇' : '🔊'}
+          </button>
+          <input class="range" type="range" min={0} max={100} step={1} value={drag ?? vol} onInput={(e) => onVol(Number((e.currentTarget as HTMLInputElement).value))} />
+          <span class="vol-num">{drag ?? vol}%</span>
+        </div>
+      </Sheet>
+    </>
   );
 }
 
@@ -133,8 +211,10 @@ export function Remote() {
         </button>
       </div>
 
+      <Tracks st={st} />
+
       <div class="pad pad-aux">
-        <button class="key" onClick={() => sendRemote('mute')} aria-label="mute">
+        <button class={'key' + (st.muted ? ' on' : '')} onClick={() => sendRemote('mute')} aria-label="mute">
           🔇
         </button>
         <button class="key" onClick={() => sendRemote('night')} aria-label="night mode">

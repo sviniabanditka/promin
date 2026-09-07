@@ -35,14 +35,28 @@ device (below), `null` when nothing is playing.
   "season": 2, "episode": 5,
   "position_sec": 2530.4, "duration_sec": 3720.0, "paused": false,
   "source": "collaps", "voice": "LostFilm",
+  "voices": [ { "id": "track:0", "name": "Русский" }, { "id": "lostfilm", "name": "LostFilm" } ],
+  "voice_id": "track:0",
+  "subtitles": [ { "id": "off", "label": "Вимк" }, { "id": "sub:0", "label": "English" }, { "id": "hls:0", "label": "Українська" } ],
+  "subtitle_id": "off",
+  "volume": 80, "muted": false,
   "updated_at": 1788800000
 }
 ```
 
+`voices` is the player's merged Audio menu in menu order: in-stream tracks
+(`track:<n>`, remux / hls.js / native — n is the row index) first, then source
+dubs (their voice id). `voice_id` is the first active row, i.e. what actually
+plays. `subtitles` is the Subtitles menu: the implicit `off`, sidecar files
+`sub:<n>`, in-manifest text tracks `hls:<n>`; `subtitle_id` is the active one
+or `off`. `volume` is 0..100 (omitted when 0), `muted` a bool (omitted when false).
+
 The TV posts it with `POST /api/v1/player/state` (bearer; device id = the
 session's token id) every 5 s while the player is open, immediately on
-play/pause/seek/episode change, and `{"closed": true}` when the player closes
-(server drops the state). The hub publishes the same object as sync event
+play/pause/seek/volume/episode change, and `{"closed": true}` when the player
+closes (server drops the state). To keep the 5 s tick small the two lists
+travel only when they changed or every 30 s, flagged with `"lists": true`;
+a report without the flag keeps the device's last lists on the server. The hub publishes the same object as sync event
 `player_state` with `device_id` added, so the Mini App updates live over the
 WebSocket. Writes are throttled server-side to one publish per second per device.
 
@@ -60,7 +74,15 @@ WebSocket. Writes are throttled server-side to one publish per second per device
 { "device_id": "...", "remote": { "action": "mute" } }
 { "device_id": "...", "remote": { "action": "night" } }
 { "device_id": "...", "remote": { "action": "sleep", "value": 30 } }
+{ "device_id": "...", "remote": { "action": "set_voice", "str": "track:1" } }
+{ "device_id": "...", "remote": { "action": "set_subtitle", "str": "sub:0" } }
+{ "device_id": "...", "remote": { "action": "volume", "value": 65 } }
 ```
+
+`set_voice` / `set_subtitle` take an id from the device's `PlayerState.voices` /
+`.subtitles` (`"off"` disables subtitles); the TV runs the same code path as the
+matching row of its Audio / Subtitles menu, shows a toast and reports state at
+once. `volume` sets `<video>.volume` (0..100) and unmutes.
 
 `open` publishes the existing `open_title` event (fields `tmdb_id`,
 `media_type`, `device_id`, `title`, `resume`, plus optional `season`,
@@ -112,7 +134,10 @@ from there (SPA fallback to `index.html`). `index.html` loads
   "▶ On TV" (send `open` with season/episode); "▶ Continue" when a timecode
   exists.
 - **Remote** — full screen: title/episode, scrubbable progress (`seek_to`),
-  ⏮ ⏪30 ⏯ ⏩30 ⏭, 🔇, 🌙 night, 😴 sleep, "next episode".
+  ⏮ ⏪30 ⏯ ⏩30 ⏭, a chip row 🎙 audio / 💬 subtitles / 🔊 volume (each opens a
+  sheet: the list with the current row marked, or a 0..100 slider debounced
+  150 ms into `volume`; chips are disabled until the TV has sent the lists),
+  🔇, 🌙 night, 😴 sleep, "next episode".
 - **Library** — bookmarks (`/api/v1/bookmarks`), playlists, history — each item
   opens Title.
 - **Settings** — language (`PUT /api/v1/settings/lang`), devices

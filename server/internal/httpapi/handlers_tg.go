@@ -25,6 +25,7 @@ type tgAppHandlers struct {
 var remoteActions = map[string]bool{
 	"toggle_play": true, "seek": true, "seek_to": true, "prev": true, "next": true, "set_local": true,
 	"mute": true, "night": true, "sleep": true,
+	"set_voice": true, "set_subtitle": true, "volume": true,
 }
 
 // login: POST /api/v1/tg/auth {init_data, platform?} → {token, user:{id, login}}.
@@ -136,6 +137,14 @@ func (h *tgAppHandlers) send(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Remote != nil && req.Remote.Action == "set_local" && (!sync.DeviceSettingKeys[req.Remote.Key] || (req.Remote.Str != "true" && req.Remote.Str != "false")) {
 		writeBadRequest(w, "set_local: key ∈ {legacy_tv_mode, reduce_motion, debug_mode}, str ∈ {true, false}")
+		return
+	}
+	if req.Remote != nil && (req.Remote.Action == "set_voice" || req.Remote.Action == "set_subtitle") && (req.Remote.Str == "" || len(req.Remote.Str) > 200) {
+		writeBadRequest(w, req.Remote.Action+": str (id) обов'язковий")
+		return
+	}
+	if req.Remote != nil && req.Remote.Action == "volume" && (req.Remote.Value < 0 || req.Remote.Value > 100) {
+		writeBadRequest(w, "volume: value 0..100")
 		return
 	}
 	hub := h.sync.Hub()

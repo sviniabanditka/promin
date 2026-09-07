@@ -249,10 +249,12 @@ func homeMenu(rows []catalog.Row) *InlineKeyboardMarkup {
 // RemotePayload is the sync.EventRemote payload.
 type RemotePayload struct {
 	DeviceID string  `json:"device_id"`
-	Action   string  `json:"action"` // toggle_play | seek | seek_to | prev | next | mute | night | sleep | set_local
-	Value    float64 `json:"value"`  // seek: seconds (±30); seek_to: absolute seconds; sleep: minutes
+	Action   string  `json:"action"` // toggle_play | seek | seek_to | prev | next | mute | night | sleep | set_local | set_voice | set_subtitle | volume
+	Value    float64 `json:"value"`  // seek: seconds (±30); seek_to: absolute seconds; sleep: minutes; volume: 0..100
 	// set_local: a device-local TV setting (legacy_tv_mode | reduce_motion |
 	// debug_mode) and its new value ("true" | "false").
+	// set_voice: str = voice id from PlayerState.voices; set_subtitle: str =
+	// subtitle id from PlayerState.subtitles or "off".
 	Key string `json:"key,omitempty"`
 	Str string `json:"str,omitempty"`
 }

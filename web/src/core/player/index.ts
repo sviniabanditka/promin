@@ -51,7 +51,7 @@ import { isResumable } from '../progress';
 import { report as diag } from '../diag';
 import { setRemoteHandler, RemoteAction } from './remote';
 import { ensureHls, HlsInstance, HlsCtor } from './hls';
-import { Stream, Subtitle, Voice, mediaUrl, postPlayerState } from '../api';
+import { Stream, Subtitle, Voice, mediaUrl, postPlayerState, PlayerStateReport } from '../api';
 
 export interface PlayerMedia {
   type: 'hls' | 'mp4';
@@ -880,6 +880,9 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     // Listed but not pickable (a stream this device can't decode): rendered
     // dimmed and without .selector so the D-pad skips it.
     disabled?: boolean;
+    // Stable id for the Mini App remote (voices: voice id | "track:<n>";
+    // subtitles: "off" | "sub:<n>" | "hls:<n>").
+    id?: string;
     onSelect: () => void;
   }
 
@@ -1214,13 +1217,14 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   // One "Audio" menu for both kinds of choice: tracks inside the current
   // stream (instant switch) and dubs the source offers (re-resolve). Two
   // separate buttons meant two icons for what the viewer thinks of as one thing.
-  function openVoiceMenu(): void {
+  function voiceMenuOptions(): MenuOption[] {
     const inStream = audioTrackOptions();
     const fromSource: MenuOption[] = [];
     if (ctx.onVoice) {
       for (let i = 0; i < media.voices.length; i++) {
         (function (v: Voice) {
           fromSource.push({
+            id: v.id,
             label: v.name,
             active: v.id === media.currentVoice,
             onSelect: function () {
@@ -1240,14 +1244,19 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     } else {
       opts = inStream.length ? inStream : fromSource;
     }
+    return opts;
+  }
+  function openVoiceMenu(): void {
+    const opts = voiceMenuOptions();
     if (!opts.length) return;
     openMenu(t('player.voice'), opts);
   }
 
-  function openSubsMenu(): void {
+  function subtitleMenuOptions(): MenuOption[] {
     const opts: MenuOption[] = [];
     const hlsCur = hls && typeof hls.subtitleTrack === 'number' ? hls.subtitleTrack : -1;
     opts.push({
+      id: 'off',
       label: t('player.off'),
       active: !subTrack && hlsCur === -1,
       onSelect: function () {
@@ -1257,8 +1266,9 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     });
     const subs = media.subtitles || [];
     for (let i = 0; i < subs.length; i++) {
-      (function (sub: Subtitle) {
+      (function (sub: Subtitle, idx: number) {
         opts.push({
+          id: 'sub:' + idx,
           label: sub.label || sub.lang || 'sub',
           active: currentSub === sub || (!!currentSub && currentSub.url === sub.url),
           onSelect: function () {
@@ -1266,12 +1276,13 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
             applySubtitle(sub);
           },
         });
-      })(subs[i]);
+      })(subs[i], i);
     }
     for (let i = 0; i < hlsSubs.length; i++) {
       (function (tr: HlsSubTrack, idx: number) {
         const id = tr.id != null ? tr.id : idx;
         opts.push({
+          id: 'hls:' + idx,
           label: tr.name || tr.lang || 'sub ' + (idx + 1),
           active: hlsCur === id,
           onSelect: function () {
@@ -1281,7 +1292,24 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
         });
       })(hlsSubs[i], i);
     }
-    openMenu(t('player.subs'), opts);
+    return opts;
+  }
+  function openSubsMenu(): void {
+    openMenu(t('player.subs'), subtitleMenuOptions());
+  }
+  // Mini App remote pick: run the menu row's own onSelect so both paths stay
+  // identical; false when the id is not in the current menu.
+  function pickMenuOption(opts: MenuOption[], id: string, icon: string, title: string): boolean {
+    for (let i = 0; i < opts.length; i++) {
+      const o = opts[i];
+      if (o.header || o.disabled || o.id !== id) continue;
+      if (!o.active) toast({ kind: 'info', icon: icon, title: title, text: o.label }); // before onSelect: requestVoice's own toast must win
+      o.onSelect();
+      showPanel();
+      reportState(true);
+      return true;
+    }
+    return false;
   }
 
   // ---- voice re-resolve ----
@@ -1614,6 +1642,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
         (function (idx: number) {
           const tr = remuxList[idx];
           opts.push({
+            id: 'track:' + idx,
             label: remuxTrackLabel(tr, idx),
             active: tr.index === remuxAudioIndex,
             onSelect: function () {
@@ -1637,6 +1666,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
           const named = media.audioNames && media.audioNames[idx];
           const name = named || audioTrackLabel(tr.name || tr.label, tr.lang, idx);
           opts.push({
+            id: 'track:' + idx,
             label: name,
             active: trackId === cur,
             onSelect: function () {
@@ -1655,6 +1685,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
         const tr = nat[idx];
         const name = tr.label || tr.language || 'audio ' + (idx + 1);
         opts.push({
+          id: 'track:' + idx,
           label: name,
           active: !!tr.enabled,
           onSelect: function () {
@@ -3136,6 +3167,10 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   // Player state → server every 5 s and on play/pause/seek, so the Telegram
   // Mini App's remote shows what is playing with a live progress bar.
   let lastStateAt = 0;
+  // The audio/subtitle menus ride along only when they changed or every 30 s
+  // (`lists: true`); the server keeps the last ones per device.
+  let lastListsJson = '';
+  let lastListsAt = 0;
   function reportState(force?: boolean): void {
     const now = Date.now();
     if (!force && now - lastStateAt < 900) return;
@@ -3146,7 +3181,25 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
         if (media.voices[i].id === media.currentVoice) voiceName = media.voices[i].name;
       }
     }
-    postPlayerState({
+    const voices: { id: string; name: string }[] = [];
+    let voiceId = '';
+    const vopts = voiceMenuOptions();
+    for (let i = 0; i < vopts.length; i++) {
+      const o = vopts[i];
+      if (o.header || !o.id) continue;
+      voices.push({ id: o.id, name: o.label });
+      if (o.active && !voiceId) voiceId = o.id; // in-stream rows come first: what actually plays
+    }
+    const subtitles: { id: string; label: string }[] = [];
+    let subtitleId = 'off';
+    const sopts = subtitleMenuOptions();
+    for (let i = 0; i < sopts.length; i++) {
+      const o = sopts[i];
+      if (!o.id) continue;
+      subtitles.push({ id: o.id, label: o.label });
+      if (o.active) subtitleId = o.id;
+    }
+    const report: PlayerStateReport = {
       tmdb_id: ctx.tmdb_id,
       media_type: ctx.media_type,
       title: ctx.title,
@@ -3156,7 +3209,20 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       duration_sec: Math.round(videoDuration() * 10) / 10,
       paused: video.paused,
       voice: voiceName,
-    }).then(
+      voice_id: voiceId,
+      subtitle_id: subtitleId,
+      volume: Math.round((video.volume || 0) * 100),
+      muted: !!video.muted,
+    };
+    const listsJson = JSON.stringify([voices, subtitles]);
+    if (listsJson !== lastListsJson || now - lastListsAt > 30000) {
+      lastListsJson = listsJson;
+      lastListsAt = now;
+      report.lists = true;
+      report.voices = voices;
+      report.subtitles = subtitles;
+    }
+    postPlayerState(report).then(
       function () {},
       function () {
         /* best-effort */
@@ -3175,9 +3241,12 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   video.addEventListener('seeked', function () {
     reportState(true);
   });
+  video.addEventListener('volumechange', function () {
+    reportState(false); // throttled: the sleep fade fires this every tick
+  });
 
   // Telegram remote (core/player/remote.ts): the phone acts as a second remote.
-  setRemoteHandler(function (action: RemoteAction, value: number): boolean {
+  setRemoteHandler(function (action: RemoteAction, value: number, str: string): boolean {
     if (destroyed) return false;
     switch (action) {
       case 'toggle_play':
@@ -3201,6 +3270,19 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       case 'sleep':
         setSleepMinutes(value || 30);
         break;
+      case 'set_voice':
+        return pickMenuOption(voiceMenuOptions(), str, '🎙', t('player.voice'));
+      case 'set_subtitle':
+        return pickMenuOption(subtitleMenuOptions(), str, '💬', t('player.subs'));
+      case 'volume': {
+        const v = Math.max(0, Math.min(100, Math.round(value || 0)));
+        video.volume = v / 100;
+        video.muted = false;
+        toast({ kind: 'info', icon: '🔊', title: t('player.btn_mute'), text: v + '%' });
+        showPanel();
+        reportState(true);
+        break;
+      }
       default:
         return false;
     }

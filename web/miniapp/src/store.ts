@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'preact/hooks';
 import * as api from './api';
-import type { Bookmark, Device, HistoryItem, HomeResponse, LocalKey, OpenCmd, PlayerState, Playlist, RemoteAction, TimecodeItem } from './api';
+import type { Bookmark, Device, HistoryItem, HomeResponse, LocalKey, OpenCmd, PlayerState, Playlist, RemoteAction, RemoteStrAction, TimecodeItem } from './api';
 import { isLang, t, type Lang } from './i18n';
 import { haptic } from './tg';
 
@@ -264,9 +264,23 @@ export function sendRemote(action: RemoteAction, value?: number): Promise<boolea
     if (action === 'toggle_play') next = { ...st, position_sec: livePos(st, now), paused: !st.paused, received_at: now };
     else if (action === 'seek_to' && value != null) next = { ...st, position_sec: value, received_at: now };
     else if (action === 'seek' && value != null) next = { ...st, position_sec: Math.max(0, livePos(st, now) + value), received_at: now };
+    else if (action === 'volume' && value != null) next = { ...st, volume: value, muted: false };
+    else if (action === 'mute') next = { ...st, muted: !st.muted };
     if (next) setState((s) => ({ states: { ...s.states, [dev.id]: next! } }));
   }
   return sendTo((device_id) => ({ device_id, remote: value == null ? { action } : { action, value } }));
+}
+
+// Pick an audio / subtitle row by id on the target device; optimistic marking.
+export function sendRemoteStr(action: RemoteStrAction, str: string): Promise<boolean> {
+  haptic('select');
+  const dev = targetDevice(state);
+  if (dev && state.states[dev.id]) {
+    const st = state.states[dev.id];
+    const next: LiveState = action === 'set_voice' ? { ...st, voice_id: str } : { ...st, subtitle_id: str };
+    setState((s) => ({ states: { ...s.states, [dev.id]: next } }));
+  }
+  return sendTo((device_id) => ({ device_id, remote: { action, str } }));
 }
 
 // Device-local TV setting on the target device: optimistic, reverted on error.

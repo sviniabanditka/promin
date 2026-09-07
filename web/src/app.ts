@@ -187,7 +187,7 @@ function boot(): void {
       }
       return;
     }
-    if (!dispatchRemote(action as RemoteAction, value)) {
+    if (!dispatchRemote(action as RemoteAction, value, str)) {
       toast({ kind: 'info', icon: '🎛', text: t('telegram.remote_no_player') });
     }
   });

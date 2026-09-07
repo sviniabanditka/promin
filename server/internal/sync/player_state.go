@@ -26,7 +26,31 @@ type PlayerState struct {
 	Paused      bool    `json:"paused"`
 	Source      string  `json:"source,omitempty"`
 	Voice       string  `json:"voice,omitempty"`
-	UpdatedAt   int64   `json:"updated_at"` // set by the server
+	// Audio/subtitle menus as the TV player shows them (Mini App remote picks
+	// by id: remote set_voice / set_subtitle). The TV sends the lists only when
+	// they change or every 30 s (request flag `lists`); the server keeps the
+	// last ones per device.
+	Voices     []PlayerVoice    `json:"voices,omitempty"`
+	VoiceID    string           `json:"voice_id,omitempty"`
+	Subtitles  []PlayerSubtitle `json:"subtitles,omitempty"`
+	SubtitleID string           `json:"subtitle_id,omitempty"` // "off" when none
+	Volume     int              `json:"volume,omitempty"`      // 0..100
+	Muted      bool             `json:"muted,omitempty"`
+	UpdatedAt  int64            `json:"updated_at"` // set by the server
+}
+
+// PlayerVoice is one audio choice: a source dub (id = voice id) or an
+// in-stream track (id = "track:<n>").
+type PlayerVoice struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// PlayerSubtitle is one subtitle choice: "off", a sidecar file ("sub:<n>")
+// or an in-manifest text track ("hls:<n>").
+type PlayerSubtitle struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
 }
 
 // PlayerStatePayload is the EventPlayerState payload: the state plus the
