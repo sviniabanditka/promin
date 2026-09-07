@@ -23,14 +23,6 @@ type PlaylistItemDTO struct {
 	Position  int    `json:"position"`
 }
 
-type HistoryItemDTO struct {
-	TMDBID    int64  `json:"tmdb_id"`
-	MediaType string `json:"media_type"`
-	Season    *int   `json:"season"`
-	Episode   *int   `json:"episode"`
-	WatchedAt int64  `json:"watched_at"`
-}
-
 type TimecodeDTO struct {
 	TMDBID      int64   `json:"tmdb_id,omitempty"`
 	MediaType   string  `json:"media_type,omitempty"`
@@ -66,7 +58,6 @@ type QueueItemDTO struct {
 type BootstrapDTO struct {
 	Bookmarks []BookmarkDTO     `json:"bookmarks"`
 	Playlists []PlaylistDTO     `json:"playlists"`
-	History   []HistoryItemDTO  `json:"history"`
 	Timecodes []TimecodeDTO     `json:"timecodes"`
 	Settings  map[string]string `json:"settings"`
 	Queue     []QueueItemDTO    `json:"queue"`

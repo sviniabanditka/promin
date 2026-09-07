@@ -29,7 +29,7 @@ import (
 
 // NewServer builds the http.Handler for the promin binary: healthz, ping,
 // the catalog API, the sources/relay API, the remux API, auth, sync
-// (bookmarks/playlists/history/timecodes/settings/WS), and the static UI.
+// (bookmarks/playlists/timecodes/settings/WS), and the static UI.
 //
 // The hard gate makes media auth mandatory (a valid ?t= token is always
 // required); there is no PROMIN_REQUIRE_AUTH toggle anymore.
@@ -166,9 +166,6 @@ func NewServer(
 	mux.HandleFunc("GET /api/v1/playlists/{id}/items", requireAuth(authSvc, syncH.listPlaylistItems))
 	mux.HandleFunc("POST /api/v1/playlists/{id}/items", requireAuth(authSvc, syncH.addPlaylistItem))
 	mux.HandleFunc("DELETE /api/v1/playlists/{id}/items/{item_id}", requireAuth(authSvc, syncH.removePlaylistItem))
-
-	mux.HandleFunc("GET /api/v1/history", requireAuth(authSvc, syncH.listHistory))
-	mux.HandleFunc("POST /api/v1/history", requireAuth(authSvc, syncH.addHistory))
 
 	mux.HandleFunc("GET /api/v1/timecodes/continue", requireAuth(authSvc, syncH.continueWatching))
 	mux.HandleFunc("GET /api/v1/timecodes/{tmdb_id}", requireAuth(authSvc, syncH.getTimecode))

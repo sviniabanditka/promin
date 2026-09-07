@@ -803,19 +803,8 @@ export interface SyncEventsResponse {
   cursor: number;
 }
 
-// History rows as carried by the sync bootstrap (the history endpoints
-// themselves have no client-side reader and were removed).
-export interface HistoryItem {
-  tmdb_id: number;
-  media_type: string;
-  season?: number | null;
-  episode?: number | null;
-  watched_at?: number;
-}
-
 export interface SyncBootstrap {
   bookmarks?: Bookmark[];
-  history?: HistoryItem[];
   timecodes?: Array<TimecodeRecord & { tmdb_id: number; media_type: string; season?: number | null; episode?: number | null }>;
   settings?: { [k: string]: string };
   cursor: number;

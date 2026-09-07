@@ -400,7 +400,7 @@ function applyEvent(ev: SyncEvent): void {
     }
     persist();
   }
-  // history_added / playlist_* — not surfaced by the current UI; cursor still
+  // playlist_* — not surfaced by the current UI; cursor still
   // advances so we don't re-fetch them.
 }
 

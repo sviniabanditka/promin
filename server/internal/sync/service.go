@@ -16,18 +16,16 @@ var ErrInvalidMediaType = errors.New("sync: media_type must be movie or tv")
 var ErrNotFound = store.ErrNotFound
 
 const (
-	bootstrapHistoryLimit  = 50
 	bootstrapTimecodeLimit = 50
 	continueWatchingLimit  = 20
 )
 
-// Service implements the bookmarks/playlists/history/timecodes/settings
+// Service implements the bookmarks/playlists/timecodes/settings
 // business logic and publishes a Hub event on every mutation, per
 // docs/backend.md
 type Service struct {
 	bookmarks *store.BookmarksRepo
 	playlists *store.PlaylistsRepo
-	history   *store.HistoryRepo
 	timecodes *store.TimecodesRepo
 	settings  *store.SettingsRepo
 	queue     *store.QueueRepo
@@ -40,7 +38,6 @@ func NewService(db *store.DB, hub *Hub) *Service {
 	return &Service{
 		bookmarks: db.Bookmarks,
 		playlists: db.Playlists,
-		history:   db.History,
 		timecodes: db.Timecodes,
 		settings:  db.Settings,
 		queue:     db.Queue,
@@ -191,47 +188,6 @@ func (s *Service) RemovePlaylistItem(userID, playlistID, itemID int64) error {
 	return nil
 }
 
-// --- History --------------------------------------------------------------
-
-func (s *Service) ListHistory(userID int64, limit, offset int) ([]HistoryItemDTO, error) {
-	if limit <= 0 {
-		limit = 50
-	}
-	rows, err := s.history.List(userID, limit, offset)
-	if err != nil {
-		return nil, err
-	}
-	return toHistoryDTOs(rows), nil
-}
-
-func toHistoryDTOs(rows []store.HistoryEntry) []HistoryItemDTO {
-	out := make([]HistoryItemDTO, 0, len(rows))
-	for _, e := range rows {
-		out = append(out, HistoryItemDTO{
-			TMDBID: e.TMDBID, MediaType: e.MediaType, Season: e.Season, Episode: e.Episode, WatchedAt: e.WatchedAt,
-		})
-	}
-	return out
-}
-
-func (s *Service) AddHistory(userID, tmdbID int64, mediaType string, season, episode *int) (HistoryItemDTO, error) {
-	if !validMediaType(mediaType) {
-		return HistoryItemDTO{}, ErrInvalidMediaType
-	}
-	now := s.now().Unix()
-	e, err := s.history.Add(store.HistoryEntry{
-		UserID: userID, TMDBID: tmdbID, MediaType: mediaType, Season: season, Episode: episode, WatchedAt: now,
-	})
-	if err != nil {
-		return HistoryItemDTO{}, err
-	}
-	dto := HistoryItemDTO{TMDBID: e.TMDBID, MediaType: e.MediaType, Season: e.Season, Episode: e.Episode, WatchedAt: e.WatchedAt}
-	s.hub.Publish(userID, EventHistoryAdded, dto)
-	return dto, nil
-}
-
-// --- Timecodes --------------------------------------------------------------
-
 func (s *Service) GetTimecode(userID, tmdbID int64, mediaType string, season, episode int) (TimecodeDTO, error) {
 	if mediaType != "" && !validMediaType(mediaType) {
 		return TimecodeDTO{}, ErrInvalidMediaType
@@ -300,16 +256,16 @@ func (s *Service) ListFinished(userID int64, limit int) ([]store.Timecode, error
 	return s.timecodes.ListFinished(userID, limit)
 }
 
-// WatchedSet returns the exclude set (history ∪ bookmarks) for recommendation
-// shelves as a lookup map keyed by tmdb id.
+// WatchedSet returns the exclude set for recommendation shelves: titles the
+// profile finished (timecodes ≥ 90 %) as a lookup map keyed by tmdb id.
 func (s *Service) WatchedSet(userID int64) (map[int]bool, error) {
-	ids, err := s.history.WatchedTmdbIDs(userID)
+	rows, err := s.timecodes.ListFinished(userID, 500)
 	if err != nil {
 		return nil, err
 	}
-	set := make(map[int]bool, len(ids))
-	for _, id := range ids {
-		set[int(id)] = true
+	set := make(map[int]bool, len(rows))
+	for _, r := range rows {
+		set[int(r.TMDBID)] = true
 	}
 	return set, nil
 }
@@ -342,10 +298,6 @@ func (s *Service) Bootstrap(userID int64) (BootstrapDTO, error) {
 	if err != nil {
 		return BootstrapDTO{}, err
 	}
-	historyRows, err := s.history.List(userID, bootstrapHistoryLimit, 0)
-	if err != nil {
-		return BootstrapDTO{}, err
-	}
 	timecodeRows, err := s.timecodes.ListRecent(userID, bootstrapTimecodeLimit)
 	if err != nil {
 		return BootstrapDTO{}, err
@@ -370,7 +322,6 @@ func (s *Service) Bootstrap(userID int64) (BootstrapDTO, error) {
 	return BootstrapDTO{
 		Bookmarks: bookmarks,
 		Playlists: playlists,
-		History:   toHistoryDTOs(historyRows),
 		Timecodes: timecodes,
 		Settings:  settings,
 		Queue:     queue,
@@ -395,9 +346,6 @@ func (s *Service) PollEvents(userID, since int64) (events []Event, cursor int64,
 // ClearHistory wipes watch history and resume positions (Settings → Danger
 // zone → clear history). Other devices get EventDataCleared{scope:"history"}.
 func (s *Service) ClearHistory(userID int64) error {
-	if err := s.history.ClearUser(userID); err != nil {
-		return err
-	}
 	if err := s.timecodes.ClearUser(userID); err != nil {
 		return err
 	}
@@ -410,7 +358,7 @@ func (s *Service) ClearHistory(userID int64) error {
 // (httpapi) then revokes every session so all devices fall back to the PIN gate.
 func (s *Service) ClearAll(userID int64) error {
 	for _, f := range []func(int64) error{
-		s.bookmarks.ClearUser, s.playlists.ClearUser, s.history.ClearUser, s.timecodes.ClearUser, s.settings.ClearUser, s.queue.ClearUser,
+		s.bookmarks.ClearUser, s.playlists.ClearUser, s.timecodes.ClearUser, s.settings.ClearUser, s.queue.ClearUser,
 	} {
 		if err := f(userID); err != nil {
 			return err

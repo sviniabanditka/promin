@@ -29,7 +29,6 @@ const (
 	EventPlaylistUpdated     = "playlist_updated"
 	EventPlaylistItemAdded   = "playlist_item_added"
 	EventPlaylistItemRemoved = "playlist_item_removed"
-	EventHistoryAdded        = "history_added"
 	EventTimecodeUpdated     = "timecode_updated"
 	EventSettingsUpdated     = "settings_updated"
 	EventDataCleared         = "data_cleared" // payload {scope: history|all}

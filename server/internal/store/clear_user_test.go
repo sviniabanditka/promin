@@ -25,9 +25,6 @@ func TestClearUserIsScopedToTheProfile(t *testing.T) {
 		if _, err := db.Playlists.AddItem(pl.ID, 5, "movie", 1); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := db.History.Add(HistoryEntry{UserID: u.ID, TMDBID: 3, MediaType: "movie", WatchedAt: 1}); err != nil {
-			t.Fatal(err)
-		}
 		if _, _, err := db.Timecodes.Upsert(Timecode{UserID: u.ID, TMDBID: 3, MediaType: "movie", PositionSec: 1, DurationSec: 10, UpdatedAt: 1}); err != nil {
 			t.Fatal(err)
 		}
@@ -38,7 +35,7 @@ func TestClearUserIsScopedToTheProfile(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, f := range []func(int64) error{db.Bookmarks.ClearUser, db.Playlists.ClearUser, db.History.ClearUser, db.Timecodes.ClearUser, db.Settings.ClearUser, db.Sessions.DeleteByUser} {
+	for _, f := range []func(int64) error{db.Bookmarks.ClearUser, db.Playlists.ClearUser, db.Timecodes.ClearUser, db.Settings.ClearUser, db.Sessions.DeleteByUser} {
 		if err := f(u1.ID); err != nil {
 			t.Fatal(err)
 		}
@@ -48,9 +45,6 @@ func TestClearUserIsScopedToTheProfile(t *testing.T) {
 	}
 	if p, _ := db.Playlists.List(u1.ID); len(p) != 0 {
 		t.Fatal("u1 playlists left")
-	}
-	if h, _ := db.History.List(u1.ID, 10, 0); len(h) != 0 {
-		t.Fatal("u1 history left")
 	}
 	if s, _ := db.Settings.GetAll(u1.ID); len(s) != 0 {
 		t.Fatal("u1 settings left")

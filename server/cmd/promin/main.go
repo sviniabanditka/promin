@@ -193,7 +193,7 @@ func main() {
 		t := time.NewTicker(6 * time.Hour)
 		defer t.Stop()
 		for {
-			refs, err := db.History.LibraryRefs(0)
+			refs, err := db.LibraryRefs(0)
 			if err != nil {
 				logger.Debug("prewarm: library query failed", "error", err)
 			} else if len(refs) > 0 {

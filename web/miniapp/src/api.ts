@@ -210,13 +210,6 @@ export interface PlaylistItem {
   media_type: MediaType;
   position: number;
 }
-export interface HistoryItem {
-  tmdb_id: number;
-  media_type: MediaType;
-  season?: number | null;
-  episode?: number | null;
-  watched_at: number;
-}
 export interface TimecodeItem {
   tmdb_id: number;
   media_type: MediaType;
@@ -237,7 +230,6 @@ export interface QueueItem {
 export interface Bootstrap {
   bookmarks: Bookmark[];
   playlists: Playlist[];
-  history: HistoryItem[];
   timecodes: TimecodeItem[];
   settings: Record<string, string>;
   queue?: QueueItem[];

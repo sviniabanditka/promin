@@ -22,7 +22,6 @@ type DB struct {
 	Sessions     *SessionsRepo
 	Bookmarks    *BookmarksRepo
 	Playlists    *PlaylistsRepo
-	History      *HistoryRepo
 	Timecodes    *TimecodesRepo
 	Settings     *SettingsRepo
 	TorrentCache *TorrentCacheRepo
@@ -80,7 +79,6 @@ func Open(path string) (*DB, error) {
 		Sessions:     &SessionsRepo{db: sqlDB},
 		Bookmarks:    &BookmarksRepo{db: sqlDB},
 		Playlists:    &PlaylistsRepo{db: sqlDB},
-		History:      &HistoryRepo{db: sqlDB},
 		Timecodes:    &TimecodesRepo{db: sqlDB},
 		Settings:     &SettingsRepo{db: sqlDB},
 		TorrentCache: &TorrentCacheRepo{db: sqlDB},

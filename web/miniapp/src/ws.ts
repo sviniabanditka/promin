@@ -3,7 +3,7 @@
 
 import { isLang } from './i18n';
 import * as api from './api';
-import type { Bookmark, HistoryItem, Playlist, PlayerState, TimecodeItem } from './api';
+import type { Bookmark, Playlist, PlayerState, TimecodeItem } from './api';
 import { applyPlayerState, loadBootstrap, refreshDevices, setLang, setState } from './store';
 
 let ws: WebSocket | null = null;
@@ -97,9 +97,6 @@ function handle(type: string, p: Record<string, any>): void {
     }
     case 'bookmark_removed':
       setState((s) => ({ bookmarks: (s.bookmarks ?? []).filter((x) => !(x.tmdb_id === p.tmdb_id && x.media_type === p.media_type)) }));
-      break;
-    case 'history_added':
-      setState((s) => ({ history: [p as HistoryItem, ...(s.history ?? [])] }));
       break;
     case 'playlist_created':
     case 'playlist_updated':

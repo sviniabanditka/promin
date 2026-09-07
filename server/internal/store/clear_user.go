@@ -17,11 +17,6 @@ func (r *PlaylistsRepo) ClearUser(userID int64) error {
 	return err
 }
 
-func (r *HistoryRepo) ClearUser(userID int64) error {
-	_, err := r.db.Exec(`DELETE FROM history WHERE user_id = ?`, userID)
-	return err
-}
-
 func (r *TimecodesRepo) ClearUser(userID int64) error {
 	_, err := r.db.Exec(`DELETE FROM timecodes WHERE user_id = ?`, userID)
 	return err

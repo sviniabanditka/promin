@@ -80,7 +80,7 @@ function Playlists({ lang }: { lang: string }) {
 export function Library() {
   const s = useStore();
   const [tab, setTab] = useState<Tab>('bookmarks');
-  const loaded = s.bookmarks && s.history && s.playlists;
+  const loaded = s.bookmarks && s.playlists;
   return (
     <div class="screen">
       <div class="sub-head">

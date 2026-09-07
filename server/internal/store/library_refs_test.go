@@ -32,31 +32,28 @@ func TestLibraryRefsUnionsAllProfiles(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("timecode: %v", err)
 	}
-	if _, err := db.History.Add(HistoryEntry{UserID: u1.ID, TMDBID: 333, MediaType: "movie", WatchedAt: 300}); err != nil {
-		t.Fatalf("history: %v", err)
-	}
 	// Duplicate across profiles + tables must collapse to one ref.
 	if _, err := db.Bookmarks.Add(u2.ID, 333, "movie", 50); err != nil {
 		t.Fatalf("dup bookmark: %v", err)
 	}
 
-	refs, err := db.History.LibraryRefs(0)
+	refs, err := db.LibraryRefs(0)
 	if err != nil {
 		t.Fatalf("LibraryRefs: %v", err)
 	}
 	if len(refs) != 3 {
 		t.Fatalf("want 3 distinct refs, got %d: %+v", len(refs), refs)
 	}
-	// Most-recently-touched first: history 333 (300) > timecode 222 (200) > bookmark 111 (100).
-	if refs[0].TMDBID != 333 || refs[1].TMDBID != 222 || refs[2].TMDBID != 111 {
+	// Most-recently-touched first: timecode 222 (200) > bookmark 111 (100) > dup bookmark 333 (50).
+	if refs[0].TMDBID != 222 || refs[1].TMDBID != 111 || refs[2].TMDBID != 333 {
 		t.Errorf("wrong order: %+v", refs)
 	}
-	if refs[1].MediaType != "tv" {
-		t.Errorf("media_type lost: %+v", refs[1])
+	if refs[0].MediaType != "tv" {
+		t.Errorf("media_type lost: %+v", refs[0])
 	}
 
 	// The limit is honoured.
-	if got, err := db.History.LibraryRefs(2); err != nil || len(got) != 2 {
+	if got, err := db.LibraryRefs(2); err != nil || len(got) != 2 {
 		t.Errorf("limit ignored: %d refs err=%v", len(got), err)
 	}
 }

@@ -149,7 +149,7 @@ export function Settings() {
     if (!(await confirmDialog(t('set.clear_history_confirm')))) return;
     try {
       await clearHistory();
-      setState({ history: [], timecodes: [] });
+      setState({ timecodes: [] });
       haptic('ok');
       toast(t('set.history_cleared'));
     } catch {

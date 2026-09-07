@@ -188,39 +188,11 @@ func (h *syncHandlers) removePlaylistItem(w http.ResponseWriter, r *http.Request
 
 // --- History --------------------------------------------------------------
 
-func (h *syncHandlers) listHistory(w http.ResponseWriter, r *http.Request) {
-	info, _ := authFrom(r)
-	q := r.URL.Query()
-	limit := atoiDefault(q.Get("limit"), 50)
-	offset := atoiDefault(q.Get("offset"), 0)
-	items, err := h.svc.ListHistory(info.User.ID, limit, offset)
-	if err != nil {
-		writeSyncError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
-}
-
 type historyRequest struct {
 	TMDBID    int64  `json:"tmdb_id"`
 	MediaType string `json:"media_type"`
 	Season    *int   `json:"season"`
 	Episode   *int   `json:"episode"`
-}
-
-func (h *syncHandlers) addHistory(w http.ResponseWriter, r *http.Request) {
-	info, _ := authFrom(r)
-	var req historyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.TMDBID <= 0 {
-		writeBadRequest(w, "невірне тіло запиту")
-		return
-	}
-	dto, err := h.svc.AddHistory(info.User.ID, req.TMDBID, req.MediaType, req.Season, req.Episode)
-	if err != nil {
-		writeSyncError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, dto)
 }
 
 // --- Timecodes --------------------------------------------------------------

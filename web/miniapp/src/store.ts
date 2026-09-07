@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'preact/hooks';
 import * as api from './api';
-import type { Bookmark, Device, HistoryItem, HomeResponse, LocalKey, OpenCmd, PlayerState, Playlist, QueueItem, RemoteAction, RemoteStrAction, TimecodeItem } from './api';
+import type { Bookmark, Device, HomeResponse, LocalKey, OpenCmd, PlayerState, Playlist, QueueItem, RemoteAction, RemoteStrAction, TimecodeItem } from './api';
 import { isLang, t, type Lang } from './i18n';
 import { haptic } from './tg';
 
@@ -25,7 +25,6 @@ export interface State {
   home: HomeResponse | null;
   bookmarks: Bookmark[] | null;
   playlists: Playlist[] | null;
-  history: HistoryItem[] | null;
   timecodes: TimecodeItem[] | null;
   queue: QueueItem[] | null;
   settings: Record<string, string>;
@@ -52,7 +51,6 @@ let state: State = {
   home: null,
   bookmarks: null,
   playlists: null,
-  history: null,
   timecodes: null,
   queue: null,
   settings: {},
@@ -163,7 +161,7 @@ export function setLang(lang: Lang): void {
 export async function loadBootstrap(): Promise<void> {
   try {
     const b = await api.getBootstrap();
-    setState({ bookmarks: b.bookmarks ?? [], playlists: b.playlists ?? [], history: b.history ?? [], timecodes: b.timecodes ?? [], queue: b.queue ?? [], settings: b.settings ?? {} });
+    setState({ bookmarks: b.bookmarks ?? [], playlists: b.playlists ?? [], timecodes: b.timecodes ?? [], queue: b.queue ?? [], settings: b.settings ?? {} });
     if (isLang(b.settings?.lang) && b.settings.lang !== state.lang) {
       setLang(b.settings.lang);
       setState({ home: null }); // home rows are language-dependent
