@@ -262,6 +262,34 @@ data:
         { "id": 17, "type": "timeseries", "title": "Source searches + torrent searches (outcome/s)", "gridPos": { "x": 12, "y": 45, "w": 12, "h": 8 },
           "targets": [
             { "expr": "sum by (provider, outcome) (rate(promin_source_search_total[15m]))", "legendFormat": "{{provider}} {{outcome}}" },
-            { "expr": "sum by (outcome) (rate(promin_torrent_search_total[15m]))", "legendFormat": "jacred {{outcome}}" } ] }
+            { "expr": "sum by (outcome) (rate(promin_torrent_search_total[15m]))", "legendFormat": "jacred {{outcome}}" } ] },
+        { "id": 18, "type": "row", "title": "Residential proxy (promin_proxy_*)", "collapsed": false, "gridPos": { "x": 0, "y": 53, "w": 24, "h": 1 } },
+        { "id": 19, "type": "stat", "title": "Proxy up now", "gridPos": { "x": 0, "y": 54, "w": 6, "h": 4 },
+          "fieldConfig": { "defaults": { "mappings": [ { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } } ], "color": { "mode": "thresholds" } } },
+          "options": { "colorMode": "background", "textMode": "value" },
+          "targets": [ { "expr": "promin_proxy_up" } ] },
+        { "id": 20, "type": "stat", "title": "Traffic left", "gridPos": { "x": 6, "y": 54, "w": 6, "h": 4 },
+          "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100,
+            "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "orange", "value": 10 }, { "color": "green", "value": 25 } ] } } },
+          "options": { "colorMode": "background", "textMode": "value_and_name" },
+          "targets": [ { "expr": "100 * sum by (package) (promin_proxy_quota_bytes{kind=\"remaining\"}) / sum by (package) (promin_proxy_quota_bytes{kind=\"limit\"})", "legendFormat": "#{{package}}" } ] },
+        { "id": 21, "type": "stat", "title": "Package expires in", "gridPos": { "x": 12, "y": 54, "w": 6, "h": 4 },
+          "fieldConfig": { "defaults": { "unit": "d", "decimals": 1,
+            "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "orange", "value": 3 }, { "color": "green", "value": 7 } ] } } },
+          "options": { "colorMode": "background", "textMode": "value_and_name" },
+          "targets": [ { "expr": "(promin_proxy_expires_timestamp_seconds - time()) / 86400", "legendFormat": "#{{package}}" } ] },
+        { "id": 22, "type": "stat", "title": "Last probe", "gridPos": { "x": 18, "y": 54, "w": 6, "h": 4 },
+          "fieldConfig": { "defaults": { "unit": "s", "decimals": 2 } },
+          "targets": [ { "expr": "promin_proxy_probe_duration_seconds" } ] },
+        { "id": 23, "type": "timeseries", "title": "Proxy latency / availability", "gridPos": { "x": 0, "y": 58, "w": 12, "h": 8 },
+          "fieldConfig": { "defaults": { "unit": "s" } },
+          "targets": [
+            { "expr": "promin_proxy_probe_duration_seconds", "legendFormat": "probe duration" },
+            { "expr": "promin_proxy_up", "legendFormat": "up" } ] },
+        { "id": 24, "type": "timeseries", "title": "Proxy traffic used / remaining", "gridPos": { "x": 12, "y": 58, "w": 12, "h": 8 },
+          "fieldConfig": { "defaults": { "unit": "bytes" } },
+          "targets": [
+            { "expr": "promin_proxy_quota_bytes{kind=\"used\"}", "legendFormat": "#{{package}} used" },
+            { "expr": "promin_proxy_quota_bytes{kind=\"remaining\"}", "legendFormat": "#{{package}} remaining" } ] }
       ]
     }

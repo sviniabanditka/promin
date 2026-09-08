@@ -111,6 +111,12 @@ spec:
             - name: PROMIN_NATIVE_SOURCE_BASE_URL
               valueFrom:
                 secretKeyRef: { name: promin-secrets, key: native-source-base-url, optional: true }
+            # Read-only API token of the proxy vendor: only used to publish the
+            # traffic package as promin_proxy_* metrics. Without it the proxy is
+            # still probed for liveness, just without quota numbers.
+            - name: PROMIN_STABLEPROXY_TOKEN
+              valueFrom:
+                secretKeyRef: { name: promin-secrets, key: stableproxy-token, optional: true }
           volumeMounts:
             - { name: data, mountPath: /data }
           readinessProbe:

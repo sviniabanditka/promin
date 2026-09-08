@@ -25,6 +25,7 @@ then the torrent client is closed. No `WriteTimeout` is set on the server —
 | `config` | Reads every `PROMIN_*` env var into `Config` | `config.go` |
 | `weather` | open-meteo forecast + geocoding, GeoIP (ipwho.is, ip-api.com fallback), all cached in the shared KV table | `weather.go` |
 | `logbuf` | `slog.Handler` wrapper: ring buffer of the last 5000 records + live subscribers for `/logs` | `logbuf.go` |
+| `proxymon` | Watches the residential proxy: a liveness fetch through it plus the vendor's traffic package, both as `promin_proxy_*` gauges | `proxymon.go` |
 
 Dependency direction: `httpapi` → services (`auth`, `sync`, `catalog`,
 `sources`, `torrent`, `remux`, `weather`) → `store`. Services never import
@@ -103,6 +104,7 @@ All configuration is environment variables. Durations use Go syntax (`30s`, `24h
 | `PROMIN_NATIVE_SOURCES` | `false` | Master switch for native online providers |
 | _provider-specific `PROMIN_*` variables_ | see the private `server/providers` submodule README | Each source reads its own base URL / token there; not part of the public config package. |
 | `PROMIN_NATIVE_PROXY_URL` | empty | HTTP proxy for providers whose catalogs block datacenter IPs (Kinotochka, Eneyida, HDVB pages); from secret `lampac-proxy`. Empty → those providers off |
+| `PROMIN_STABLEPROXY_TOKEN` | empty | Proxy vendor API token (secret `promin-secrets/stableproxy-token`), read by `proxymon` to publish the traffic package as metrics |
 | `PROMIN_TELEGRAM_BOT_TOKEN` | empty (bot off) | Telegram companion bot token; k8s secret `promin-secrets/telegram-bot-token`. See docs/telegram.md |
 | `PROMIN_TELEGRAM_API_BASE_URL` | `https://api.telegram.org` | Telegram API host |
 | `PROMIN_WEBDIR` | unset | Dev only (`httpapi/static.go`): serve the UI from this directory instead of the embedded bundle |

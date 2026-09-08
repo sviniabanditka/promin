@@ -206,6 +206,7 @@ Never committed. Names and keys only:
 | `promin-secrets` | `opensubtitles-user` / `opensubtitles-password` | `PROMIN_OPENSUBTITLES_USER` / `_PASSWORD` | optional — logged-in downloads (free account 20/day instead of 5/day) |
 | `promin-secrets` | `native-source-base-url` | `PROMIN_NATIVE_SOURCE_BASE_URL` | optional — without it the corresponding provider is off |
 | `lampac-proxy` | `url` | `PROMIN_NATIVE_PROXY_URL` — residential HTTP proxy URL used only for provider catalog pages that block datacenter IPs | optional — without it those providers are off |
+| `promin-secrets` | `stableproxy-token` | `PROMIN_STABLEPROXY_TOKEN` — read-only API token of the proxy vendor, used only to publish the traffic package as metrics | optional — without it the proxy is still probed, just without quota numbers |
 | `promin-logs` | `password` | `PROMIN_LOGS_PASSWORD` | optional — without it `/logs` is disabled |
 
 GitHub Actions repository secrets: `SSH_PRIVATE_KEY` (deploy key for
@@ -250,6 +251,7 @@ default. Durations use Go syntax (`30s`, `24h`).
 | `PROMIN_NATIVE_SOURCES` | `false` | Enable the built-in online-source providers. |
 | _provider-specific `PROMIN_*` variables_ | see the private `server/providers` submodule README | Each source reads its own base URL / token there; not part of the public config package. |
 | `PROMIN_NATIVE_PROXY_URL` | empty | `http://user:pass@host:port` residential proxy for providers that block datacenter IPs; empty disables them. |
+| `PROMIN_STABLEPROXY_TOKEN` | empty | Proxy vendor API token; empty → no `promin_proxy_quota_bytes` / expiry metrics. |
 | `PROMIN_TELEGRAM_BOT_TOKEN` | empty (bot off) | Telegram companion bot token; k8s secret `promin-secrets/telegram-bot-token`. See docs/telegram.md |
 | `PROMIN_TELEGRAM_API_BASE_URL` | `https://api.telegram.org` | Telegram API host |
 
@@ -424,8 +426,12 @@ cluster's kube-prometheus-stack (namespace `monitoring`, Grafana at
   per mux route, native source search/resolve counts + latency per provider
   (`outcome` = `match|nomatch|error` / `ok|empty|error`), JacRed searches
   (`ok|error|rate_limited`), `/relay` requests by kind + upstream errors,
-  gauges for active remux jobs, torrents, WS clients, playing devices, and
-  `promin_build_info{version}`.
+  gauges for active remux jobs, torrents, WS clients, playing devices,
+  `promin_build_info{version}`, and the residential proxy watch
+  (`promin_proxy_up`, `promin_proxy_probe_duration_seconds`,
+  `promin_proxy_quota_bytes{package,kind}`,
+  `promin_proxy_expires_timestamp_seconds{package}` — see
+  `server/internal/proxymon`).
 - **PrometheusRule `promin`**: `ProminDown` (probe failing 3 min, critical),
   `ProminSlow`, `ProminPodRestarting`, `ProminMemoryHigh`, `ProminDataDiskFilling`,
   plus application rules — `ProminSourceFailing` (a provider whose resolves are
@@ -436,7 +442,9 @@ cluster's kube-prometheus-stack (namespace `monitoring`, Grafana at
   `grafana_dashboard=1`: availability, up/down per host, deployed image,
   restarts, probe latency, memory vs limit, CPU, data volume, network, and an
   "Application" row: requests/s by status, p95 latency by route, source resolve
-  success rate and p95 per provider, active remux/torrents/WS, relay errors.
+  success rate and p95 per provider, active remux/torrents/WS, relay errors; and
+  a "Residential proxy" row: up/down, traffic left and days to expiry per
+  package, probe latency, used vs remaining bytes.
 
 Alerts are delivered to Telegram. `k8s/alerting.yaml` is an `AlertmanagerConfig`
 used as the **global** Alertmanager configuration (Helm value

@@ -109,7 +109,10 @@ type Config struct {
 	NativeSourcesEnable bool
 	// NativeProxyURL: HTTP proxy for providers whose catalogs block datacenter
 	// IPs (pages only, never video). Secret lampac-proxy/url in k8s.
-	NativeProxyURL      string
+	NativeProxyURL string
+	// StableProxyToken: read-only API token of the proxy vendor, used only to
+	// publish the traffic package as metrics. Secret key stableproxy-token.
+	StableProxyToken    string
 	OpenSubtitlesAPIKey string
 	// OpenSubtitlesUser/Password: optional account for the bigger daily download
 	// quota (anonymous 5/day → free account 20/day). Secret keys
@@ -176,6 +179,7 @@ func Load() Config {
 		BackupKeep:             getenvInt("PROMIN_BACKUP_KEEP", 7),
 		NativeSourcesEnable:    getenvBool("PROMIN_NATIVE_SOURCES", false),
 		NativeProxyURL:         getenv("PROMIN_NATIVE_PROXY_URL", ""),
+		StableProxyToken:       getenv("PROMIN_STABLEPROXY_TOKEN", ""),
 		OpenSubtitlesAPIKey:    getenv("PROMIN_OPENSUBTITLES_API_KEY", ""),
 		OpenSubtitlesUser:      getenv("PROMIN_OPENSUBTITLES_USER", ""),
 		OpenSubtitlesPassword:  getenv("PROMIN_OPENSUBTITLES_PASSWORD", ""),

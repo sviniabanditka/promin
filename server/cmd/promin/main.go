@@ -21,6 +21,7 @@ import (
 	"github.com/sviniabanditka/promin/server/internal/httpapi"
 	"github.com/sviniabanditka/promin/server/internal/logbuf"
 	"github.com/sviniabanditka/promin/server/internal/metrics"
+	"github.com/sviniabanditka/promin/server/internal/proxymon"
 	"github.com/sviniabanditka/promin/server/internal/remux"
 	"github.com/sviniabanditka/promin/server/internal/sources"
 	"github.com/sviniabanditka/promin/server/internal/store"
@@ -223,6 +224,10 @@ func main() {
 		tgBot = telegram.New(telegram.NewClient(cfg.TelegramAPIBaseURL, cfg.TelegramBotToken), db.Telegram, catalogSvc, syncSvc, logger)
 		go tgBot.Run(ctx)
 	}
+
+	// Residential proxy watch: liveness + the vendor's traffic package, both as
+	// promin_proxy_* gauges. No proxy configured → nil monitor, Run is a no-op.
+	go proxymon.New(cfg.NativeProxyURL, cfg.StableProxyToken, logger).Run(ctx)
 
 	// Prometheus on its own listener: never on the public mux (the ingress
 	// would expose it). PROMIN_METRICS_ADDR="" turns it off.

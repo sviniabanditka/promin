@@ -81,10 +81,46 @@ var (
 		Name: "promin_player_devices_playing", Help: "Devices with a fresh, non-paused player state.",
 	})
 
+	// Residential proxy used for provider catalog pages (internal/proxymon).
+	proxyUp = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "promin_proxy_up", Help: "1 when the last fetch through the residential proxy succeeded.",
+	})
+	proxyProbeDuration = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "promin_proxy_probe_duration_seconds", Help: "Duration of the last fetch through the residential proxy.",
+	})
+	proxyQuotaBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "promin_proxy_quota_bytes", Help: "Traffic package of the residential proxy: used|remaining|limit.",
+	}, []string{"package", "kind"})
+	proxyExpiry = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "promin_proxy_expires_timestamp_seconds", Help: "Unix time the proxy traffic package expires.",
+	}, []string{"package"})
+
 	buildInfo = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "promin_build_info", Help: "Always 1; the version label carries the build version.",
 	}, []string{"version"})
 )
+
+// SetProxyUp publishes the outcome and duration of one proxy probe.
+func SetProxyUp(ok bool, d time.Duration) {
+	if ok {
+		proxyUp.Set(1)
+	} else {
+		proxyUp.Set(0)
+	}
+	proxyProbeDuration.Set(d.Seconds())
+}
+
+// SetProxyQuota publishes one traffic package's byte counters.
+func SetProxyQuota(pkg string, used, remaining, limit float64) {
+	proxyQuotaBytes.WithLabelValues(pkg, "used").Set(used)
+	proxyQuotaBytes.WithLabelValues(pkg, "remaining").Set(remaining)
+	proxyQuotaBytes.WithLabelValues(pkg, "limit").Set(limit)
+}
+
+// SetProxyExpiry publishes when a traffic package runs out.
+func SetProxyExpiry(pkg string, at time.Time) {
+	proxyExpiry.WithLabelValues(pkg).Set(float64(at.Unix()))
+}
 
 // SetBuildInfo publishes promin_build_info{version}=1.
 func SetBuildInfo(version string) { buildInfo.WithLabelValues(version).Set(1) }
