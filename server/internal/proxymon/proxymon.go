@@ -12,6 +12,7 @@ package proxymon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -95,38 +96,67 @@ func (m *Monitor) tick(ctx context.Context) {
 }
 
 // probe fetches a tiny page through the proxy and publishes up/duration.
+//
+// Two attempts: the gateway hands out a residential peer per session and
+// answers 407 ("Stable Proxy - Peer") when it cannot allocate one, which is a
+// transient condition rather than a dead proxy. One retry keeps a single
+// hiccup from showing DOWN on the dashboard for the whole 5-minute interval.
 func (m *Monitor) probe(ctx context.Context) {
+	var lastErr error
+	var d time.Duration
+	for attempt := 1; attempt <= 2; attempt++ {
+		if attempt > 1 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(3 * time.Second):
+			}
+		}
+		ok, dur, err := m.probeOnce(ctx)
+		d, lastErr = dur, err
+		if ok {
+			metrics.SetProxyUp(true, d)
+			return
+		}
+	}
+	metrics.SetProxyUp(false, d)
+	m.log.Warn("proxymon: proxy unreachable after 2 attempts", "error", lastErr, "took", d)
+}
+
+func (m *Monitor) probeOnce(ctx context.Context) (bool, time.Duration, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.probeURL, nil)
 	if err != nil {
-		return
+		return false, 0, err
 	}
 	start := time.Now()
 	resp, err := m.viaProxy.Do(req)
 	d := time.Since(start)
 	if err != nil {
-		metrics.SetProxyUp(false, d)
-		m.log.Warn("proxymon: probe failed", "error", err, "took", d)
-		return
+		return false, d, err
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-	ok := resp.StatusCode < 400
-	metrics.SetProxyUp(ok, d)
-	if !ok {
-		m.log.Warn("proxymon: probe status", "status", resp.StatusCode, "took", d)
+	if resp.StatusCode >= 400 {
+		return false, d, fmt.Errorf("status %d", resp.StatusCode)
 	}
+	return true, d, nil
 }
 
+// pkgList mirrors GET /v2/package/list. The vendor wraps the payload twice:
+// {"good":…,"data":{…Laravel paginator…,"data":[packages]}}. One page holds 25
+// and an account has a handful, so the paginator is read but not followed.
 type pkgList struct {
 	Good bool `json:"good"`
-	Data []struct {
-		ID        int64  `json:"id"`
-		StopDate  string `json:"stop_date"`
-		Bandwidth struct {
-			Used      float64 `json:"bytes_used"`
-			Remaining float64 `json:"bytes_remaining"`
-			Limit     float64 `json:"bytes_limit"`
-		} `json:"bandwidth_summary"`
+	Data struct {
+		Packages []struct {
+			ID        int64  `json:"id"`
+			StopDate  string `json:"stop_date"`
+			Bandwidth struct {
+				Used      float64 `json:"bytes_used"`
+				Remaining float64 `json:"bytes_remaining"`
+				Limit     float64 `json:"bytes_limit"`
+			} `json:"bandwidth_summary"`
+		} `json:"data"`
 	} `json:"data"`
 }
 
@@ -155,7 +185,7 @@ func (m *Monitor) quota(ctx context.Context) {
 		m.log.Warn("proxymon: package list decode", "error", err)
 		return
 	}
-	for _, p := range pl.Data {
+	for _, p := range pl.Data.Packages {
 		id := strconv.FormatInt(p.ID, 10)
 		metrics.SetProxyQuota(id, p.Bandwidth.Used, p.Bandwidth.Remaining, p.Bandwidth.Limit)
 		if t, err := time.Parse(time.RFC3339, p.StopDate); err == nil {

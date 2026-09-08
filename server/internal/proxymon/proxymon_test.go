@@ -17,13 +17,17 @@ func quietLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// The vendor wraps everything in {good, data, …} and keeps the byte counters
-// under bandwidth_summary. Shape copied from a real /v2/package/list answer.
-const listBody = `{"good":true,"timestamp":1788876445,"data":[
- {"id":50946,"stop_date":"2026-10-06T01:12:28.000000Z","proxy_count":1,
-  "bandwidth_summary":{"bytes_used":4891618,"bytes_remaining":995108382,"bytes_limit":1000000000}},
- {"id":50945,"stop_date":"2026-09-13T01:11:10.000000Z","proxy_count":3,
-  "bandwidth_summary":{"bytes_used":0,"bytes_remaining":1000000000,"bytes_limit":1000000000}}]}`
+// Captured from a real /v2/package/list answer: the packages sit under a
+// Laravel paginator, so the payload nests data.data. An earlier fixture that
+// flattened it passed the test while production failed to decode.
+const listBody = `{"good":true,"timestamp":1788876445,"data":{
+ "current_page":1,"per_page":25,"total":2,"last_page":1,"from":1,"to":2,
+ "path":"https://api.stableproxy.com/v2/package/list","next_page_url":null,"prev_page_url":null,
+ "data":[
+  {"id":50946,"stop_date":"2026-10-06T01:12:28.000000Z","proxy_count":1,
+   "bandwidth_summary":{"bytes_used":4891618,"bytes_remaining":995108382,"bytes_limit":1000000000}},
+  {"id":50945,"stop_date":"2026-09-13T01:11:10.000000Z","proxy_count":3,
+   "bandwidth_summary":{"bytes_used":0,"bytes_remaining":1000000000,"bytes_limit":1000000000}}]}}`
 
 func TestQuotaPublishesEveryPackage(t *testing.T) {
 	var gotAuth, gotPath string
