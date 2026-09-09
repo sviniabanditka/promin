@@ -94,6 +94,9 @@ var (
 	proxyExpiry = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "promin_proxy_expires_timestamp_seconds", Help: "Unix time the proxy traffic package expires.",
 	}, []string{"package"})
+	proxyPackageActive = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "promin_proxy_package_active", Help: "1 for the traffic package the configured proxy actually uses.",
+	}, []string{"package"})
 
 	buildInfo = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "promin_build_info", Help: "Always 1; the version label carries the build version.",
@@ -120,6 +123,16 @@ func SetProxyQuota(pkg string, used, remaining, limit float64) {
 // SetProxyExpiry publishes when a traffic package runs out.
 func SetProxyExpiry(pkg string, at time.Time) {
 	proxyExpiry.WithLabelValues(pkg).Set(float64(at.Unix()))
+}
+
+// SetProxyPackageActive marks whether the configured proxy draws on this
+// package. Alerts join on it so an idle package nobody uses cannot page.
+func SetProxyPackageActive(pkg string, active bool) {
+	v := 0.0
+	if active {
+		v = 1
+	}
+	proxyPackageActive.WithLabelValues(pkg).Set(v)
 }
 
 // SetBuildInfo publishes promin_build_info{version}=1.

@@ -38,7 +38,7 @@ func TestQuotaPublishesEveryPackage(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	m := New("http://user:pass@proxy.invalid:1080", "tok", quietLogger())
+	m := New("http://user:pass@rsg-50946.sp2.invalid:11001", "tok", quietLogger())
 	if m == nil {
 		t.Fatal("New returned nil for a valid proxy url")
 	}
@@ -75,6 +75,32 @@ promin_proxy_expires_timestamp_seconds{package="50946"} 1.791249148e+09
 	if err := testutil.GatherAndCompare(prometheus.DefaultGatherer,
 		strings.NewReader(wantExpiry), "promin_proxy_expires_timestamp_seconds"); err != nil {
 		t.Error(err)
+	}
+
+	// Only the package named by the proxy host counts as in use — alerts join
+	// on this so the idle package cannot page.
+	const wantActive = `# HELP promin_proxy_package_active 1 for the traffic package the configured proxy actually uses.
+# TYPE promin_proxy_package_active gauge
+promin_proxy_package_active{package="50945"} 0
+promin_proxy_package_active{package="50946"} 1
+`
+	if err := testutil.GatherAndCompare(prometheus.DefaultGatherer,
+		strings.NewReader(wantActive), "promin_proxy_package_active"); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestPackageFromHost(t *testing.T) {
+	for _, c := range []struct{ host, want string }{
+		{"rsg-50946.sp2.ovh", "50946"},
+		{"rsg-50945.sp2.ovh", "50945"},
+		{"proxy.example.com", ""},  // no digits at all
+		{"gw-12.sp2.ovh", ""},      // too short to be a package id
+		{"50946.sp2.ovh", "50946"}, // bare id
+	} {
+		if got := packageFromHost(c.host); got != c.want {
+			t.Errorf("packageFromHost(%q) = %q, want %q", c.host, got, c.want)
+		}
 	}
 }
 

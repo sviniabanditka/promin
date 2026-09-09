@@ -430,14 +430,19 @@ cluster's kube-prometheus-stack (namespace `monitoring`, Grafana at
   `promin_build_info{version}`, and the residential proxy watch
   (`promin_proxy_up`, `promin_proxy_probe_duration_seconds`,
   `promin_proxy_quota_bytes{package,kind}`,
-  `promin_proxy_expires_timestamp_seconds{package}` — see
-  `server/internal/proxymon`).
+  `promin_proxy_expires_timestamp_seconds{package}`,
+  `promin_proxy_package_active{package}` — see `server/internal/proxymon`).
 - **PrometheusRule `promin`**: `ProminDown` (probe failing 3 min, critical),
   `ProminSlow`, `ProminPodRestarting`, `ProminMemoryHigh`, `ProminDataDiskFilling`,
   plus application rules — `ProminSourceFailing` (a provider whose resolves are
   > 80 % empty/error over 6 h with ≥ 5 attempts: a broken source, noticed before
   the TV shows an empty list), `ProminHttp5xx` (5xx ratio > 5 % over 15 m),
-  `ProminRelayUpstreamErrors` (> 30 upstream failures in 15 m). All warning.
+  `ProminRelayUpstreamErrors` (> 30 upstream failures in 15 m), and the proxy
+  rules — `ProminProxyDown` (15 m), `ProminProxyQuotaLow` (< 10 % of the package
+  left), `ProminProxyExpiring` (< 3 days), `ProminProxyPackageUnknown` (the
+  guard: the gateway host stopped naming its package, so the two rules above
+  would be blind). Quota and expiry join on `promin_proxy_package_active` so an
+  idle package on the same account never pages. All warning.
 - **Dashboard "Promin"** is provisioned from the ConfigMap labelled
   `grafana_dashboard=1`: availability, up/down per host, deployed image,
   restarts, probe latency, memory vs limit, CPU, data volume, network, and an

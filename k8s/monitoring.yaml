@@ -183,6 +183,43 @@ spec:
           labels: { severity: warning }
           annotations:
             summary: "/relay: {{ $value | humanize }} upstream failures in 15m"
+        # Residential proxy. The quota and expiry rules join on
+        # promin_proxy_package_active so an idle package on the same account
+        # cannot page; ProminProxyPackageUnknown guards that join itself.
+        - alert: ProminProxyDown
+          expr: promin_proxy_up == 0
+          for: 15m
+          labels: { severity: warning }
+          annotations:
+            summary: "residential proxy unreachable for 15m"
+            description: "Provider catalog pages that need a residential exit will be failing."
+        - alert: ProminProxyQuotaLow
+          expr: |
+            (
+              promin_proxy_quota_bytes{kind="remaining"} / promin_proxy_quota_bytes{kind="limit"}
+            ) < 0.1
+            and on (package) promin_proxy_package_active == 1
+          for: 30m
+          labels: { severity: warning }
+          annotations:
+            summary: "proxy package {{ $labels.package }}: {{ $value | humanizePercentage }} traffic left"
+        - alert: ProminProxyExpiring
+          expr: |
+            (promin_proxy_expires_timestamp_seconds - time()) / 86400 < 3
+            and on (package) promin_proxy_package_active == 1
+          for: 1h
+          labels: { severity: warning }
+          annotations:
+            summary: "proxy package {{ $labels.package }} expires in {{ $value | humanize }} days"
+        - alert: ProminProxyPackageUnknown
+          expr: |
+            count(promin_proxy_quota_bytes) > 0
+            and count(promin_proxy_package_active == 1) == 0
+          for: 1h
+          labels: { severity: warning }
+          annotations:
+            summary: "cannot tell which proxy package is in use"
+            description: "The gateway host no longer carries the package id, so the quota and expiry alerts are blind."
 ---
 apiVersion: v1
 kind: ConfigMap

@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/sviniabanditka/promin/server/internal/metrics"
@@ -42,9 +43,33 @@ type Monitor struct {
 	viaProxy *http.Client
 	direct   *http.Client
 
+	// activePkg is the traffic package the configured proxy draws on, read off
+	// the gateway host ("rsg-50946.sp2.ovh" → "50946"). Empty when the host does
+	// not carry one; the ProminProxyPackageUnknown alert covers that case.
+	activePkg string
+
 	// Overridden by tests.
 	probeURL string
 	apiBase  string
+}
+
+// packageFromHost pulls the package id out of the proxy gateway host. The
+// vendor names each package's gateway after it, so the first digit run in the
+// leftmost label is the id. Returns "" when the host looks different.
+func packageFromHost(host string) string {
+	label, _, _ := strings.Cut(host, ".")
+	start := strings.IndexFunc(label, func(r rune) bool { return r >= '0' && r <= '9' })
+	if start < 0 {
+		return ""
+	}
+	end := start
+	for end < len(label) && label[end] >= '0' && label[end] <= '9' {
+		end++
+	}
+	if end-start < 4 { // ids are five digits; a shorter run is something else
+		return ""
+	}
+	return label[start:end]
 }
 
 // New returns nil when there is no proxy to watch.
@@ -58,10 +83,11 @@ func New(proxyURL, token string, logger *slog.Logger) *Monitor {
 		return nil
 	}
 	return &Monitor{
-		token:    token,
-		log:      logger,
-		probeURL: defaultProbeURL,
-		apiBase:  defaultAPIBase,
+		token:     token,
+		log:       logger,
+		activePkg: packageFromHost(u.Hostname()),
+		probeURL:  defaultProbeURL,
+		apiBase:   defaultAPIBase,
 		viaProxy: &http.Client{
 			Timeout:   20 * time.Second,
 			Transport: &http.Transport{Proxy: http.ProxyURL(u)},
@@ -188,6 +214,7 @@ func (m *Monitor) quota(ctx context.Context) {
 	for _, p := range pl.Data.Packages {
 		id := strconv.FormatInt(p.ID, 10)
 		metrics.SetProxyQuota(id, p.Bandwidth.Used, p.Bandwidth.Remaining, p.Bandwidth.Limit)
+		metrics.SetProxyPackageActive(id, id == m.activePkg)
 		if t, err := time.Parse(time.RFC3339, p.StopDate); err == nil {
 			metrics.SetProxyExpiry(id, t)
 		}
