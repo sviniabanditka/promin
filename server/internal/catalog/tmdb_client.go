@@ -97,6 +97,13 @@ func NewClient(baseURLs []string, apiKey string, cache *store.TMDBCacheRepo, log
 	}
 }
 
+// onInflightJoin, when set, runs in a follower right after it loses the race
+// for a cold-miss key and before it waits — the moment from which it can no
+// longer become a second leader. Only the single-flight test sets it: it has
+// no other way to know every follower has really joined, and guessing with a
+// sleep made that test flaky under CI load. nil in production.
+var onInflightJoin func()
+
 // getCached fetches path+query from TMDB, transparently caching the raw
 // response body under key for ttl. On upstream failure, a stale cache
 // entry (if any) is served instead (stale-while-error, per
@@ -136,6 +143,9 @@ func (c *Client) getCached(ctx context.Context, key string, ttl time.Duration, p
 	// Cold miss: one goroutine fetches, the others wait and re-read the cache.
 	done := make(chan struct{})
 	if existing, busy := c.inflight.LoadOrStore(key, done); busy {
+		if onInflightJoin != nil {
+			onInflightJoin()
+		}
 		select {
 		case <-existing.(chan struct{}):
 		case <-ctx.Done():

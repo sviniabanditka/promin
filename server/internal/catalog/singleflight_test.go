@@ -24,6 +24,13 @@ func TestColdMissIsSingleFlighted(t *testing.T) {
 	defer srv.Close()
 	c := NewClient([]string{srv.URL}, "k", newTestCache(t), slog.Default())
 
+	// A follower can only be counted once it has lost the race for the key;
+	// before that it may still become a second leader. Waiting on this instead
+	// of on a sleep is what makes the test deterministic under load.
+	var joined atomic.Int32
+	onInflightJoin = func() { joined.Add(1) }
+	defer func() { onInflightJoin = nil }()
+
 	const n = 3
 	var wg sync.WaitGroup
 	started := make(chan struct{}, n)
@@ -40,8 +47,9 @@ func TestColdMissIsSingleFlighted(t *testing.T) {
 	for i := 0; i < n; i++ {
 		<-started
 	}
-	// Let the leader reach the server, then release everything.
-	for hits.Load() == 0 {
+	// Release only once the leader is at the server AND both followers have
+	// joined it; releasing earlier let a slow follower start its own fetch.
+	for hits.Load() == 0 || joined.Load() < n-1 {
 		time.Sleep(time.Millisecond)
 	}
 	close(release)
