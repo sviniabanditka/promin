@@ -187,7 +187,7 @@ spec:
         # promin_proxy_package_active so an idle package on the same account
         # cannot page; ProminProxyPackageUnknown guards that join itself.
         - alert: ProminProxyDown
-          expr: promin_proxy_up == 0
+          expr: max(promin_proxy_up) == 0
           for: 15m
           labels: { severity: warning }
           annotations:
@@ -196,17 +196,18 @@ spec:
         - alert: ProminProxyQuotaLow
           expr: |
             (
-              promin_proxy_quota_bytes{kind="remaining"} / promin_proxy_quota_bytes{kind="limit"}
+              max by (package) (promin_proxy_quota_bytes{kind="remaining"})
+                / max by (package) (promin_proxy_quota_bytes{kind="limit"})
             ) < 0.1
-            and on (package) promin_proxy_package_active == 1
+            and on (package) max by (package) (promin_proxy_package_active) == 1
           for: 30m
           labels: { severity: warning }
           annotations:
             summary: "proxy package {{ $labels.package }}: {{ $value | humanizePercentage }} traffic left"
         - alert: ProminProxyExpiring
           expr: |
-            (promin_proxy_expires_timestamp_seconds - time()) / 86400 < 3
-            and on (package) promin_proxy_package_active == 1
+            (max by (package) (promin_proxy_expires_timestamp_seconds) - time()) / 86400 < 3
+            and on (package) max by (package) (promin_proxy_package_active) == 1
           for: 1h
           labels: { severity: warning }
           annotations:
@@ -214,7 +215,7 @@ spec:
         - alert: ProminProxyPackageUnknown
           expr: |
             count(promin_proxy_quota_bytes) > 0
-            and count(promin_proxy_package_active == 1) == 0
+            and count(max by (package) (promin_proxy_package_active) == 1) == 0
           for: 1h
           labels: { severity: warning }
           annotations:
@@ -288,13 +289,13 @@ data:
           "targets": [ { "expr": "histogram_quantile(0.95, sum by (le, provider) (rate(promin_source_resolve_duration_seconds_bucket[15m])))", "legendFormat": "{{provider}}" } ] },
         { "id": 15, "type": "timeseries", "title": "Active: remux jobs / torrents / WS clients", "gridPos": { "x": 16, "y": 37, "w": 8, "h": 8 },
           "targets": [
-            { "expr": "promin_remux_jobs_active", "legendFormat": "remux jobs" },
-            { "expr": "promin_torrents_active", "legendFormat": "torrents" },
-            { "expr": "promin_ws_clients", "legendFormat": "ws clients" },
-            { "expr": "promin_player_devices_playing", "legendFormat": "playing" } ] },
+            { "expr": "max(promin_remux_jobs_active)", "legendFormat": "remux jobs" },
+            { "expr": "max(promin_torrents_active)", "legendFormat": "torrents" },
+            { "expr": "max(promin_ws_clients)", "legendFormat": "ws clients" },
+            { "expr": "max(promin_player_devices_playing)", "legendFormat": "playing" } ] },
         { "id": 16, "type": "timeseries", "title": "Relay: upstream errors (5m) / requests by kind", "gridPos": { "x": 0, "y": 45, "w": 12, "h": 8 },
           "targets": [
-            { "expr": "increase(promin_relay_upstream_errors_total[5m])", "legendFormat": "upstream errors" },
+            { "expr": "sum(increase(promin_relay_upstream_errors_total[5m]))", "legendFormat": "upstream errors" },
             { "expr": "sum by (kind) (rate(promin_relay_requests_total[5m]))", "legendFormat": "{{kind}}/s" } ] },
         { "id": 17, "type": "timeseries", "title": "Source searches + torrent searches (outcome/s)", "gridPos": { "x": 12, "y": 45, "w": 12, "h": 8 },
           "targets": [
@@ -304,29 +305,29 @@ data:
         { "id": 19, "type": "stat", "title": "Proxy up now", "gridPos": { "x": 0, "y": 54, "w": 6, "h": 4 },
           "fieldConfig": { "defaults": { "mappings": [ { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } } ], "color": { "mode": "thresholds" } } },
           "options": { "colorMode": "background", "textMode": "value" },
-          "targets": [ { "expr": "promin_proxy_up" } ] },
+          "targets": [ { "expr": "max(promin_proxy_up)" } ] },
         { "id": 20, "type": "stat", "title": "Traffic left", "gridPos": { "x": 6, "y": 54, "w": 6, "h": 4 },
           "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100,
             "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "orange", "value": 10 }, { "color": "green", "value": 25 } ] } } },
           "options": { "colorMode": "background", "textMode": "value_and_name" },
-          "targets": [ { "expr": "100 * sum by (package) (promin_proxy_quota_bytes{kind=\"remaining\"}) / sum by (package) (promin_proxy_quota_bytes{kind=\"limit\"})", "legendFormat": "#{{package}}" } ] },
+          "targets": [ { "expr": "100 * max by (package) (promin_proxy_quota_bytes{kind=\"remaining\"}) / max by (package) (promin_proxy_quota_bytes{kind=\"limit\"})", "legendFormat": "#{{package}}" } ] },
         { "id": 21, "type": "stat", "title": "Package expires in", "gridPos": { "x": 12, "y": 54, "w": 6, "h": 4 },
           "fieldConfig": { "defaults": { "unit": "d", "decimals": 1,
             "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "orange", "value": 3 }, { "color": "green", "value": 7 } ] } } },
           "options": { "colorMode": "background", "textMode": "value_and_name" },
-          "targets": [ { "expr": "(promin_proxy_expires_timestamp_seconds - time()) / 86400", "legendFormat": "#{{package}}" } ] },
+          "targets": [ { "expr": "max by (package) (promin_proxy_expires_timestamp_seconds - time()) / 86400", "legendFormat": "#{{package}}" } ] },
         { "id": 22, "type": "stat", "title": "Last probe", "gridPos": { "x": 18, "y": 54, "w": 6, "h": 4 },
           "fieldConfig": { "defaults": { "unit": "s", "decimals": 2 } },
-          "targets": [ { "expr": "promin_proxy_probe_duration_seconds" } ] },
+          "targets": [ { "expr": "max(promin_proxy_probe_duration_seconds)" } ] },
         { "id": 23, "type": "timeseries", "title": "Proxy latency / availability", "gridPos": { "x": 0, "y": 58, "w": 12, "h": 8 },
           "fieldConfig": { "defaults": { "unit": "s" } },
           "targets": [
-            { "expr": "promin_proxy_probe_duration_seconds", "legendFormat": "probe duration" },
-            { "expr": "promin_proxy_up", "legendFormat": "up" } ] },
+            { "expr": "max(promin_proxy_probe_duration_seconds)", "legendFormat": "probe duration" },
+            { "expr": "max(promin_proxy_up)", "legendFormat": "up" } ] },
         { "id": 24, "type": "timeseries", "title": "Proxy traffic used / remaining", "gridPos": { "x": 12, "y": 58, "w": 12, "h": 8 },
           "fieldConfig": { "defaults": { "unit": "bytes" } },
           "targets": [
-            { "expr": "promin_proxy_quota_bytes{kind=\"used\"}", "legendFormat": "#{{package}} used" },
-            { "expr": "promin_proxy_quota_bytes{kind=\"remaining\"}", "legendFormat": "#{{package}} remaining" } ] }
+            { "expr": "max by (package) (promin_proxy_quota_bytes{kind=\"used\"})", "legendFormat": "#{{package}} used" },
+            { "expr": "max by (package) (promin_proxy_quota_bytes{kind=\"remaining\"})", "legendFormat": "#{{package}} remaining" } ] }
       ]
     }
