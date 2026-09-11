@@ -210,7 +210,9 @@ Read SmartTube's engine (MediaServiceCore, commit 0365be3 of the same day):
 
 Reproducing that request from the laptop with our token: **`status=OK`, 31
 formats up to 1080p** — the "unplayable" wall was the request shape, not the
-token or the IP. (VPS repeat pending: `6-node-test.sh`.)
+token or the IP. **From the VPS the same request also returns `status=OK`**
+(31 and 37 formats, up to 2160p60): once signed in through the TV client,
+the datacenter IP is no longer challenged at the player call.
 
 But the adaptive formats carry **no URL and no signatureCipher**: the TV
 client now delivers adaptive media only through **SABR**
