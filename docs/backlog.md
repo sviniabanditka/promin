@@ -41,6 +41,50 @@ system itself is described in the other documents.
 - Transcode HEVC/HDR → H.264/SDR on the fly for old panels: see `streaming.md`
   for what exists; the on-the-fly path for 4K/HEVC torrents is not complete.
 
+## Candidates reviewed 2026-09-12 (not started)
+
+Ranked by the owner's value; the top three are 8, 13 and 1 of this list.
+
+For the viewer:
+1. **Series calendar + notifications** — air dates from TMDB for bookmarked
+   and watched series, a "coming soon" shelf on Home, bot message "new
+   episode out, open on TV". The one feature that brings people back.
+2. **Mini-player** — keep `<video>` alive in a corner while browsing the
+   title page, similar titles or seasons; one press to expand.
+3. **Watch together** — play/pause/seek sync between two TVs (or TV and
+   phone) over the existing sync WebSocket.
+4. **Search transliteration fallback** — zero results → retry the query
+   mapped through the other keyboard layout.
+5. **Skip intro / next episode by timing** — a "skip intro" button from a
+   repeated segment between episodes or a manual mark remembered per show.
+6. **Kids profile** — own PIN, TMDB content-rating filter, hidden shelves.
+7. **Smarter Home shelves** — "because you watched X", "unfinished this
+   week", "new in your genres"; the data is already in the DB.
+
+Existing behaviour:
+8. **Season check when listing sources** — series without the requested
+   season still appear and fail only at resolve time.
+9. **One popup lifecycle** (`openPopup` + tracked close) instead of the
+   per-screen variants that caused several focus bugs.
+10. **Season selector on the torrents tab.**
+11. **Voice input in search** — a microphone key that pops the host IME on
+    demand, on top of our own keyboard.
+12. **Audit the title screen and the source picker** with the same review
+    workflow the search screen went through.
+
+Reliability and operations:
+13. **Verify on real devices** what shipped blind: episode strip and seek
+    ladder on Tizen, spinner and torrent resume on Xiaomi/MSX, the source
+    matrix on one movie and one series (diagnostics mode is already there).
+14. **On-the-fly HEVC/HDR → H.264/SDR** for old panels — the 4K torrent path
+    is what most often "does not play".
+15. **Remux live-job ceiling per profile** — the last audit item.
+16. **Synthetic user monitor** — hourly headless run: login, search, resolve
+    one source, first bytes of the stream; alert to the same Telegram.
+17. **Dependabot** for actions and Go modules.
+
+See also `docs/proposals/youtube.md`.
+
 ## Ideas (not planned)
 
 - Personal media library: keep downloaded torrents on the VPS, seed, prefetch
