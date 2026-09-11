@@ -22,7 +22,7 @@ func authFixture(t *testing.T) (*auth.Service, string) {
 		t.Fatal(err)
 	}
 	const tok = "valid-token-123"
-	if err := db.Sessions.Create(store.Session{Token: tok, UserID: u.ID, DeviceType: "tv", CreatedAt: 1, LastSeen: 1}); err != nil {
+	if err := db.Sessions.Create(store.Session{Token: auth.HashToken(tok), ID: auth.TokenID(tok), UserID: u.ID, DeviceType: "tv", CreatedAt: 1, LastSeen: 1}); err != nil {
 		t.Fatal(err)
 	}
 	return auth.NewService(db, auth.Config{}), tok

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"regexp"
 
 	"github.com/sviniabanditka/promin/server/internal/auth"
 	"github.com/sviniabanditka/promin/server/internal/catalog"
@@ -29,6 +30,8 @@ var remoteActions = map[string]bool{
 	// D-pad relayed to the TV UI (works on any screen, not just the player).
 	"nav_up": true, "nav_down": true, "nav_left": true, "nav_right": true, "nav_ok": true, "nav_back": true,
 }
+
+var platformRe = regexp.MustCompile(`^[a-z0-9_-]{1,32}$`)
 
 // login: POST /api/v1/tg/auth {init_data, platform?} → {token, user:{id, login}}.
 func (h *tgAppHandlers) login(w http.ResponseWriter, r *http.Request) {
@@ -60,7 +63,10 @@ func (h *tgAppHandlers) login(w http.ResponseWriter, r *http.Request) {
 	if u.FirstName != "" {
 		name = u.FirstName + " · Telegram"
 	}
-	if req.Platform != "" {
+	// Telegram's platform names are short lowercase tokens; the field lands in
+	// the device name and is the session-reuse key, so anything else is
+	// dropped rather than stored.
+	if platformRe.MatchString(req.Platform) {
 		name += " (" + req.Platform + ")"
 	}
 	res, err := h.auth.LoginTelegram(userID, name)

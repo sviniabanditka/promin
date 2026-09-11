@@ -105,6 +105,8 @@ spec:
             - { name: PROMIN_NATIVE_SOURCES, value: "true" }
             # Резидентный UA-прокси (secret lampac-proxy, имя историческое) — только для
             # страниц каталогов, которые режут датацентровые IP.
+            - name: PROMIN_RELAY_BLOCK_IPS # the node itself: its 443 fronts internal vhosts
+              value: "109.199.115.31"
             - name: PROMIN_NATIVE_PROXY_URL
               valueFrom:
                 secretKeyRef: { name: lampac-proxy, key: url, optional: true }
@@ -131,9 +133,27 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             capabilities: { drop: ["ALL"] }
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
           resources:
             requests: { cpu: "100m", memory: "128Mi" }
             limits: { memory: "2Gi" } # торрент-буферы + ffmpeg remux
+      # The data volume was written by root before the container went
+      # non-root; hand it over once per start (cheap when already owned).
+      initContainers:
+        - name: chown-data
+          image: ghcr.io/sviniabanditka/promin:latest
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "chown -R 65532:65532 /data"]
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            capabilities: { drop: ["ALL"], add: ["CHOWN", "FOWNER", "DAC_OVERRIDE"] }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+      securityContext:
+        fsGroup: 65532
       volumes:
         - { name: data, persistentVolumeClaim: { claimName: promin-data } }
 ---

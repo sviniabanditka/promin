@@ -2,7 +2,9 @@ package auth
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 )
 
@@ -39,3 +41,14 @@ func tokenID(token string) string {
 // TokenID is the exported tokenID: the sync hub identifies a connected
 // device by it (docs/api.md devices, open_title.device_id).
 func TokenID(token string) string { return tokenID(token) }
+
+// hashToken is what the sessions table stores instead of the bearer: a
+// database dump or a backup then holds nothing a client could present.
+// SHA-256 without a salt is enough — the input is 256 random bits.
+func hashToken(raw string) string {
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
+}
+
+// HashToken is the exported hashToken (startup migration of legacy rows).
+func HashToken(raw string) string { return hashToken(raw) }

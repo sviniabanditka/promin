@@ -63,7 +63,25 @@ func blockedIP(ip net.IP) bool {
 	if relayAllowLoopback && ip.IsLoopback() {
 		return false
 	}
+	for _, b := range extraBlockedIPs {
+		if b.Equal(ip) {
+			return true
+		}
+	}
 	return ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsPrivate()
+}
+
+// extraBlockedIPs: public addresses the relay must never dial — the node's
+// own IP (its 443 fronts internal vhosts such as Grafana). PROMIN_RELAY_BLOCK_IPS.
+var extraBlockedIPs []net.IP
+
+func SetRelayBlockedIPs(list []string) {
+	extraBlockedIPs = nil
+	for _, s := range list {
+		if ip := net.ParseIP(strings.TrimSpace(s)); ip != nil {
+			extraBlockedIPs = append(extraBlockedIPs, ip)
+		}
+	}
 }
 
 // guardDial is the net.Dialer Control hook of relayClient: refuse connections

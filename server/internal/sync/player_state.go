@@ -160,11 +160,21 @@ func (h *Hub) DeviceSettings(userID int64, deviceID string) map[string]string {
 // updatePlayingGauge: devices currently playing (not paused, fresh). Caller holds h.mu.
 func (h *Hub) updatePlayingGauge(now time.Time) {
 	n := 0
-	for _, devs := range h.players {
-		for _, e := range devs {
-			if !e.state.Paused && now.Sub(time.Unix(e.state.UpdatedAt, 0)) <= playerStateTTL {
+	for uid, devs := range h.players {
+		for dev, e := range devs {
+			age := now.Sub(time.Unix(e.state.UpdatedAt, 0))
+			// A device that has not reported for a day is gone (token revoked,
+			// TV retired); drop it so the map cannot grow with dead sessions.
+			if age > 24*time.Hour {
+				delete(devs, dev)
+				continue
+			}
+			if !e.state.Paused && age <= playerStateTTL {
 				n++
 			}
+		}
+		if len(devs) == 0 {
+			delete(h.players, uid)
 		}
 	}
 	metrics.PlayerDevicesPlaying.Set(float64(n))

@@ -10,7 +10,6 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 
-	"github.com/sviniabanditka/promin/server/internal/auth"
 	"github.com/sviniabanditka/promin/server/internal/sync"
 )
 
@@ -48,7 +47,7 @@ func (h *wsHandlers) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.CloseNow()
 
-	events, unsubscribe := h.syncSvc.Hub().Subscribe(info.User.ID, auth.TokenID(info.Session.Token), info.Session.DeviceName)
+	events, unsubscribe := h.syncSvc.Hub().Subscribe(info.User.ID, info.Session.ID, info.Session.DeviceName)
 	defer unsubscribe()
 
 	writeCtx, cancelWrites := context.WithCancel(r.Context())

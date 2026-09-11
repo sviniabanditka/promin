@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/sviniabanditka/promin/server/internal/auth"
 	"github.com/sviniabanditka/promin/server/internal/sync"
 )
 
@@ -34,7 +33,7 @@ func (h *playerStateHandlers) set(w http.ResponseWriter, r *http.Request) {
 		writeBadRequest(w, "title ≤ 300, voices/subtitles ≤ 64")
 		return
 	}
-	dev := auth.TokenID(info.Session.Token)
+	dev := info.Session.ID
 	if req.Closed {
 		h.hub.ClearPlayerState(info.User.ID, dev)
 		w.WriteHeader(http.StatusNoContent)
@@ -68,6 +67,6 @@ func (h *playerStateHandlers) deviceSettings(w http.ResponseWriter, r *http.Requ
 		writeBadRequest(w, "невірне тіло")
 		return
 	}
-	h.hub.SetDeviceSettings(info.User.ID, auth.TokenID(info.Session.Token), body)
+	h.hub.SetDeviceSettings(info.User.ID, info.Session.ID, body)
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -407,6 +407,16 @@ read access to `promin-providers` — and passes `GO_TAGS=providers` to the imag
 build. A checkout without the submodule still builds and runs: catalog, torrents,
 accounts and sync work, the sources tab is empty.
 
+## Host hardening
+
+`k8s/host/harden-host.sh` (run from the laptop) disables the forgotten
+host-level TorrServer and turns off ssh password login (`sshd_config.d/00-hardening.conf`:
+keys only, `PermitRootLogin prohibit-password`). The container runs as uid
+65532 (`USER` in the Dockerfile, `runAsNonRoot` in the pod); an init step
+chowns `/data` once per start because the volume was written by root before.
+CI pins the node's ssh host key (secret `SSH_KNOWN_HOSTS`, `StrictHostKeyChecking=yes`)
+and deploys the immutable `:<sha>` image tag via `kubectl set image`.
+
 ## Host firewall
 
 The node has no firewall of its own (INPUT policy ACCEPT), so the k3s API

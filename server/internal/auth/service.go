@@ -99,7 +99,8 @@ func (s *Service) newSession(user store.User, deviceName, deviceType string) (st
 	}
 	now := s.now().Unix()
 	err = s.sessions.Create(store.Session{
-		Token:      token,
+		Token:      hashToken(token),
+		ID:         tokenID(token),
 		UserID:     user.ID,
 		DeviceName: deviceName,
 		DeviceType: deviceType,
@@ -119,25 +120,15 @@ func (s *Service) LoginTelegram(userID int64, deviceName string) (AuthResult, er
 	if err != nil {
 		return AuthResult{}, err
 	}
-	// One session per Telegram identity: the Mini App re-authenticates on
-	// every open (sessionStorage dies with the webview), which used to mint a
-	// fresh device row each time. Reuse the existing telegram session with the
-	// same name and drop stray duplicates.
+	// One session per Telegram identity: the Mini App re-authenticates when
+	// its stored token dies, which used to mint a fresh device row each time.
+	// The stored value is a hash, so an existing session cannot be handed
+	// back — replace it: drop the same-named telegram sessions, mint one.
 	if sessions, err := s.sessions.ListByUser(user.ID); err == nil {
-		var keep string
 		for _, sess := range sessions {
-			if sess.DeviceType != "telegram" || sess.DeviceName != deviceName {
-				continue
+			if sess.DeviceType == "telegram" && sess.DeviceName == deviceName {
+				_ = s.sessions.Delete(sess.Token)
 			}
-			if keep == "" {
-				keep = sess.Token
-				continue
-			}
-			_ = s.sessions.Delete(sess.Token)
-		}
-		if keep != "" {
-			_ = s.sessions.TouchLastSeen(keep, time.Now().Unix())
-			return AuthResult{Token: keep, User: user}, nil
 		}
 	}
 	token, err := s.newSession(user, deviceName, "telegram")
@@ -154,13 +145,14 @@ func (s *Service) RevokeAll(userID int64) error {
 
 // Logout revokes token (POST /api/v1/auth/logout).
 func (s *Service) Logout(token string) error {
-	return s.sessions.Delete(token)
+	return s.sessions.Delete(token) // token is the session's stored (hashed) form
 }
 
 // ResolveToken looks up the session+user behind an opaque token, for the
 // auth middleware. It throttles the last_seen write per lastSeenThrottle.
 func (s *Service) ResolveToken(token string) (store.Session, store.User, error) {
-	session, err := s.sessions.Get(token)
+	key := hashToken(token)
+	session, err := s.sessions.Get(key)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return store.Session{}, store.User{}, ErrInvalidToken
@@ -172,11 +164,11 @@ func (s *Service) ResolveToken(token string) (store.Session, store.User, error) 
 	// Admin panel sessions expire (living-room TV sessions are immortal by
 	// design). Pure created_at clock math — no schema.
 	if session.DeviceType == "admin" && s.adminTTL > 0 && now.Unix()-session.CreatedAt > int64(s.adminTTL.Seconds()) {
-		_ = s.sessions.Delete(token)
+		_ = s.sessions.Delete(key)
 		return store.Session{}, store.User{}, ErrInvalidToken
 	}
 	if now.Sub(time.Unix(session.LastSeen, 0)) >= lastSeenThrottle {
-		_ = s.sessions.TouchLastSeen(token, now.Unix()) // best-effort; not fatal to the request
+		_ = s.sessions.TouchLastSeen(key, now.Unix()) // best-effort; not fatal to the request
 		session.LastSeen = now.Unix()
 	}
 
@@ -208,15 +200,16 @@ func (s *Service) ListDevices(userID int64, currentToken string) ([]Device, erro
 	if err != nil {
 		return nil, err
 	}
+	cur := currentToken // stored form, as the middleware resolved it
 	out := make([]Device, 0, len(sessions))
 	for _, sess := range sessions {
 		out = append(out, Device{
-			TokenID:    tokenID(sess.Token),
+			TokenID:    sess.ID,
 			DeviceName: sess.DeviceName,
 			DeviceType: sess.DeviceType,
 			CreatedAt:  sess.CreatedAt,
 			LastSeen:   sess.LastSeen,
-			Current:    sess.Token == currentToken,
+			Current:    sess.Token == cur,
 		})
 	}
 	return out, nil
@@ -232,9 +225,10 @@ func (s *Service) RevokeOthers(userID int64, currentToken string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	cur := currentToken // stored form
 	n := 0
 	for _, sess := range sessions {
-		if sess.Token == currentToken {
+		if sess.Token == cur {
 			continue
 		}
 		if err := s.sessions.Delete(sess.Token); err != nil {
@@ -251,7 +245,7 @@ func (s *Service) RevokeDevice(userID int64, tokenIDStr, currentToken string, fo
 		return err
 	}
 	for _, sess := range sessions {
-		if tokenID(sess.Token) != tokenIDStr {
+		if sess.ID != tokenIDStr {
 			continue
 		}
 		if sess.Token == currentToken && !force {

@@ -247,6 +247,13 @@ func main() {
 	if subsClient.Enabled() {
 		logger.Info("external subtitles enabled (OpenSubtitles)")
 	}
+	// Sessions written before 0010 hold the raw bearer; hash them once.
+	if n, err := db.Sessions.HashLegacy(auth.HashToken, auth.TokenID); err != nil {
+		logger.Error("sessions: hashing legacy tokens failed", "error", err)
+	} else if n > 0 {
+		logger.Info("sessions: legacy tokens hashed", "count", n)
+	}
+	httpapi.SetRelayBlockedIPs(cfg.RelayBlockIPs)
 	handler := httpapi.NewServer(version, logger, cfg.DataDir, catalogSvc, sourcesSvc, remuxQueue, torrentMgr, authSvc, syncSvc, cfg.HTTPAddr, logBuf, cfg.LogsPassword, weatherSvc, cfg.WeatherPlace, cfg.H1Host, cfg.MainHost, tgBot, subsClient)
 	srv := &http.Server{
 		Addr:    cfg.HTTPAddr,

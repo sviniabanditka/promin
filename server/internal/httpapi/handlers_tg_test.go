@@ -34,6 +34,7 @@ func tgFixture(t *testing.T) (*tgAppHandlers, http.Handler, string, string) {
 		{Token: tv, UserID: u.ID, DeviceName: "Living room", DeviceType: "tizen", CreatedAt: 1, LastSeen: 1},
 		{Token: phone, UserID: u.ID, DeviceName: "Kostia · Telegram", DeviceType: "telegram", CreatedAt: 2, LastSeen: 2},
 	} {
+		s.ID, s.Token = auth.TokenID(s.Token), auth.HashToken(s.Token) // stored form
 		if err := db.Sessions.Create(s); err != nil {
 			t.Fatal(err)
 		}

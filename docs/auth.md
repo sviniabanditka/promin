@@ -62,7 +62,12 @@ Table `sessions(token PK, user_id, device_name, device_type, created_at,
 last_seen)`; `ON DELETE CASCADE` from users.
 
 - A token is `base64url(32 random bytes)`, no padding, opaque; all state is
-  server-side. No JWT.
+  server-side. No JWT. The table stores `hex(sha256(token))` in `token` and
+  the 12-character public device id in `token_id` — the bearer itself is
+  never on disk, so a database dump or a backup cannot yield a usable
+  session. `ResolveToken` hashes the presented bearer before the lookup.
+  Rows written before migration 0010 are hashed once at startup
+  (`SessionsRepo.HashLegacy`).
 - `device_type` is `"tv"` for PIN sessions and `"admin"` for admin-panel
   sessions. TV sessions never expire (a living-room TV must not log itself
   out); admin sessions expire 2 h after `created_at` (`adminTTL`, checked in

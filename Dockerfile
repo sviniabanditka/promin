@@ -30,5 +30,9 @@ FROM alpine:3.20
 # sensitive, so an unpinned `apk add ffmpeg` could silently change behavior.
 RUN apk add --no-cache ca-certificates wget ffmpeg=6.1.1-r8
 COPY --from=build /promin /usr/local/bin/promin
+# Non-root: ffmpeg and the torrent client parse attacker-influenced media.
+# Every write goes under /data (owned by this uid via the pod's fsGroup and
+# the chown init step in k8s/promin.yaml).
+USER 65532:65532
 EXPOSE 8080
 ENTRYPOINT ["promin"]

@@ -110,6 +110,9 @@ type Config struct {
 	// NativeProxyURL: HTTP proxy for providers whose catalogs block datacenter
 	// IPs (pages only, never video). Secret lampac-proxy/url in k8s.
 	NativeProxyURL string
+	// RelayBlockIPs: public addresses /relay and /remux must never dial, on top
+	// of the private/loopback ranges — the node's own IP. PROMIN_RELAY_BLOCK_IPS.
+	RelayBlockIPs []string
 	// StableProxyToken: read-only API token of the proxy vendor, used only to
 	// publish the traffic package as metrics. Secret key stableproxy-token.
 	StableProxyToken    string
@@ -179,6 +182,7 @@ func Load() Config {
 		BackupKeep:             getenvInt("PROMIN_BACKUP_KEEP", 7),
 		NativeSourcesEnable:    getenvBool("PROMIN_NATIVE_SOURCES", false),
 		NativeProxyURL:         getenv("PROMIN_NATIVE_PROXY_URL", ""),
+		RelayBlockIPs:          getenvList("PROMIN_RELAY_BLOCK_IPS", ""),
 		StableProxyToken:       getenv("PROMIN_STABLEPROXY_TOKEN", ""),
 		OpenSubtitlesAPIKey:    getenv("PROMIN_OPENSUBTITLES_API_KEY", ""),
 		OpenSubtitlesUser:      getenv("PROMIN_OPENSUBTITLES_USER", ""),

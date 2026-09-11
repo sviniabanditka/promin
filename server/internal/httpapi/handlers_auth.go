@@ -237,10 +237,21 @@ func clientIP(r *http.Request) string {
 	}
 	if isCloudflare(peer) {
 		if ip := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); ip != "" {
-			return ip
+			return rateKey(ip)
 		}
 	}
-	return peer
+	return rateKey(peer)
+}
+
+// rateKey collapses an IPv6 address to its /64: one household or one
+// attacker owns a whole /64 (often a /56), so per-address keys would let a
+// v6 client rotate addresses freely against every per-IP limiter.
+func rateKey(ip string) string {
+	p := net.ParseIP(ip)
+	if p == nil || p.To4() != nil {
+		return ip
+	}
+	return p.Mask(net.CIDRMask(64, 128)).String() + "/64"
 }
 
 // revokeOthers: DELETE /api/v1/auth/devices — every session but the caller's.
