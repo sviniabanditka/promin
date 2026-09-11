@@ -428,11 +428,8 @@ export function mountSettings(container: HTMLElement): ScreenInstance {
 
     addRow('settings.lang', t('lang.' + getLang()), function () {
       openOptions(t('settings.lang'), langOptions(), getLang(), function (v) {
-        setLanguage(v as Lang);
         closeModal();
-        // Labels are language-dependent — rebuild the whole list.
-        renderList();
-        Controller.toggle('content');
+        setLanguage(v as Lang); // saves, then reloads the whole app in the new language
       });
     });
 

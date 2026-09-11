@@ -42,7 +42,7 @@ The floor is the pre-2022 Samsung webview (Chromium ~47) and webOS 3 (Chromium 3
 6. `installGlobalHooks()` + `report('boot', viewportInfo())` — diagnostics.
 7. `Controller.initInput()` — global keydown/keyup; `initPointer()` — mouse/touch/wheel/pointer layers.
 8. `setDeadSessionHook(gateToPin)` — any 401 on an authed call clears the token and remounts the PIN screen.
-9. `router.init(root, exitToast)`, `screensaver.init()`, then `routeInitial()`: no token → PIN screen (the URL hash is left alone, so the deep link survives the gate and is opened after login); token → `sync.start()`, `openRoute(location.hash)`, `syncFromServer()` pulls server settings and re-opens the current route if the server language differs.
+9. `router.init(root, exitToast)`, `screensaver.init()`, then `routeInitial()`: no token → PIN screen (the URL hash is left alone, so the deep link survives the gate and is opened after login); token → `sync.start()`, `openRoute(location.hash)`, `syncFromServer()` pulls server settings and reloads the page if the server language differs. Any language change (settings screen, bot, Mini App, another device) is a full `location.reload()`: every screen and cached card is language-dependent, and the route in the hash brings the same screen back.
 
 ## Navigation model
 

@@ -229,9 +229,14 @@ export function setNightDim(v: number): void {
 
 // A synced setting changed on another device (sync event settings_updated):
 // mirror the ones that must take effect immediately.
-let langChangedHook: (() => void) | null = null;
-export function setLangChangedHook(fn: () => void): void {
-  langChangedHook = fn;
+// A language change is a full reload. Every screen, every cached card and lane
+// title, the menus inside the player — all of it was fetched or rendered in the
+// old language; repainting the current screen alone left stale text behind
+// (the owner asked for the whole UI to switch at once). setLang() has already
+// written the new value to localStorage, and the route lives in the hash, so
+// the reload comes back on the same screen in the new language.
+export function reloadForLang(): void {
+  window.location.reload();
 }
 
 let screensaverChangedHook: (() => void) | null = null;
@@ -259,7 +264,7 @@ export function applyRemoteSetting(key: string, value: string): void {
   } else if (key === 'lang') {
     if (isLang(value) && value !== getLang()) {
       setLang(value);
-      if (langChangedHook) langChangedHook();
+      reloadForLang();
     }
   } else if (key === 'night_mode') {
     store.night_mode = value === 'true';
@@ -399,19 +404,24 @@ export function applyLocalSetting(key: string, on: boolean): boolean {
   return true;
 }
 
-// lang lives in i18n; this just applies + mirrors it to the server.
+// lang lives in i18n; apply, mirror to the server, then reload. The reload
+// waits for the PUT so the boot-time syncFromServer cannot pull the old value
+// back; a failed PUT still reloads (localStorage holds the new language).
 export function setLanguage(lang: Lang): void {
   setLang(lang);
-  pushSetting('lang', lang);
+  if (!isLogged()) {
+    reloadForLang();
+    return;
+  }
+  putSetting('lang', lang).then(reloadForLang, reloadForLang);
 }
 
 // ---- server sync -------------------------------------------------------
 
 // Pull server-side settings and apply them over the local defaults. Called at
-// boot (background) and after a fresh login. `onLangChanged` is invoked only
-// when the server's lang differs from the currently applied one, so the caller
-// can repaint the visible screen (text is language-dependent).
-export function syncFromServer(onLangChanged?: () => void): void {
+// boot (background) and after a fresh login. When the server's lang differs
+// from the applied one the page reloads (see reloadForLang).
+export function syncFromServer(): void {
   if (!isLogged()) return;
   getSettings().then(
     function (res) {
@@ -440,7 +450,7 @@ export function syncFromServer(onLangChanged?: () => void): void {
 
       if (isLang(s.lang) && s.lang !== getLang()) {
         setLang(s.lang);
-        if (onLangChanged) onLangChanged();
+        reloadForLang();
       }
     },
     function () {

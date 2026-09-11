@@ -81,6 +81,10 @@ export function Settings() {
     setState({ home: null });
     try {
       await putSetting('lang', l);
+      // Full reload: cached cards, home rows and episode lists were fetched in
+      // the old language. The token is in localStorage and Telegram keeps the
+      // launch URL, so the app comes straight back in the new language.
+      location.reload();
     } catch {
       setLang(prev);
       toast(t('common.error'));

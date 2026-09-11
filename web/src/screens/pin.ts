@@ -62,9 +62,7 @@ export function mountPinEntry(container: HTMLElement): ScreenInstance {
     loginPin(buf).then(
       function () {
         sync.start();
-        syncFromServer(function () {
-          /* adopt server settings; ignore result */
-        });
+        syncFromServer(); // adopts server settings; reloads if the language differs
         // Follow the deep link the gate interrupted (hash kept by the router).
         openRoute(window.location.hash);
       },

@@ -17,7 +17,7 @@ import { isLogged, clearLocal, onAuthChange } from './core/auth';
 import { setDeadSessionHook, getPing } from './core/api';
 import * as sync from './core/sync';
 import * as screensaver from './core/screensaver';
-import { initSettings, syncFromServer, setNightMode, isNightMode, setLangChangedHook, setScreensaverChangedHook, applyLocalSetting, reportDeviceSettings } from './core/settings';
+import { initSettings, syncFromServer, setNightMode, isNightMode, setScreensaverChangedHook, applyLocalSetting, reportDeviceSettings } from './core/settings';
 import { steerHost } from './core/legacy';
 import { installGlobalHooks, report, viewportInfo } from './core/diag';
 
@@ -202,10 +202,6 @@ function boot(): void {
       toast({ kind: 'info', icon: '🎛', text: t('telegram.remote_no_player') });
     }
   });
-  // Language switched from the bot or another device: repaint the app.
-  setLangChangedHook(function () {
-    if (isLogged()) openRoute(router.currentPath());
-  });
   setScreensaverChangedHook(screensaver.reschedule);
   // Tell the server this TV's device-local settings (for the Mini App).
   if (isLogged()) reportDeviceSettings();
@@ -256,11 +252,8 @@ function routeInitial(): void {
   sync.start();
   // Deep link (#/title/tv/1399, #/catalog/trending, …) or Home.
   openRoute(window.location.hash);
-  // Pull server-side settings; re-paint the current screen if the server's
-  // language wins.
-  syncFromServer(function () {
-    openRoute(router.currentPath());
-  });
+  // Pull server-side settings; the page reloads if the server's language wins.
+  syncFromServer();
 }
 
 // Bounce to the PIN screen (session died / logged out / switch profile). Wired

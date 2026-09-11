@@ -188,7 +188,7 @@ from there (SPA fallback to `index.html`). `index.html` loads
   "Continue" rows.
 - **Library** — bookmarks (`/api/v1/bookmarks`), playlists, history — each item
   opens Title.
-- **Settings** — language (`PUT /api/v1/settings/lang`), devices
+- **Settings** — language (`PUT /api/v1/settings/lang`, then a full reload so cached cards and rows come back in the new language; a `settings_updated lang` from another device reloads too), devices
   (`/api/v1/auth/devices`), unlink (`DELETE /api/v1/telegram/link`).
 
 Theme from `Telegram.WebApp.themeParams` (CSS variables), `BackButton` for

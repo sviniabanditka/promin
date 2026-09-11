@@ -4,7 +4,7 @@
 import { isLang } from './i18n';
 import * as api from './api';
 import type { Bookmark, Playlist, PlayerState, TimecodeItem } from './api';
-import { applyPlayerState, loadBootstrap, refreshDevices, setLang, setState } from './store';
+import { applyPlayerState, loadBootstrap, refreshDevices, setLang, setState, getState } from './store';
 
 let ws: WebSocket | null = null;
 let attempt = 0;
@@ -80,9 +80,11 @@ function handle(type: string, p: Record<string, any>): void {
       break;
     case 'settings_updated':
       setState((s) => ({ settings: { ...s.settings, [String(p.key)]: String(p.value) } }));
-      if (p.key === 'lang' && isLang(p.value)) {
+      if (p.key === 'lang' && isLang(p.value) && p.value !== getState().lang) {
+        // Changed from the TV or another phone: reload, like our own switch
+        // does — cached cards and rows are in the old language.
         setLang(p.value);
-        setState({ home: null });
+        location.reload();
       }
       break;
     case 'timecode_updated': {
