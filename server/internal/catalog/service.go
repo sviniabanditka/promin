@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/sviniabanditka/promin/server/internal/store"
+	"sort"
 )
 
 // Service is the high-level catalog API consumed by internal/httpapi.
@@ -429,15 +430,24 @@ func (s *Service) List(ctx context.Context, f ListFilters) (ListResponse, error)
 	return ListResponse{Page: resp.Page, TotalPages: resp.TotalPages, Items: items}, nil
 }
 
-// Search implements GET /api/v1/catalog/search: TMDB /search/multi,
-// filtered down to movie/tv (person results dropped, per docs/api.md).
-func (s *Service) Search(ctx context.Context, q, lang string, page int) (ListResponse, error) {
+// Search implements GET /api/v1/catalog/search. mediaType "" → TMDB
+// /search/multi: movies and series as items, people as a separate `people`
+// list (the UI shows them as a row and opens Person). "movie" / "tv" → the
+// typed endpoints, which also rank better than multi for a single kind.
+func (s *Service) Search(ctx context.Context, q, lang string, page int, mediaType string) (ListResponse, error) {
 	if page < 1 {
 		page = 1
 	}
+	if mediaType != "" && mediaType != "movie" && mediaType != "tv" {
+		return ListResponse{}, ErrInvalidType
+	}
 	query := url.Values{"query": {q}}
-	key := fmt.Sprintf("list:search:multi:%s:%s:%d", q, normalizeLang(lang), page)
-	resp, err := s.client.fetchList(ctx, key, "/search/multi", lang, query, page)
+	kind := "multi"
+	if mediaType != "" {
+		kind = mediaType
+	}
+	key := fmt.Sprintf("list:search:%s:%s:%s:%d", kind, q, normalizeLang(lang), page)
+	resp, err := s.client.fetchList(ctx, key, "/search/"+kind, lang, query, page)
 	if err != nil {
 		return ListResponse{}, err
 	}
@@ -446,18 +456,90 @@ func (s *Service) Search(ctx context.Context, q, lang string, page int) (ListRes
 		return ListResponse{}, err
 	}
 
-	items := make([]Title, 0, len(resp.Results))
+	out := ListResponse{Page: resp.Page, TotalPages: resp.TotalPages, Items: make([]Title, 0, len(resp.Results))}
 	for _, it := range resp.Results {
-		switch it.MediaType {
+		mt := it.MediaType
+		if mediaType != "" {
+			mt = mediaType // typed endpoints carry no media_type
+		}
+		switch mt {
 		case "movie":
-			items = append(items, normalizeListItem(it, "movie", movieGenres))
+			out.Items = append(out.Items, normalizeListItem(it, "movie", movieGenres))
 		case "tv":
-			items = append(items, normalizeListItem(it, "tv", tvGenres))
-		default:
-			// drop "person" results
+			out.Items = append(out.Items, normalizeListItem(it, "tv", tvGenres))
+		case "person":
+			out.People = append(out.People, Person{
+				ID:         it.ID,
+				Name:       it.Name,
+				Photo:      imgPath("w185", it.ProfilePath),
+				Department: it.KnownForDepartment,
+			})
 		}
 	}
-	return ListResponse{Page: resp.Page, TotalPages: resp.TotalPages, Items: items}, nil
+	return out, nil
+}
+
+// --- Person -----------------------------------------------------------------
+
+var ErrPersonNotFound = fmt.Errorf("catalog: person not found")
+
+// Person implements GET /api/v1/catalog/person/{id}: TMDB /person/{id} plus
+// /person/{id}/combined_credits. Credits are de-duplicated (an actor who also
+// directed appears once), ordered by TMDB popularity, and skip entries with
+// no poster — those are talk-show appearances and archive footage that would
+// bury the real filmography.
+func (s *Service) Person(ctx context.Context, id int, lang string) (PersonDetail, error) {
+	detail, err := s.client.fetchPerson(ctx, id, lang)
+	if err != nil {
+		if errors.Is(err, errTMDBNotFound) {
+			return PersonDetail{}, ErrPersonNotFound
+		}
+		return PersonDetail{}, err
+	}
+	if detail.ID == 0 {
+		return PersonDetail{}, ErrPersonNotFound
+	}
+	out := PersonDetail{
+		Person: Person{
+			ID:         detail.ID,
+			Name:       detail.Name,
+			Photo:      imgPath("w342", detail.ProfilePath),
+			Department: detail.KnownForDepartment,
+		},
+		Biography:    detail.Biography,
+		Birthday:     detail.Birthday,
+		Deathday:     detail.Deathday,
+		PlaceOfBirth: detail.PlaceOfBirth,
+		Credits:      []Title{},
+	}
+
+	credits, err := s.client.fetchPersonCredits(ctx, id, lang)
+	if err != nil {
+		return out, nil // the person page still renders; the filmography is non-fatal
+	}
+	movieGenres, tvGenres, err := s.movieAndTVGenres(ctx, lang)
+	if err != nil {
+		return out, nil
+	}
+	all := append(append([]tmdbListItem{}, credits.Cast...), credits.Crew...)
+	sort.SliceStable(all, func(i, j int) bool { return all[i].Popularity > all[j].Popularity })
+	seen := map[string]bool{}
+	for _, it := range all {
+		if it.PosterPath == "" || (it.MediaType != "movie" && it.MediaType != "tv") {
+			continue
+		}
+		k := it.MediaType + ":" + strconv.Itoa(it.ID)
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		genres := movieGenres
+		if it.MediaType == "tv" {
+			genres = tvGenres
+		}
+		out.Credits = append(out.Credits, normalizeListItem(it, it.MediaType, genres))
+	}
+	return out, nil
 }
 
 // --- Title ----------------------------------------------------------------

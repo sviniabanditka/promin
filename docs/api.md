@@ -63,7 +63,8 @@ Common query: `lang` (UI language, e.g. `uk`, `ru`, `en`; default per service).
 |---|---|---|---|---|
 | GET | `/api/v1/catalog/home` | bearer | `lang?` | `{rows: [{id, title, items: [Title]}]}`. Authenticated home is personalized: `continue_watching` first, recommendation/themed rows once the user has ≥ 2 finished titles (they displace `popular_movies`/`popular_tv`), one rotating provider row, then editorial rows |
 | GET | `/api/v1/catalog/list` | bearer | `type=movie\|tv`, `genre?` (TMDB id), `year_from?`, `year_to?`, `rating_from?`, `sort?=popularity\|rating\|year`, `page?=1`, `lang?` | `{page, total_pages, items: [Title]}` |
-| GET | `/api/v1/catalog/search` | bearer | `q` (required), `page?`, `lang?` | `{page, total_pages, items: [Title]}` |
+| GET | `/api/v1/catalog/search` | bearer | `q` (required), `page?`, `lang?`, `type?` = `movie` \| `tv` (typed TMDB search; omitted → `/search/multi`) | `{page, total_pages, items: [Title], people?: [{id, name, photo?, department?}]}` — `people` only on untyped searches |
+| GET | `/api/v1/catalog/person/{id}` | bearer | `lang?` | `{id, name, photo?, department?, biography?, birthday?, deathday?, place_of_birth?, credits: [Title]}` — filmography most popular first, de-duplicated, poster-less entries dropped; `404 person_not_found` |
 | GET | `/api/v1/catalog/title/{tmdb_id}` | bearer | `type=movie\|tv` (required), `season?`, `lang?` | `TitleDetail` (below); `404 title_not_found` |
 | GET | `/api/v1/catalog/genres` | bearer | `type=movie\|tv` (required), `lang?` | `{genres: [{id, name}]}` |
 | GET | `/api/v1/catalog/backdrops` | bearer | `limit?=40` (1–120), `lang?` | `{backdrops: [{url, title, year?}]}` — random backdrops for the screensaver |

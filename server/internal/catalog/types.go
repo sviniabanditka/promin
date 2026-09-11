@@ -17,6 +17,10 @@ type tmdbListItem struct {
 	BackdropPath  string  `json:"backdrop_path"`
 	Overview      string  `json:"overview"`
 	GenreIDs      []int   `json:"genre_ids"`
+	Popularity    float64 `json:"popularity"`
+	// person results of /search/multi
+	ProfilePath        string `json:"profile_path"`
+	KnownForDepartment string `json:"known_for_department"`
 }
 
 type tmdbListResponse struct {
@@ -133,4 +137,22 @@ type tmdbSeasonDetail struct {
 		Runtime       int     `json:"runtime"`
 		VoteAverage   float64 `json:"vote_average"`
 	} `json:"episodes"`
+}
+
+// /person/{id}
+type tmdbPersonDetail struct {
+	ID                 int    `json:"id"`
+	Name               string `json:"name"`
+	Biography          string `json:"biography"`
+	Birthday           string `json:"birthday"`
+	Deathday           string `json:"deathday"`
+	PlaceOfBirth       string `json:"place_of_birth"`
+	ProfilePath        string `json:"profile_path"`
+	KnownForDepartment string `json:"known_for_department"`
+}
+
+// /person/{id}/combined_credits — movie and tv items with media_type set.
+type tmdbCreditsResponse struct {
+	Cast []tmdbListItem `json:"cast"`
+	Crew []tmdbListItem `json:"crew"`
 }

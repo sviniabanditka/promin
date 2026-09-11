@@ -17,6 +17,7 @@ import { mountSettings } from './settings';
 import { mountPlaylists, mountPlaylistItems } from './playlists';
 import { mountLibrary } from './library';
 import { mountDevices } from './devices';
+import { mountPerson } from './person';
 import { isLogged } from '../core/auth';
 
 export type MenuKey =
@@ -112,6 +113,13 @@ export function openTitle(type: 'movie' | 'tv', id: number, resume?: boolean, se
   }, titlePath(type, id, season, episode));
 }
 
+// Actor / director page (pushed from a search person hit): filmography grid.
+export function openPerson(id: number): void {
+  router.push(function (container: HTMLElement) {
+    return mountPerson(container, { id: id });
+  }, '/person/' + id);
+}
+
 // Route of a title screen; an episode deep link carries ?s=&e=.
 export function titlePath(type: 'movie' | 'tv', id: number, season?: number | null, episode?: number | null): string {
   let p = '/title/' + type + '/' + id;
@@ -120,9 +128,12 @@ export function titlePath(type: 'movie' | 'tv', id: number, season?: number | nu
 }
 
 // Route of the search screen for a query.
-export function searchPath(q: string): string {
+export function searchPath(q: string, type?: string): string {
   const term = (q || '').trim();
-  return '/search' + (term ? '?q=' + encodeURIComponent(term) : '');
+  const parts: string[] = [];
+  if (term) parts.push('q=' + encodeURIComponent(term));
+  if (type === 'movie' || type === 'tv') parts.push('type=' + type);
+  return '/search' + (parts.length ? '?' + parts.join('&') : '');
 }
 
 function parseQuery(qs: string): { [k: string]: string } {
@@ -176,6 +187,13 @@ export function openRoute(raw: string): void {
       openTitle(type, id, false, intOrNull(q.s), intOrNull(q.e));
       return;
     }
+    case 'person': {
+      const id = parseInt(seg[1] || '', 10);
+      if (!(id > 0)) break;
+      router.replaceRoot(mountHome, '/');
+      openPerson(id);
+      return;
+    }
     case 'catalog':
       if (arg) {
         router.replaceRoot(function (container: HTMLElement) {
@@ -187,8 +205,8 @@ export function openRoute(raw: string): void {
       return;
     case 'search':
       router.replaceRoot(function (container: HTMLElement) {
-        return mountSearch(container, { q: q.q || '' });
-      }, searchPath(q.q || ''));
+        return mountSearch(container, { q: q.q || '', type: q.type === 'movie' || q.type === 'tv' ? q.type : '' });
+      }, searchPath(q.q || '', q.type));
       return;
     case 'library':
       openMenu('library');

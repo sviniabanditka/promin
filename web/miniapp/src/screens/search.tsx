@@ -11,14 +11,12 @@ export function Search({ query }: { query: URLSearchParams }) {
   const [q, setQ] = useState(query.get('q') || '');
   const [res, setRes] = useState<Card[] | null>(null);
   const [state, setState] = useState<'idle' | 'loading' | 'error'>('idle');
-  const [recent, setRecent] = useState(history.list);
+  const recent = history.parse(s.settings[history.KEY]); // synced with the TVs
   const input = useRef<HTMLInputElement>(null);
   // A query counts as "searched" when the user commits it: Enter, or opening a
   // result. Not on every debounced keystroke — that would store "ba", "bat", …
   const remember = () => {
-    if (q.trim().length < 2) return;
-    history.add(q);
-    setRecent(history.list());
+    if (q.trim().length >= 2) history.add(q);
   };
 
   useEffect(() => {
@@ -102,10 +100,7 @@ export function Search({ query }: { query: URLSearchParams }) {
             ))}
             <button
               class="chip chip-clear"
-              onClick={() => {
-                history.clear();
-                setRecent([]);
-              }}
+              onClick={() => history.clear()}
             >
               ✕ {t('search.clear_recent')}
             </button>

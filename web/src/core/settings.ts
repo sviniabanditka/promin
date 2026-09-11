@@ -20,6 +20,7 @@ import { getSettings, putSetting, postDeviceSettings } from './api';
 import { isLogged } from './auth';
 import { setLang, getLang, Lang } from './i18n';
 import { setLegacyOverride } from './capabilities';
+import * as searchHistory from './searchHistory';
 
 export type Quality = 'auto' | '2160' | '1080' | '720' | '480';
 export type Engine = 'auto' | 'hlsjs' | 'native';
@@ -266,6 +267,8 @@ export function applyRemoteSetting(key: string, value: string): void {
       setLang(value);
       reloadForLang();
     }
+  } else if (key === searchHistory.SETTING_KEY) {
+    searchHistory.applyRemote(value);
   } else if (key === 'night_mode') {
     store.night_mode = value === 'true';
     persist();
@@ -447,6 +450,7 @@ export function syncFromServer(): void {
       persist();
       applyLegacy();
       applyNight();
+      if (typeof s.search_history === 'string') searchHistory.applyRemote(s.search_history);
 
       if (isLang(s.lang) && s.lang !== getLang()) {
         setLang(s.lang);

@@ -141,7 +141,23 @@ func (h *catalogHandlers) search(w http.ResponseWriter, r *http.Request) {
 	}
 	page := atoiDefault(q.Get("page"), 1)
 
-	resp, err := h.svc.Search(r.Context(), query, q.Get("lang"), page)
+	// type: "" (movies + series + people) | movie | tv
+	resp, err := h.svc.Search(r.Context(), query, q.Get("lang"), page, q.Get("type"))
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// person: GET /api/v1/catalog/person/{id}?lang= → PersonDetail.
+func (h *catalogHandlers) person(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil || id <= 0 {
+		writeBadRequest(w, "невірний id")
+		return
+	}
+	resp, err := h.svc.Person(r.Context(), id, r.URL.Query().Get("lang"))
 	if err != nil {
 		writeCatalogError(w, err)
 		return
@@ -201,6 +217,8 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, catalog.ErrTitleNotFound):
 		writeNotFound(w, "title_not_found", "тайтл не знайдено")
+	case errors.Is(err, catalog.ErrPersonNotFound):
+		writeNotFound(w, "person_not_found", "персону не знайдено")
 	case errors.Is(err, catalog.ErrInvalidType):
 		writeBadRequest(w, "type має бути movie або tv")
 	case errors.Is(err, catalog.ErrUpstreamUnavailable):

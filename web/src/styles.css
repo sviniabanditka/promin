@@ -1769,7 +1769,8 @@ body.reduce-motion .toast__progress::after {
   flex-wrap: wrap;
 }
 
-.search-history__chip {
+.search-history__chip,
+.search-chip {
   font-size: 1.8rem;
   color: #ffffff;
   padding: 0.8rem 1.6rem;
@@ -1784,10 +1785,157 @@ body.reduce-motion .toast__progress::after {
 
 .search-history__chip--clear { color: var(--muted); }
 
-.search-history__chip.focus {
+.search-history__chip.focus,
+.search-chip.focus {
   background-color: var(--surface-2);
   box-shadow: inset 0 0 0 0.2rem var(--focus);
   color: var(--ink);
+}
+
+/* Section label inside the results column (trending, people). */
+.search-section {
+  flex: 0 0 100%;
+  width: 100%;
+  font-size: 2rem;
+  font-weight: bold;
+  color: var(--ink-2);
+  margin: 0.4rem 0 1.2rem;
+}
+
+/* all / movies / series — a chip row above the grid; the active one is solid. */
+.search-filters {
+  flex: 0 0 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: row;
+  margin-bottom: 1.2rem;
+}
+.search-filter.is-on {
+  background-color: rgba(255, 255, 255, 0.22);
+  font-weight: bold;
+}
+.search-filter.is-on.focus { background-color: var(--surface-2); }
+
+/* People row: round photo, name, department. */
+.search-people {
+  flex: 0 0 100%;
+  width: 100%;
+  margin-bottom: 1.2rem;
+}
+.search-people__row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+.search-person {
+  flex: 0 0 auto;
+  width: 13.6rem;
+  margin-right: 1.2rem;
+  margin-bottom: 1.2rem;
+  padding: 0.8rem 0.4rem;
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.search-person.focus {
+  background-color: var(--surface-2);
+  box-shadow: inset 0 0 0 0.2rem var(--focus);
+}
+.search-person__photo {
+  width: 9rem;
+  height: 9rem;
+  border-radius: 50%;
+  object-fit: cover;
+  background-color: rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 3.2rem;
+  color: var(--muted);
+}
+.search-person__name {
+  margin-top: 0.8rem;
+  font-size: 1.6rem;
+  color: #ffffff;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-person__dept {
+  font-size: 1.3rem;
+  color: var(--muted);
+}
+
+/* ---- Person screen (actor / director) ---- */
+.person-screen { position: relative; width: 100%; height: 100%; overflow: hidden; }
+.person-wrap {
+  position: fixed;
+  z-index: 1;
+  left: 8.4rem;
+  right: 0;
+  top: 7.2rem;
+  bottom: 0;
+  padding: 3.2rem;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.person-grid-wrap { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+.person-grid-wrap > .scroll { width: 100%; height: 100%; }
+.person-body { padding: 1rem 0 6rem; }
+.person-hero {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  margin-bottom: 2.4rem;
+  min-height: 18rem;
+}
+.person-hero__photo {
+  flex: 0 0 auto;
+  width: 18rem;
+  height: 18rem;
+  border-radius: 50%;
+  object-fit: cover;
+  margin-right: 3.2rem;
+  background-color: rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 6rem;
+  color: var(--muted);
+}
+.person-hero__info { flex: 1 1 auto; min-width: 0; }
+.person-hero__name { font-size: 3.6rem; font-weight: bold; color: #ffffff; }
+.person-hero__meta { margin-top: 0.6rem; font-size: 1.7rem; color: var(--muted); }
+.person-hero__bio {
+  margin-top: 1.2rem;
+  font-size: 1.7rem;
+  line-height: 1.45;
+  color: var(--ink-2);
+  max-height: 9.9rem; /* 4 lines; the header is fixed, the grid below must stay visible */
+  overflow: hidden;
+}
+.person-section {
+  flex: 0 0 auto;
+  font-size: 2.2rem;
+  font-weight: bold;
+  color: var(--ink-2);
+  margin-bottom: 1.4rem;
+}
+.person-grid {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+.person-grid .card {
+  width: 15.6rem;
+  margin-right: 1.6rem;
+  margin-bottom: 2.4rem;
 }
 
 /* ================================================================ */
@@ -3510,6 +3658,9 @@ html.is-phone, html.is-phone body { touch-action: pan-x pan-y; }
 .is-phone .search-screen .keyboard { display: none; }
 .is-phone .search-results__body .card { width: 15.6rem; margin-right: 1.6rem; margin-bottom: 2.4rem; }
 .is-phone .search-history__hint { display: none; }
+.is-phone .person-wrap { left: 0; bottom: 5.6rem; padding: 1.6rem; }
+.is-phone .person-hero__photo { width: 10rem; height: 10rem; margin-right: 1.6rem; font-size: 4rem; }
+.is-phone .person-hero__name { font-size: 2.6rem; }
 .is-phone .content,
 .is-phone .catalog-grid,
 .is-phone .search-panel,
@@ -3791,6 +3942,8 @@ html.is-phone, html.is-phone body { touch-action: pan-x pan-y; }
 .vp-tall .playlists-screen,
 .vp-tall .playlists-wrap,
 .vp-tall .screensaver,
+.vp-tall .person-wrap,
+.vp-tall .person-screen,
 .vp-tall .search-panel,
 .vp-tall .search-screen,
 .vp-tall .settings-modal,

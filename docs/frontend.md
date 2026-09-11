@@ -68,10 +68,11 @@ Every screen carries a route; the visible screen's route is mirrored into `locat
 |---|---|
 | `#/` | Home |
 | `#/catalog`, `#/catalog/<category>` | Catalog (a home-lane category as the filter preset) |
-| `#/search`, `#/search?q=<query>` | Search; the query is re-run on load and tracked as it changes |
+| `#/search`, `#/search?q=<query>&type=movie\|tv` | Search; the query and filter are re-run on load and tracked as they change |
 | `#/library`, `#/bookmarks`, `#/playlists`, `#/playlist/<id>`, `#/torrents` | Library and the screens it pushes |
 | `#/settings`, `#/devices` | Settings and the device manager |
 | `#/title/<movie|tv>/<tmdb_id>`, `…?s=<season>&e=<episode>` | Title page; with `s`/`e` the watch modal opens on that episode |
+| `#/person/<id>` | Actor / director page (filmography grid), pushed over Home |
 
 Unknown or malformed routes open Home. The Mini App at `/tg/` has its own hash router (docs/miniapp.md).
 
@@ -146,7 +147,7 @@ Menu-level screens are reached from the left icon rail (`ui/menu.ts`: Home, Cata
 | PIN | `screens/pin.ts` | 6-digit dialer, hard gate; D-pad, mouse, touch and number keys. |
 | Home | `screens/home.ts` | Vertical stack of horizontal lanes from `GET /catalog/home`; focus tints the backdrop. |
 | Catalog | `screens/catalog.ts` | Filter bar (type/genre/year/sort) + paged flex-wrap grid, next page prefetched near the end. |
-| Search | `screens/search.ts` + `ui/keyboard.ts` | Query bar + on-screen keyboard (uk/ru, latin, digits) on the left, 4-column results on the right; 500 ms debounce. Empty field shows recent queries as chips (OK re-runs, long OK deletes; a query is remembered when a title is opened from its results). Physical keyboard types through a document listener; `html.is-phone` swaps the key grid for a native field. No host IME on TV — its confirm/blur timing differed per platform and left focus stranded. |
+| Search | `screens/search.ts` + `ui/keyboard.ts` | Query bar + on-screen keyboard (uk/ru, latin, digits) on the left, 4-column results on the right; 500 ms debounce. Empty field shows recent queries as chips (OK re-runs, long OK deletes; a query is remembered when a title is opened from its results; the list is the profile setting `search_history`, shared with the Mini App and other TVs) over the home trending row. With a query: an all / movies / series filter row (typed TMDB search), a People row (actors, directors → `screens/person.ts`), the card grid, further pages when focus nears the end. Physical keyboard types through a document listener; `html.is-phone` swaps the key grid for a native field. No host IME on TV — its confirm/blur timing differed per platform and left focus stranded. |
 | Title | `screens/title.ts` | Full-height card; "Watch"/"Torrents" open an in-place action sheet that resolves online sources or adds a torrent and opens the player. |
 | Library | `screens/library.ts` | Continue-watching, favourites, playlists lanes; links to `bookmarks.ts`, `playlists.ts`. |
 | Torrents | `screens/torrents.ts` | Active torrents on the server; play or delete. |

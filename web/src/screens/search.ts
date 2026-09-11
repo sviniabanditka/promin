@@ -11,9 +11,16 @@
 // (`html.is-phone`) gets a native <input> instead of the key grid because it
 // has its own touch keyboard.
 //
-// Empty query → the recent queries (core/searchHistory) as chips in the
-// results column: OK re-runs one, long OK deletes it. A query is remembered
-// when a title is opened from its results, not on every keystroke.
+// Empty query → the recent queries (core/searchHistory, synced across the
+// profile's devices) as chips in the results column: OK re-runs one, long OK
+// deletes it; under them the home "trending" row, so a first-time user sees
+// content, not a blank column. A query is remembered when a title is opened
+// from its results, not on every keystroke.
+//
+// With a query: a filter row (all / movies / series → the typed TMDB search),
+// a "People" row of actors and directors (untyped search only; OK opens the
+// person's filmography), then the card grid. Further pages load when focus
+// nears the last card, like the catalog.
 //
 // Controller modes: 'content' = the keyboard, 'results' = chips or cards.
 // Right past the last key → results (when there are any); Left from the first
@@ -26,7 +33,7 @@ import { Scroll } from '../core/scroll';
 import { t } from '../core/i18n';
 import * as router from '../core/router';
 import { ScreenInstance as Screen } from '../core/activity';
-import { search as apiSearch, Card } from '../core/api';
+import { search as apiSearch, getHome, Card, PersonHit, imgSize } from '../core/api';
 import * as history from '../core/searchHistory';
 import { el, empty } from '../ui/dom';
 import { Background } from '../ui/background';
@@ -37,12 +44,18 @@ import { buildCard } from '../ui/card';
 import { buildState } from '../ui/state';
 import { buildKeyboard, Keyboard } from '../ui/keyboard';
 import { iconEl, ICON_SEARCH } from '../ui/icons';
-import { openTitle, searchPath } from './nav';
+import { openTitle, openPerson, searchPath } from './nav';
+import { deptLabel } from './person';
 
 const DEBOUNCE_MS = 500;
+const PAGE_SIZE_HINT = 6; // prefetch the next page when focus is within N cards of the end
+const TRENDING_MAX = 20;
+
+type MediaFilter = '' | 'movie' | 'tv';
 
 export interface SearchParams {
   q?: string; // deep link: run this query on mount
+  type?: MediaFilter;
 }
 
 export function mountSearch(container: HTMLElement, params?: SearchParams): Screen {
@@ -97,12 +110,19 @@ export function mountSearch(container: HTMLElement, params?: SearchParams): Scre
 
   // ---- state ----
   let query = '';
+  let filter: MediaFilter = params && params.type ? params.type : '';
   let lastResult: HTMLElement | false = false;
   let debounce = 0;
   let seq = 0; // request generation; a late answer to an older query is dropped
   let destroyed = false;
   // Hidden under a pushed title: leave the Controller alone until resume().
   let paused = false;
+  // Paging of the current query.
+  let cards: HTMLElement[] = [];
+  let currentPage = 0;
+  let totalPages = 1;
+  let loadingMore = false;
+  let loadMoreEl: HTMLElement | null = null;
 
   function paintQuery(): void {
     if (input) {
@@ -157,18 +177,15 @@ export function mountSearch(container: HTMLElement, params?: SearchParams): Scre
   function reset(): void {
     empty(resultsBody);
     lastResult = false;
+    cards = [];
+    loadMoreEl = null;
+    loadingMore = false;
     resultsScroll.reset();
   }
 
   function showHint(): void {
     reset();
     resultsBody.appendChild(buildState({ kind: 'empty', text: t('search.hint') }));
-    refreshResultsFocus();
-  }
-
-  function showEmpty(): void {
-    reset();
-    resultsBody.appendChild(buildState({ kind: 'empty', text: t('search.empty') }));
     refreshResultsFocus();
   }
 
@@ -186,15 +203,54 @@ export function mountSearch(container: HTMLElement, params?: SearchParams): Scre
     refreshResultsFocus();
   }
 
-  // Recent queries as chips. Enter re-runs one (and moves it to the top),
-  // long Enter deletes it; the last chip clears the whole history.
+  // Idle column: recent queries as chips (Enter re-runs one and moves it to
+  // the top, long Enter deletes it, the last chip clears the history), then
+  // the home trending row as a grid. Both from cache when possible.
+  let trendingCards: Card[] | null = null;
   function showHistory(): void {
     reset();
     const items = history.list();
-    if (!items.length) {
-      showHint();
+    if (items.length) resultsBody.appendChild(buildHistory(items));
+    if (trendingCards) {
+      appendTrending(trendingCards);
+      refreshResultsFocus();
       return;
     }
+    if (!items.length) resultsBody.appendChild(buildState({ kind: 'loading' }));
+    refreshResultsFocus();
+    const my = ++seq;
+    getHome().then(
+      function (res) {
+        if (destroyed || my !== seq) return;
+        let row: Card[] = [];
+        const rows = res && res.rows ? res.rows : [];
+        for (let i = 0; i < rows.length && !row.length; i++) {
+          if (rows[i].id === 'trending' && rows[i].items && rows[i].items.length) row = rows[i].items;
+        }
+        for (let i = 0; i < rows.length && !row.length; i++) {
+          if (rows[i].id !== 'continue_watching' && rows[i].items && rows[i].items.length) row = rows[i].items;
+        }
+        trendingCards = row.slice(0, TRENDING_MAX);
+        if (!query.trim()) showHistory(); // repaint the idle column with the row in place
+      },
+      function () {
+        if (destroyed || my !== seq) return;
+        trendingCards = [];
+        if (!query.trim() && !history.list().length) showHint();
+      }
+    );
+  }
+
+  function appendTrending(items: Card[]): void {
+    if (!items.length) {
+      if (!history.list().length) resultsBody.appendChild(buildState({ kind: 'empty', text: t('search.hint') }));
+      return;
+    }
+    resultsBody.appendChild(el('div', 'search-section', t('search.trending')));
+    for (let i = 0; i < items.length; i++) resultsBody.appendChild(attachCard(items[i]));
+  }
+
+  function buildHistory(items: string[]): HTMLElement {
     const wrap = el('div', 'search-history');
     wrap.appendChild(el('div', 'search-history__title', t('search.recent')));
     wrap.appendChild(el('div', 'search-history__hint', t('search.history_hint')));
@@ -226,50 +282,174 @@ export function mountSearch(container: HTMLElement, params?: SearchParams): Scre
     });
     chips.appendChild(clear);
     wrap.appendChild(chips);
-    resultsBody.appendChild(wrap);
+    return wrap;
+  }
+
+  // A result card: remembers the query when opened, prefetches the next page
+  // when focus nears the end of what is loaded.
+  function attachCard(item: Card): HTMLElement {
+    const card = buildCard(item);
+    (card as unknown as { pidx: number }).pidx = cards.length;
+    cards.push(card);
+    on(card, 'hover:focus', function () {
+      lastResult = card;
+      hoverIntoResults();
+      const idx = (card as unknown as { pidx: number }).pidx;
+      if (query.trim() && idx >= cards.length - PAGE_SIZE_HINT && currentPage < totalPages && !loadingMore) {
+        loadPage(currentPage + 1);
+      }
+    });
+    on(card, 'hover:enter', function () {
+      const tmdb = parseInt(card.getAttribute('data-tmdb') || '0', 10);
+      const type = card.getAttribute('data-type') || 'movie';
+      if (!tmdb) return;
+      if (query.trim()) history.add(query); // a query that led somewhere is worth remembering
+      openTitle(type as 'movie' | 'tv', tmdb);
+    });
+    return card;
+  }
+
+  // all / movies / series. Enter re-runs the query through the typed search.
+  function buildFilters(): HTMLElement {
+    const row = el('div', 'search-filters');
+    const defs: { v: MediaFilter; k: string }[] = [
+      { v: '', k: 'search.all' },
+      { v: 'movie', k: 'search.movies' },
+      { v: 'tv', k: 'search.series' },
+    ];
+    for (let i = 0; i < defs.length; i++) {
+      (function (d: { v: MediaFilter; k: string }) {
+        const chip = el('div', 'selector search-chip search-filter' + (d.v === filter ? ' is-on' : ''), t(d.k));
+        on(chip, 'hover:focus', function () {
+          lastResult = chip;
+          hoverIntoResults();
+        });
+        on(chip, 'hover:enter', function () {
+          if (d.v === filter) return;
+          filter = d.v;
+          router.setPath(container, searchPath(query, filter));
+          lastResult = false; // the row is rebuilt; land on the chip again by class
+          refocusFilter = d.v;
+          run();
+        });
+        row.appendChild(chip);
+      })(defs[i]);
+    }
+    return row;
+  }
+  let refocusFilter: MediaFilter | null = null;
+
+  // Actors / directors matching the query: round photo + name. Enter → person page.
+  function buildPeople(people: PersonHit[]): HTMLElement {
+    const wrap = el('div', 'search-people');
+    wrap.appendChild(el('div', 'search-section', t('search.people')));
+    const row = el('div', 'search-people__row');
+    for (let i = 0; i < people.length && i < 8; i++) {
+      (function (p: PersonHit) {
+        const item = el('div', 'selector search-person');
+        if (p.photo) {
+          const img = document.createElement('img');
+          img.className = 'search-person__photo';
+          img.src = imgSize(p.photo, 'w185');
+          img.alt = p.name;
+          item.appendChild(img);
+        } else {
+          item.appendChild(el('div', 'search-person__photo search-person__photo--empty', (p.name || '?').charAt(0)));
+        }
+        item.appendChild(el('div', 'search-person__name', p.name));
+        if (p.department) item.appendChild(el('div', 'search-person__dept', deptLabel(p.department)));
+        on(item, 'hover:focus', function () {
+          lastResult = item;
+          hoverIntoResults();
+        });
+        on(item, 'hover:enter', function () {
+          history.add(query);
+          openPerson(p.id);
+        });
+        row.appendChild(item);
+      })(people[i]);
+    }
+    wrap.appendChild(row);
+    return wrap;
+  }
+
+  function renderResults(items: Card[], people: PersonHit[]): void {
+    reset();
+    resultsBody.appendChild(buildFilters());
+    if (people.length) resultsBody.appendChild(buildPeople(people));
+    if (!items.length && !people.length) {
+      resultsBody.appendChild(buildState({ kind: 'empty', text: t('search.empty') }));
+    }
+    for (let i = 0; i < items.length; i++) resultsBody.appendChild(attachCard(items[i]));
+    if (refocusFilter !== null) {
+      const chips = resultsBody.querySelectorAll('.search-filter');
+      const idx = refocusFilter === '' ? 0 : refocusFilter === 'movie' ? 1 : 2;
+      lastResult = (chips[idx] as HTMLElement) || false;
+      refocusFilter = null;
+    }
     refreshResultsFocus();
   }
 
-  function renderResults(items: Card[]): void {
-    if (!items.length) {
-      showEmpty();
-      return;
-    }
-    reset();
+  function showLoadingMore(): void {
+    if (loadMoreEl) return;
+    loadMoreEl = el('div', 'catalog-loading-more');
+    loadMoreEl.appendChild(el('div', 'state__spinner'));
+    loadMoreEl.appendChild(el('div', 'catalog-loading-more__text', t('catalog.loading_more')));
+    resultsBody.appendChild(loadMoreEl);
+  }
+  function hideLoadingMore(): void {
+    if (loadMoreEl && loadMoreEl.parentNode) loadMoreEl.parentNode.removeChild(loadMoreEl);
+    loadMoreEl = null;
+  }
+
+  function appendPage(items: Card[]): void {
     for (let i = 0; i < items.length; i++) {
-      const card = buildCard(items[i]);
-      on(card, 'hover:focus', function () {
-        lastResult = card;
-        hoverIntoResults();
-      });
-      on(card, 'hover:enter', function () {
-        const tmdb = parseInt(card.getAttribute('data-tmdb') || '0', 10);
-        const type = card.getAttribute('data-type') || 'movie';
-        if (!tmdb) return;
-        history.add(query); // a query that led somewhere is worth remembering
-        openTitle(type as 'movie' | 'tv', tmdb);
-      });
+      const card = attachCard(items[i]);
       resultsBody.appendChild(card);
+      if (Controller.enabled().name === 'results') Controller.collectionAppend(card);
     }
-    refreshResultsFocus();
   }
 
   // ---- searching ----
+  function searchParams(page: number): { [k: string]: string | number } {
+    const p: { [k: string]: string | number } = { q: query.trim(), page: page };
+    if (filter) p.type = filter;
+    return p;
+  }
+
+  // Page 1 of the current query + filter.
   function run(): void {
+    loadPage(1);
+  }
+
+  function loadPage(page: number): void {
     const q = query.trim();
     if (!q) return;
-    const my = ++seq;
-    spinner.classList.add('is-active');
-    apiSearch({ q: q }).then(
+    if (page > 1) {
+      loadingMore = true;
+      showLoadingMore();
+    } else {
+      spinner.classList.add('is-active');
+    }
+    const my = page <= 1 ? ++seq : seq;
+    apiSearch(searchParams(page)).then(
       function (res) {
         if (destroyed || my !== seq) return;
         spinner.classList.remove('is-active');
-        renderResults(res && res.items ? res.items : []);
+        loadingMore = false;
+        hideLoadingMore();
+        totalPages = (res && res.total_pages) || 1;
+        currentPage = (res && res.page) || page;
+        const items = res && res.items ? res.items : [];
+        if (page <= 1) renderResults(items, (res && res.people) || []);
+        else appendPage(items);
       },
       function () {
         if (destroyed || my !== seq) return;
         spinner.classList.remove('is-active');
-        showError();
+        loadingMore = false;
+        hideLoadingMore();
+        if (page <= 1) showError();
       }
     );
   }
@@ -281,7 +461,7 @@ export function mountSearch(container: HTMLElement, params?: SearchParams): Scre
     query = v || '';
     keyboard.setValue(query);
     paintQuery();
-    router.setPath(container, searchPath(query));
+    router.setPath(container, searchPath(query, filter));
     if (debounce) window.clearTimeout(debounce);
     debounce = 0;
     if (!query.trim()) {
@@ -399,6 +579,13 @@ export function mountSearch(container: HTMLElement, params?: SearchParams): Scre
     Controller.add('results', resultsController);
   }
 
+  // History edited on another device (or the boot sync landed): repaint the
+  // idle column. While a query is typed the chips are not on screen anyway.
+  const unsubHistory = history.subscribe(function () {
+    if (destroyed || paused || query.trim()) return;
+    showHistory();
+  });
+
   // ---- init ----
   registerControllers();
   paintQuery();
@@ -410,6 +597,7 @@ export function mountSearch(container: HTMLElement, params?: SearchParams): Scre
     destroy: function () {
       destroyed = true;
       head.destroy();
+      unsubHistory();
       document.removeEventListener('keydown', onDocKey);
       if (debounce) window.clearTimeout(debounce);
     },

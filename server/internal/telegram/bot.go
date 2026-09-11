@@ -395,7 +395,7 @@ func (b *Bot) fetchPage(ctx context.Context, l *listing, lang string, n int) err
 	if n <= l.tmdbPages {
 		return nil
 	}
-	res, err := b.catalog.Search(ctx, l.q, lang, n)
+	res, err := b.catalog.Search(ctx, l.q, lang, n, "")
 	if err != nil {
 		return err
 	}

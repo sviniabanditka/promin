@@ -343,6 +343,38 @@ func (c *Client) fetchGenreList(ctx context.Context, mediaType, lang string) ([]
 	return out.Genres, nil
 }
 
+// fetchPerson returns /person/{id}; errTMDBNotFound for an unknown id.
+func (c *Client) fetchPerson(ctx context.Context, id int, lang string) (tmdbPersonDetail, error) {
+	q := url.Values{}
+	q.Set("language", tmdbLanguage(lang))
+	key := fmt.Sprintf("person:%d:%s", id, normalizeLang(lang))
+	body, err := c.getCached(ctx, key, detailTTL, fmt.Sprintf("/person/%d", id), q)
+	if err != nil {
+		return tmdbPersonDetail{}, err
+	}
+	var out tmdbPersonDetail
+	if err := json.Unmarshal(body, &out); err != nil {
+		return tmdbPersonDetail{}, fmt.Errorf("decode person: %w", err)
+	}
+	return out, nil
+}
+
+// fetchPersonCredits returns /person/{id}/combined_credits (cast + crew).
+func (c *Client) fetchPersonCredits(ctx context.Context, id int, lang string) (tmdbCreditsResponse, error) {
+	q := url.Values{}
+	q.Set("language", tmdbLanguage(lang))
+	key := fmt.Sprintf("person_credits:%d:%s", id, normalizeLang(lang))
+	body, err := c.getCached(ctx, key, detailTTL, fmt.Sprintf("/person/%d/combined_credits", id), q)
+	if err != nil {
+		return tmdbCreditsResponse{}, err
+	}
+	var out tmdbCreditsResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return tmdbCreditsResponse{}, fmt.Errorf("decode person credits: %w", err)
+	}
+	return out, nil
+}
+
 func (c *Client) fetchDetail(ctx context.Context, mediaType string, id int, lang string) (tmdbDetail, error) {
 	key := fmt.Sprintf("title:%s:%d:%s", mediaType, id, normalizeLang(lang))
 

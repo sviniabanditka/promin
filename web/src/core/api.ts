@@ -115,6 +115,23 @@ export interface ListResponse {
   page: number;
   total_pages: number;
   items: Card[];
+  // Person hits of an untyped search (actors, directors), in TMDB order.
+  people?: PersonHit[];
+}
+
+export interface PersonHit {
+  id: number;
+  name: string;
+  photo?: string | null;
+  department?: string; // TMDB known_for_department: Acting, Directing, Writing…
+}
+
+export interface PersonDetail extends PersonHit {
+  biography?: string;
+  birthday?: string;
+  deathday?: string;
+  place_of_birth?: string;
+  credits: Card[]; // filmography, most popular first
 }
 
 export interface Genre {
@@ -357,6 +374,10 @@ export function getList(params: QueryParams): Promise<ListResponse> {
 
 export function search(params: QueryParams): Promise<ListResponse> {
   return get<ListResponse>('/catalog/search', params);
+}
+
+export function getPerson(id: number): Promise<PersonDetail> {
+  return get<PersonDetail>('/catalog/person/' + id);
 }
 
 // Canon (docs/api.md): GET /catalog/title/{tmdb_id}?type=movie|tv — так реализован бэкенд.

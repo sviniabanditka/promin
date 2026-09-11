@@ -60,6 +60,21 @@ type Person struct {
 	Name      string `json:"name"`
 	Character string `json:"character,omitempty"`
 	Photo     string `json:"photo,omitempty"`
+	// Department is TMDB's known_for_department ("Acting", "Directing") — set
+	// on search hits so the UI can label a person row.
+	Department string `json:"department,omitempty"`
+}
+
+// PersonDetail is the payload for GET /api/v1/catalog/person/{id}: the person
+// plus their filmography as ordinary cards (movies and series they acted in
+// or directed/wrote, most popular first).
+type PersonDetail struct {
+	Person
+	Biography    string  `json:"biography,omitempty"`
+	Birthday     string  `json:"birthday,omitempty"`
+	Deathday     string  `json:"deathday,omitempty"`
+	PlaceOfBirth string  `json:"place_of_birth,omitempty"`
+	Credits      []Title `json:"credits"`
 }
 
 type ExternalIDs struct {
@@ -110,6 +125,9 @@ type ListResponse struct {
 	Page       int     `json:"page"`
 	TotalPages int     `json:"total_pages"`
 	Items      []Title `json:"items"`
+	// People are the person hits of a /search/multi page (search only, in
+	// TMDB's relevance order). Absent for movie/tv-typed searches and lists.
+	People []Person `json:"people,omitempty"`
 }
 
 // GenresResponse is the payload for GET /api/v1/catalog/genres (Promin
