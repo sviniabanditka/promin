@@ -50,6 +50,12 @@ func (h *remuxHandlers) create(w http.ResponseWriter, r *http.Request) {
 		writeBadRequest(w, "невірний upstream URL")
 		return
 	}
+	// ffmpeg dials the upstream itself: resolve first so a name pointing at a
+	// cluster service or the node cannot be handed to it.
+	if resolvesToBlocked(r.Context(), upstream.Hostname()) {
+		writeBadRequest(w, "u: relay: blocked host")
+		return
+	}
 
 	audioIndex := 0
 	if a := q.Get("audio"); a != "" {

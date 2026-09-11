@@ -92,6 +92,7 @@ func main() {
 		auth.NewRateLimiter(5, 15*time.Minute, 15*time.Minute),  // pin per-IP
 		auth.NewRateLimiter(30, 15*time.Minute, 15*time.Minute), // pin global (distributed-sweep bound)
 		auth.NewRateLimiter(5, 15*time.Minute, 15*time.Minute),  // admin per-IP
+		auth.NewRateLimiter(20, 15*time.Minute, 15*time.Minute), // admin global (IP-spoof / distributed sweep bound)
 		2*time.Hour,
 	)
 	if created, err := authSvc.EnsureAdmin("admin", cfg.AdminPassword); err != nil {
@@ -222,6 +223,7 @@ func main() {
 	var tgBot *telegram.Bot
 	if cfg.TelegramBotToken != "" {
 		tgBot = telegram.New(telegram.NewClient(cfg.TelegramAPIBaseURL, cfg.TelegramBotToken), db.Telegram, catalogSvc, syncSvc, logger)
+		tgBot.SetSessions(db.Sessions) // unlink revokes the phone's Mini App sessions
 		go tgBot.Run(ctx)
 	}
 

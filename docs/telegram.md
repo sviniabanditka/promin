@@ -99,3 +99,5 @@ token is never logged.
 ## Mini App
 
 The chat menu button opens the Telegram Mini App at `/tg/` — a phone-first remote and browser for the same profile. The button is set by the bot owner in BotFather, not by the server. See docs/miniapp.md.
+
+Unlinking (any path: TV settings, Mini App, the bot's Unlink) also deletes the profile's `telegram` sessions, so an unlinked phone's Mini App token dies with the link; phones still linked re-authenticate through initData. A chat that sends five wrong link codes is ignored for 15 minutes.

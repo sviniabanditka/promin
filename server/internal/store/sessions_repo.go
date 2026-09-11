@@ -84,3 +84,10 @@ func (r *SessionsRepo) Delete(token string) error {
 	_, err := r.db.Exec(`DELETE FROM sessions WHERE token = ?`, token)
 	return err
 }
+
+// DeleteByUserType removes every session of one device type for a user
+// (Telegram unlink → the phone's Mini App sessions die with the link).
+func (r *SessionsRepo) DeleteByUserType(userID int64, deviceType string) error {
+	_, err := r.db.Exec(`DELETE FROM sessions WHERE user_id = ? AND device_type = ?`, userID, deviceType)
+	return err
+}

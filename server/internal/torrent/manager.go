@@ -361,10 +361,19 @@ func (m *Manager) dropEntry(ih string) {
 // DataDir/torrents/<infohash>/ which never existed, so evicted torrents leaked
 // their data forever. Idempotent (RemoveAll on a missing path is a no-op).
 func (m *Manager) removeTorrentFiles(name string) {
-	if name == "" {
+	// The name comes from the torrent's own info dict, i.e. from whoever made
+	// the torrent. ".." or "../x" joined onto DataDir/torrents would point the
+	// RemoveAll at the data dir itself (database, pin secret, image cache).
+	// Keep only a single path element and refuse anything that is not one.
+	name = filepath.Base(filepath.Clean(name))
+	if name == "" || name == "." || name == ".." || name == string(filepath.Separator) {
 		return
 	}
-	base := filepath.Join(m.cfg.DataDir, "torrents", name)
+	root := filepath.Join(m.cfg.DataDir, "torrents")
+	base := filepath.Join(root, name)
+	if !strings.HasPrefix(base, root+string(filepath.Separator)) {
+		return
+	}
 	for _, p := range []string{base, base + ".part"} {
 		if err := os.RemoveAll(p); err != nil {
 			m.cfg.Logger.Warn("torrent: failed to remove on-disk data", "path", p, "error", err)

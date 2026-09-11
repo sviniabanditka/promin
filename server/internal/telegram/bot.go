@@ -46,7 +46,14 @@ type chatState struct {
 	pending    *action
 	lastDev    string
 	lastDevAt  time.Time
+	linkFails  int       // wrong link codes from this chat
+	linkLocked time.Time // no link attempts accepted before this
 }
+
+const (
+	linkMaxFails = 5
+	linkLockFor  = 15 * time.Minute
+)
 
 // OpenTitlePayload is the sync.EventOpenTitle payload.
 type OpenTitlePayload struct {
@@ -69,6 +76,8 @@ type Bot struct {
 	sync    *promsync.Service
 	hub     *promsync.Hub
 	log     *slog.Logger
+
+	sessions *store.SessionsRepo // optional; see revokePhones
 
 	mu       sync.Mutex
 	username string
@@ -104,7 +113,30 @@ func (b *Bot) IssueLinkCode(userID int64) (string, time.Time) { return b.links.I
 func (b *Bot) IsLinked(userID int64) (bool, error) { return b.repo.IsUserLinked(userID) }
 
 // Unlink drops every chat of userID (DELETE /api/v1/telegram/link).
-func (b *Bot) Unlink(userID int64) error { return b.repo.UnlinkUser(userID) }
+func (b *Bot) Unlink(userID int64) error {
+	if err := b.repo.UnlinkUser(userID); err != nil {
+		return err
+	}
+	b.revokePhones(userID)
+	return nil
+}
+
+// revokePhones kills the Mini App sessions of a profile. Unlinking only
+// deleted the telegram_links row, so an unlinked phone that had opened the
+// Mini App once kept a never-expiring session with full profile access.
+// Sessions are not tied to a chat, so every telegram session goes; phones
+// still linked re-authenticate transparently through initData.
+func (b *Bot) revokePhones(userID int64) {
+	if b.sessions == nil {
+		return
+	}
+	if err := b.sessions.DeleteByUserType(userID, "telegram"); err != nil {
+		b.log.Warn("telegram: revoke mini app sessions failed", "user_id", userID, "error", err)
+	}
+}
+
+// SetSessions wires the session store used to revoke Mini App sessions on unlink.
+func (b *Bot) SetSessions(s *store.SessionsRepo) { b.sessions = s }
 
 // Run polls getUpdates until ctx is cancelled. Errors back off (1 s → 60 s).
 func (b *Bot) Run(ctx context.Context) {
@@ -263,11 +295,32 @@ func (b *Bot) menu(ctx context.Context, chatID, userID int64, lang, text string)
 }
 
 func (b *Bot) link(ctx context.Context, chatID int64, from *User, code, lang string) {
+	// Codes are six digits with a 10-minute life; without a counter a chat could
+	// sweep the space. After linkMaxFails misses the chat is ignored for a while
+	// (silently: no reply to feed a scanner).
+	b.mu.Lock()
+	st := b.state(chatID)
+	if time.Now().Before(st.linkLocked) {
+		b.mu.Unlock()
+		return
+	}
+	b.mu.Unlock()
 	userID, ok := b.links.Consume(code)
 	if !ok {
+		b.mu.Lock()
+		st.linkFails++
+		if st.linkFails >= linkMaxFails {
+			st.linkFails = 0
+			st.linkLocked = time.Now().Add(linkLockFor)
+			b.log.Warn("telegram: link code lockout", "chat_id", chatID)
+		}
+		b.mu.Unlock()
 		b.reply(ctx, chatID, tr(lang, "link.bad"), nil)
 		return
 	}
+	b.mu.Lock()
+	st.linkFails = 0
+	b.mu.Unlock()
 	first, uname := "", ""
 	if from != nil {
 		first, uname = from.FirstName, from.Username
@@ -564,6 +617,7 @@ func (b *Bot) handleCallback(ctx context.Context, cq *CallbackQuery) {
 				answer(tr(lang, "err.generic"))
 				return
 			}
+			b.revokePhones(userID)
 			b.mu.Lock()
 			delete(b.chats, chatID)
 			b.mu.Unlock()
@@ -676,4 +730,10 @@ func (b *Bot) fail(ctx context.Context, chatID int64, lang, what string, err err
 func (b *Bot) Links(userID int64) ([]store.TelegramLink, error) { return b.repo.List(userID) }
 
 // UnlinkChat removes one chat of the profile.
-func (b *Bot) UnlinkChat(userID, chatID int64) error { return b.repo.UnlinkChatOfUser(userID, chatID) }
+func (b *Bot) UnlinkChat(userID, chatID int64) error {
+	if err := b.repo.UnlinkChatOfUser(userID, chatID); err != nil {
+		return err
+	}
+	b.revokePhones(userID)
+	return nil
+}

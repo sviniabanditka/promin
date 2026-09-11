@@ -243,8 +243,21 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		// HSTS only on a TLS hop (the edge terminates TLS and forwards the
+		// scheme); never on plain HTTP, where it would be ignored anyway.
+		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+			h.Set("Strict-Transport-Security", "max-age=31536000")
+		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// noFraming: the operator pages (/admin, /logs) must never render inside a
+// frame — clickjacking of profile management. The TV UI itself stays
+// frameable on purpose (Media Station X hosts it in a frame).
+func noFraming(w http.ResponseWriter) {
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
 }
 
 // diagLimiter: /api/v1/diag is unauthenticated (a device stuck before the PIN

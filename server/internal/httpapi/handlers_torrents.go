@@ -256,6 +256,7 @@ func (h *torrentHandlers) stream(w http.ResponseWriter, r *http.Request) {
 	defer rsc.Close()
 
 	w.Header().Set("Content-Type", contentTypeFor(name))
+	sandboxMedia(w) // a torrent can carry an .html: data on our origin, never a document
 	http.ServeContent(w, r, name, time.Time{}, rsc)
 }
 

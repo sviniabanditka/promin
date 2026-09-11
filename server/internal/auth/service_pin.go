@@ -57,6 +57,11 @@ func (s *Service) LoginPIN(ip, pin, deviceName string) (AuthResult, error) {
 // AdminLogin verifies the admin (user 1) argon2 password and mints an "admin"
 // session. ip keys the per-IP limiter.
 func (s *Service) AdminLogin(ip, password string) (AuthResult, error) {
+	if s.adminGlobal != nil {
+		if ok, ra := s.adminGlobal.Allow("admin"); !ok {
+			return AuthResult{}, ErrRateLimited{RetryAfter: ra}
+		}
+	}
 	if ok, ra := s.adminPerIP.Allow("admin|" + ip); !ok {
 		return AuthResult{}, ErrRateLimited{RetryAfter: ra}
 	}
@@ -67,6 +72,9 @@ func (s *Service) AdminLogin(ip, password string) (AuthResult, error) {
 	ok, err := verifyPassword(user.PassHash, password)
 	if err != nil || !ok {
 		s.adminPerIP.RecordFailure("admin|" + ip)
+		if s.adminGlobal != nil {
+			s.adminGlobal.RecordFailure("admin") // never cleared by success
+		}
 		return AuthResult{}, ErrInvalidCredentials
 	}
 	s.adminPerIP.RecordSuccess("admin|" + ip)

@@ -59,10 +59,12 @@ func (h *logsHandlers) page(w http.ResponseWriter, r *http.Request) {
 		h.challenge(w)
 		return
 	}
+	noFraming(w)
 	http.SetCookie(w, &http.Cookie{
 		Name:     "logs_auth",
 		Value:    h.authToken(),
 		Path:     "/logs",
+		Secure:   true,
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   7 * 24 * 3600,

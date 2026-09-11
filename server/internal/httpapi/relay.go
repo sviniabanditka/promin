@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"io"
 	"log/slog"
@@ -9,6 +10,7 @@ import (
 	"net/url"
 	pathpkg "path"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/sviniabanditka/promin/server/internal/metrics"
@@ -24,7 +26,10 @@ import (
 // 30x can't bounce the proxy to a loopback/metadata target.
 var relayClient = &http.Client{
 	Transport: &http.Transport{
-		DialContext:           (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		// Control sees the resolved address, so a hostname that points at a
+		// cluster service, the node or loopback is refused even though
+		// validateUpstream could only inspect IP literals (SSRF via DNS).
+		DialContext:           (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second, Control: guardDial}).DialContext,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ResponseHeaderTimeout: 15 * time.Second,
 		MaxIdleConns:          64,
@@ -52,22 +57,68 @@ var relayAllowLoopback = false
 
 const relayBrowserUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 
+// blockedIP is the address policy shared by validateUpstream (URL literals)
+// and guardDial (what is actually dialed).
+func blockedIP(ip net.IP) bool {
+	if relayAllowLoopback && ip.IsLoopback() {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsPrivate()
+}
+
+// guardDial is the net.Dialer Control hook of relayClient: refuse connections
+// to private, loopback, link-local and unspecified addresses after DNS
+// resolution. This is what actually stops SSRF — a name can resolve anywhere.
+func guardDial(_ string, address string, _ syscall.RawConn) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return err
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || blockedIP(ip) {
+		return errors.New("relay: blocked address")
+	}
+	return nil
+}
+
+// resolvesToBlocked reports whether any address the host resolves to is
+// blocked. For the remux path: ffmpeg dials the URL itself, outside
+// relayClient, so the check has to happen before the job starts.
+func resolvesToBlocked(ctx context.Context, host string) bool {
+	if ip := net.ParseIP(host); ip != nil {
+		return blockedIP(ip)
+	}
+	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil || len(ips) == 0 {
+		return true // cannot verify → do not start ffmpeg on it
+	}
+	for _, a := range ips {
+		if blockedIP(a.IP) {
+			return true
+		}
+	}
+	return false
+}
+
 func validateUpstream(u *url.URL) error {
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return errors.New("relay: bad scheme")
 	}
 	host := u.Hostname()
-	if ip := net.ParseIP(host); ip != nil {
-		if relayAllowLoopback && ip.IsLoopback() {
-			return nil
-		}
-		// Private ranges too: the relay runs inside the cluster, where 10.x /
-		// 172.16.x hold every internal service. Balancers hand out public URLs.
-		if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsPrivate() {
-			return errors.New("relay: blocked host")
-		}
+	// Literal IPs are refused here; hostnames are checked when dialed
+	// (guardDial), because only the resolved address tells the truth.
+	if ip := net.ParseIP(host); ip != nil && blockedIP(ip) {
+		return errors.New("relay: blocked host")
 	}
 	return nil
+}
+
+// sandboxMedia marks a proxied body as data, never a document: an upstream
+// (or a torrent) can answer text/html, and without this the page would run on
+// our origin with the session token in localStorage. <video>, hls.js and
+// <track> are unaffected by a sandbox CSP.
+func sandboxMedia(w http.ResponseWriter) {
+	w.Header().Set("Content-Security-Policy", "sandbox")
 }
 
 // manifestHeaderTimeout bounds fetching+parsing a (small) HLS manifest
@@ -181,6 +232,7 @@ func isManifest(path, contentType string) bool {
 func relayPassthrough(w http.ResponseWriter, resp *http.Response) {
 	copyHeader(w.Header(), resp.Header, "Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "Cache-Control", "ETag", "Last-Modified")
 	w.Header().Set("Accept-Ranges", "bytes")
+	sandboxMedia(w)
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
 }

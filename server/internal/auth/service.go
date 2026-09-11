@@ -56,11 +56,15 @@ type Service struct {
 	pinPerIP   *RateLimiter
 	pinGlobal  *RateLimiter
 	adminPerIP *RateLimiter
-	adminTTL   time.Duration
+	// adminGlobal bounds a distributed / IP-spoofed admin password sweep the
+	// same way pinGlobal bounds PINs: never cleared by success.
+	adminGlobal *RateLimiter
+	adminTTL    time.Duration
 }
 
 // SetPINAuth wires the PIN/admin state (main.go, after NewService).
-func (s *Service) SetPINAuth(pinSecret []byte, pinPerIP, pinGlobal, adminPerIP *RateLimiter, adminTTL time.Duration) {
+func (s *Service) SetPINAuth(pinSecret []byte, pinPerIP, pinGlobal, adminPerIP, adminGlobal *RateLimiter, adminTTL time.Duration) {
+	s.adminGlobal = adminGlobal
 	s.pinSecret = pinSecret
 	s.pinPerIP = pinPerIP
 	s.pinGlobal = pinGlobal

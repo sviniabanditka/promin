@@ -202,6 +202,7 @@ func adminID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 // page serves the always-open admin SPA shell. Its JS probes /admin/profiles:
 // 401 → login form, 200 → roster.
 func (h *adminHandlers) page(w http.ResponseWriter, r *http.Request) {
+	noFraming(w)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(adminHTML))
 }

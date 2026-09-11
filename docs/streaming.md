@@ -15,7 +15,8 @@ only ever appended to our own origin, never forwarded upstream.
 `GET /relay?u=<base64url upstream URL>` (`server/internal/httpapi/relay.go`;
 `u` is produced by `sources.EncodeRelayURL`, `server/internal/sources/relay.go`).
 
-- **SSRF validation** (`validateUpstream`): scheme must be `http`/`https`; a
+- **SSRF validation**: `validateUpstream` refuses non-http(s) schemes and IP literals in loopback/private/link-local ranges; the decisive check is `guardDial`, the relay dialer's `Control` hook, which refuses the *resolved* address (a hostname resolving to a cluster service, the node or loopback). `/remux` resolves the host before starting ffmpeg (`resolvesToBlocked`). Proxied bodies (`/relay` passthrough, `/stream`) carry `Content-Security-Policy: sandbox` so an upstream answering `text/html` can never run on our origin.
+- **Upstream validation details** (`validateUpstream`): scheme must be `http`/`https`; a
   literal IP that is loopback, link-local, unspecified or private is rejected.
   Hostnames are not resolved. `CheckRedirect` re-runs the check on every hop and
   stops after 10 redirects.

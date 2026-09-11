@@ -54,9 +54,7 @@ LoginPIN(ip, pin, deviceName):
 
 Response `{token, user: {id, login, is_admin}}`. `device_name` falls back to a
 type guessed from the User-Agent (`tizen`, `webos`, `androidtv`, `browser`).
-A blocked key answers 429 `rate_limited` with `Retry-After`. The client IP is
-`CF-Connecting-IP`, else the first `X-Forwarded-For` hop, else `RemoteAddr`
-(`clientIP`).
+A blocked key answers 429 `rate_limited` with `Retry-After`. The client IP (`clientIP`) is the peer our front saw — the LAST `X-Forwarded-For` hop written by Traefik/nginx, else `RemoteAddr` — and only when that peer is a Cloudflare edge address is `CF-Connecting-IP` believed. A direct visitor (node IP, h1 host) cannot forge the header to rotate the rate-limit key. Admin login also has a global limiter (20 failures / 15 min, never cleared by success) like the PIN one.
 
 ## 3. Sessions and bearer tokens
 

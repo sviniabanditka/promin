@@ -176,21 +176,71 @@ func deviceTypeFromUA(r *http.Request) string {
 // trustworthy one; keying the limiter on RemoteAddr meant every user behind
 // one CF edge node shared a bucket (false lockouts) while an attacker could
 // rotate edges. X-Forwarded-For's first hop and RemoteAddr cover direct/LAN use.
-func clientIP(r *http.Request) string {
-	if ip := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); ip != "" {
-		return ip
+// cloudflareNets are Cloudflare's published edge ranges (cloudflare.com/ips).
+// CF-Connecting-IP is only believed when the request really came through one
+// of them; the node's 443 and the h1 front are reachable directly, and a
+// direct client could otherwise forge the header and rotate the rate-limit key.
+var cloudflareNets = func() []*net.IPNet {
+	cidrs := []string{
+		"173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22", "141.101.64.0/18",
+		"108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20", "197.234.240.0/22", "198.41.128.0/17",
+		"162.158.0.0/15", "104.16.0.0/13", "104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22",
+		"2400:cb00::/32", "2606:4700::/32", "2803:f800::/32", "2405:b500::/32", "2405:8100::/32",
+		"2a06:98c0::/29", "2c0f:f248::/32",
 	}
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if i := strings.IndexByte(xff, ','); i > 0 {
-			return strings.TrimSpace(xff[:i])
+	out := make([]*net.IPNet, 0, len(cidrs))
+	for _, c := range cidrs {
+		if _, n, err := net.ParseCIDR(c); err == nil {
+			out = append(out, n)
 		}
-		return strings.TrimSpace(xff)
 	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
+	return out
+}()
+
+func isCloudflare(ip string) bool {
+	p := net.ParseIP(ip)
+	if p == nil {
+		return false
 	}
-	return host
+	for _, n := range cloudflareNets {
+		if n.Contains(p) {
+			return true
+		}
+	}
+	return false
+}
+
+// clientIP is the address rate limits are keyed on.
+//
+// The immediate peer of our front (Traefik, or nginx on the h1 host) is the
+// LAST X-Forwarded-For hop: both fronts drop what the client sent and write
+// their own view (Traefik strips untrusted forwarded headers; nginx sets
+// $remote_addr). When that peer is a Cloudflare edge, the visitor is in
+// CF-Connecting-IP; otherwise the peer IS the visitor and any CF-Connecting-IP
+// it sent is a forgery and is ignored.
+func clientIP(r *http.Request) string {
+	peer := ""
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if i := strings.LastIndexByte(xff, ','); i >= 0 {
+			peer = strings.TrimSpace(xff[i+1:])
+		} else {
+			peer = strings.TrimSpace(xff)
+		}
+	}
+	if peer == "" {
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			peer = r.RemoteAddr
+		} else {
+			peer = host
+		}
+	}
+	if isCloudflare(peer) {
+		if ip := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); ip != "" {
+			return ip
+		}
+	}
+	return peer
 }
 
 // revokeOthers: DELETE /api/v1/auth/devices — every session but the caller's.
