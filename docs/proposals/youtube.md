@@ -1,6 +1,6 @@
 # Proposal: YouTube in Promin (SmartTube-style, ad-free, SponsorBlock)
 
-Status: analysis only, 2026-09-12. Nothing built.
+Status: analysis + extraction test, 2026-09-12. Nothing built. **Verdict of the test: extraction from the VPS is blocked outright (see the last section); the server-side design above is not viable without a residential egress.**
 
 ## The gap we would fill
 
@@ -136,3 +136,26 @@ stays in MSX, the server only muxes and serves. One more device to keep alive.
 Order of cheap checks: (1) the one-week yt-dlp test from the node; if the
 datacenter IP is challenged, (2) compare home box vs packaged app — the
 packaged app carries the bigger product upside.
+
+## Extraction test, 2026-09-12
+
+Same 20 video ids (a `ytsearch20` result), yt-dlp 2026.08.19 with Deno 2.9.6,
+default player clients, no cookies, no PO-token provider.
+
+| From | Result |
+|---|---|
+| Laptop, residential IP (node as JS runtime) | 6/6 tried: 1080p video + opus audio (`616+251`, `399+251`) |
+| VPS node 109.199.115.31 (Contabo) | 13/13 tried: `Sign in to confirm you're not a bot` at the `/player` call — no formats at all |
+| VPS, forced clients `tv`, `mweb`, `android_vr`, `ios` | all four: the same bot challenge |
+
+Search/metadata (`ytsearch`, flat playlists) works from the VPS; only the
+player/stream call is challenged. This is an IP-reputation block, not a
+missing JS runtime or a missing token: the same binary from a home IP is fine.
+
+Conclusion: the "extractor on the VPS" MVP is dead as designed. Remaining
+options, in order of cost: (a) cookies of a throwaway Google account on the
+VPS (works until the account is flagged; account ban risk, IP may still be
+challenged), (b) a residential egress for *both* extraction and video bytes —
+the existing 1 GB/month proxy package cannot carry video, a larger package is
+money per GB, (c) a home extractor box behind the household IP, tunnelled to
+the cluster, (d) the packaged Tizen/webOS app doing everything on the TV.
