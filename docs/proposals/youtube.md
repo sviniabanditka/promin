@@ -159,3 +159,36 @@ challenged), (b) a residential egress for *both* extraction and video bytes —
 the existing 1 GB/month proxy package cannot carry video, a larger package is
 money per GB, (c) a home extractor box behind the household IP, tunnelled to
 the cluster, (d) the packaged Tizen/webOS app doing everything on the TV.
+
+## OAuth device-flow test (YouTube TV client identity), 2026-09-12
+
+Prototype: device code → `google.com/device` → token, then InnerTube from the
+VPS with `Authorization: Bearer`.
+
+| Step | Result |
+|---|---|
+| `o/oauth2/device/code` with the TV client id | 200, user code issued |
+| Approval with a throwaway account, token exchange | 200, access token (19 h) + refresh token, scope `youtube` |
+| `youtubei/v1/player` with the token, client TVHTML5 (current version from youtube.com/tv) | 200 but `UNPLAYABLE — The page needs to be reloaded`, zero formats |
+| same, clients IOS / ANDROID | 400 `INVALID_ARGUMENT` |
+| yt-dlp 2026.08.19 + the youtube-oauth2 plugin fed with our token | every API call (even `next`) → 400 Bad Request |
+
+Reading: Google still *issues* tokens to the old TV client identity but
+InnerTube rejects them — the same symptom that ended yt-dlp's OAuth support
+in November 2024 ("400 using OAuth, cookies work"). SmartTube keeps working
+because it impersonates the current Android TV app far more completely
+(client identity, versions, device attestation) and repairs it after every
+change. Rebuilding that is a SmartTube reimplementation, not a feature.
+
+**Closed paths:** anonymous extraction from the VPS (bot check), OAuth via the
+known TV client (rejected by InnerTube).
+
+**Still open, in order of cost:**
+1. **Cookies of a throwaway account** on the VPS — the one method yt-dlp's
+   wiki still recommends; a 30-minute test once the owner exports a cookie
+   file. Expect periodic re-export and account-flag risk.
+2. **Home extractor box** behind the household IP (yt-dlp + Deno, tunnel to
+   the cluster).
+3. **Packaged Tizen/webOS app** that logs into youtube.com/tv inside its own
+   webview and plays from the TV's IP — the real "SmartTube for Samsung/LG",
+   a separate product.
