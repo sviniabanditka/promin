@@ -1,6 +1,6 @@
 # Proposal: YouTube in Promin (SmartTube-style, ad-free, SponsorBlock)
 
-Status: analysis + extraction test, 2026-09-12. Nothing built. **Verdict of the test: extraction from the VPS is blocked outright (see the last section); the server-side design above is not viable without a residential egress.**
+Status: analysis + working extraction prototype, 2026-09-12. **Verdict: viable from the VPS with a signed-in TV client + SABR (see the last two sections). The original anonymous yt-dlp design is dead; the design below is what to build.**
 
 ## The gap we would fill
 
@@ -231,3 +231,39 @@ What this means for a build:
 - SmartTube itself marks SABR as TODO and keeps working on URL-bearing
   variants; expect YouTube to finish the SABR migration, at which point every
   third-party client needs the SABR path anyway.
+
+## SABR prototype, 2026-09-12 (end of day) — the last risk closed
+
+`scratchpad/ytoauth/sabr_test.mjs`: YouTube.js 18 (TV client, signed in with
+our device-flow token) → player request with the web player's
+`signatureTimestamp` (`status=OK`, 30 formats) → decipher
+`serverAbrStreamingUrl` → `googlevideo` 4.1 `SabrStream` → 1080p H.264
+(itag 137) + opus (251) → first 6 MB to disk → ffmpeg copy-mux → ffprobe
+`h264 1920x1080 + opus`.
+
+| From | first byte | 6 MB of video |
+|---|---|---|
+| laptop, residential | 2.4 s | 8.1 s |
+| **VPS node (Contabo)** | **0.4 s** | **0.75 s** |
+
+No PO token was needed for the signed-in TV client. The errors in the log
+are the prototype's own byte-limit abort, not YouTube's.
+
+## Build plan (what the result implies)
+
+Sidecar `yt-extractor` (Deno or Node, container next to promin):
+- device-code login per Promin profile (bot / TV flow), refresh tokens in the
+  DB encrypted with a server key; the same identity SmartTube uses is read
+  from the TV app bundle at runtime;
+- `GET /stream?id=&quality=` → player request → SABR → **one muxed HLS or
+  fMP4 output** fed to promin's remux queue (`-c copy`), so the TV player
+  path stays what it is today; seeking via SABR `startTimeMs`;
+- search / channel / subscriptions feed via InnerTube (browse endpoints,
+  signed in) — the account's real home feed and subscriptions;
+- SponsorBlock segments proxied and cached; DeArrow optional;
+- weekly dependency bumps (youtubei.js, googlevideo) are the maintenance.
+
+Promin side: source kind `yt`, "YouTube" filter in search, video cards,
+channel page, player segment-skip, bot/Mini App "open on TV". Estimate:
+2–3 weeks to a first watchable version; the extractor is the part that
+breaks and gets fixed.
