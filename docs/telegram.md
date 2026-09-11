@@ -45,11 +45,16 @@ always speak the same language.
 - **Bookmarks** — paginated list with "Open on TV" and "✕ remove".
 - **What to watch** — the rows of the TV home screen (`catalog.Home`), then
   five items per page with the same buttons.
-- **Remote** — ⏪ 30 · ⏯ · ⏩ 30 / ⏮ · ⏭ / 🔇 · 🌙 Night · 😴 Sleep. Each press
-  publishes `remote {device_id, action, value}` (`toggle_play | seek ±30 |
-  prev | next | mute | night | sleep 30`); the TV's player consumes playback
-  actions (`web/src/core/player/remote.ts`), night mode toggles on any screen,
-  and a TV without an open player shows a toast instead.
+- **Remote** — a D-pad (▲ / ◀ OK ▶ / ▼ / ↩ Back) over ⏪ 30 · ⏯ · ⏩ 30 /
+  ⏮ · ⏭ / 🔇 · 🌙 Night · 😴 Sleep. Each press publishes `remote {device_id,
+  action, value}` (`nav_up | nav_down | nav_left | nav_right | nav_ok |
+  nav_back | toggle_play | seek ±30 | prev | next | mute | night | sleep 30`).
+  The D-pad drives the TV UI on any screen (the TV feeds it into the same
+  Controller entry points as its physical remote); the TV's player consumes
+  playback actions (`web/src/core/player/remote.ts`), night mode toggles on any
+  screen, and a TV without an open player shows a toast for the rest. The same
+  keyboard is attached to the "Opened on <TV>" message, so the source and
+  episode can be picked right after opening a title.
 - **Settings** — language (🇺🇦 🇷🇺 🇬🇧; writes the synced `lang`, the TV repaints
   live through `settings_updated`) and Unlink with a confirm step.
 

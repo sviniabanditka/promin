@@ -6,13 +6,12 @@
 // ES5 target (swc): plain functions/const/let.
 
 import Controller, { on } from '../core/controller';
-import * as router from '../core/router';
 import { ScreenInstance } from '../core/activity';
 import { el, empty } from '../ui/dom';
 import { loginPin } from '../core/auth';
 import * as sync from '../core/sync';
 import { syncFromServer } from '../core/settings';
-import { mountHome } from './home';
+import { openRoute } from './nav';
 import { ApiError } from '../core/api';
 import { t } from '../core/i18n';
 
@@ -66,7 +65,8 @@ export function mountPinEntry(container: HTMLElement): ScreenInstance {
         syncFromServer(function () {
           /* adopt server settings; ignore result */
         });
-        router.replaceRoot(mountHome);
+        // Follow the deep link the gate interrupted (hash kept by the router).
+        openRoute(window.location.hash);
       },
       function (e: ApiError) {
         busy = false;

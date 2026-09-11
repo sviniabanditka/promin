@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { search, type Card } from '../api';
+import * as history from '../history';
 import { t } from '../i18n';
 import { navigate } from '../router';
 import { useStore } from '../store';
@@ -10,7 +11,15 @@ export function Search({ query }: { query: URLSearchParams }) {
   const [q, setQ] = useState(query.get('q') || '');
   const [res, setRes] = useState<Card[] | null>(null);
   const [state, setState] = useState<'idle' | 'loading' | 'error'>('idle');
+  const [recent, setRecent] = useState(history.list);
   const input = useRef<HTMLInputElement>(null);
+  // A query counts as "searched" when the user commits it: Enter, or opening a
+  // result. Not on every debounced keystroke — that would store "ba", "bat", …
+  const remember = () => {
+    if (q.trim().length < 2) return;
+    history.add(q);
+    setRecent(history.list());
+  };
 
   useEffect(() => {
     input.current?.focus();
@@ -48,6 +57,12 @@ export function Search({ query }: { query: URLSearchParams }) {
           enterKeyHint="search"
           autocomplete="off"
           onInput={(e) => setQ(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              remember();
+              input.current?.blur();
+            }
+          }}
         />
         {q && (
           <button class="clear" aria-label="clear" onClick={() => setQ('')}>
@@ -68,7 +83,7 @@ export function Search({ query }: { query: URLSearchParams }) {
         </div>
       ) : res ? (
         res.length ? (
-          <div class="grid">
+          <div class="grid" onClickCapture={remember}>
             {res.map((c) => (
               <PosterCard key={c.type + c.tmdb_id} card={c} />
             ))}
@@ -76,6 +91,26 @@ export function Search({ query }: { query: URLSearchParams }) {
         ) : (
           <Empty icon="🔍" title={t('search.empty')} />
         )
+      ) : recent.length ? (
+        <>
+          <h2 class="rail-title">{t('search.recent')}</h2>
+          <div class="chips chips-wrap">
+            {recent.map((h) => (
+              <button key={h} class="chip" onClick={() => setQ(h)}>
+                {h}
+              </button>
+            ))}
+            <button
+              class="chip chip-clear"
+              onClick={() => {
+                history.clear();
+                setRecent([]);
+              }}
+            >
+              ✕ {t('search.clear_recent')}
+            </button>
+          </div>
+        </>
       ) : (
         <Empty icon="🔍" title={t('search.hint')} />
       )}

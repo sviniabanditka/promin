@@ -95,6 +95,12 @@ func TestCallbackRoundTrip(t *testing.T) {
 
 func TestRemotePayload(t *testing.T) {
 	want := map[string]RemotePayload{
+		"up":    {DeviceID: "d1", Action: "nav_up"},
+		"down":  {DeviceID: "d1", Action: "nav_down"},
+		"left":  {DeviceID: "d1", Action: "nav_left"},
+		"right": {DeviceID: "d1", Action: "nav_right"},
+		"ok":    {DeviceID: "d1", Action: "nav_ok"},
+		"bk":    {DeviceID: "d1", Action: "nav_back"},
 		"play":  {DeviceID: "d1", Action: "toggle_play"},
 		"back":  {DeviceID: "d1", Action: "seek", Value: -30},
 		"fwd":   {DeviceID: "d1", Action: "seek", Value: 30},

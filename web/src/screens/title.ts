@@ -279,9 +279,12 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
     return { season: best.season, episode: best.episode + 1, position: 0 };
   }
 
+  // While hidden under another pushed title (OK on a "similar" card before this
+  // one finished loading) only remember the mode; resume() toggles it.
+  let paused = false;
   function toggleMode(name: string): void {
     lastMode = name;
-    Controller.toggle(name);
+    if (!paused) Controller.toggle(name);
   }
 
   // Modal (mode 'title_playlist') listing the user's playlists; OK adds this
@@ -2537,7 +2540,11 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
       head.destroy();
       if (unsubBookmarks) unsubBookmarks();
     },
+    pause: function () {
+      paused = true;
+    },
     resume: function () {
+      paused = false;
       if (resumeHook) resumeHook();
       Controller.toggle(lastMode);
     },

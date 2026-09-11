@@ -46,6 +46,8 @@ const D: Record<string, Entry> = {
 
   'search.empty': ['Нічого не знайдено', 'Ничего не найдено', 'Nothing found'],
   'search.hint': ['Введіть назву фільму або серіалу', 'Введите название фильма или сериала', 'Type a movie or show title'],
+  'search.recent': ['Недавні запити', 'Недавние запросы', 'Recent searches'],
+  'search.clear_recent': ['Очистити', 'Очистить', 'Clear'],
 
   'title.watch': ['▶ Дивитися', '▶ Смотреть', '▶ Watch'],
   'title.continue': ['▶ Продовжити', '▶ Продолжить', '▶ Continue'],
@@ -77,6 +79,9 @@ const D: Record<string, Entry> = {
   'remote.voice': ['Озвучення', 'Озвучка', 'Audio'],
   'remote.subs': ['Субтитри', 'Субтитры', 'Subtitles'],
   'remote.volume': ['Гучність', 'Громкость', 'Volume'],
+  'remote.pad': ['Пульт', 'Пульт', 'Remote'],
+  'remote.back': ['Назад', 'Назад', 'Back'],
+  'remote.full': ['Повний пульт', 'Полный пульт', 'Full remote'],
   'remote.no_lists': ['Телевізор ще не надіслав список', 'Телевизор ещё не отправил список', 'The TV has not sent the list yet'],
 
   'device.pick': ['Оберіть телевізор', 'Выберите телевизор', 'Choose a TV'],

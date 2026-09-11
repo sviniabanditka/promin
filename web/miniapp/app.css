@@ -202,6 +202,13 @@ h1, h2, p { margin: 0; }
 .key-stack { display: flex; flex-direction: column; align-items: center; line-height: 1; }
 .key-stack small { font-size: 10px; font-weight: 600; margin-top: -2px; }
 .pad-aux .key { width: 48px; height: 48px; font-size: 20px; }
+.dpad { display: grid; grid-template-columns: repeat(3, 64px); grid-auto-rows: 64px; gap: 10px; justify-content: center; padding: 8px 16px; }
+.dpad .key { width: 64px; height: 64px; border-radius: 18px; }
+.dpad .key-ok { background: var(--accent); color: var(--accent-text); font-weight: 700; font-size: 18px; }
+.dpad .key-back { font-size: 20px; }
+.dpad .key-back small { font-size: 10px; margin-top: 2px; }
+.chips-wrap { flex-wrap: wrap; overflow: visible; }
+.chip-clear { color: var(--hint); }
 .tracks { justify-content: center; padding-top: 4px; }
 .tracks .chip { display: flex; align-items: center; gap: 6px; max-width: 42vw; }
 .tracks .chip:disabled { opacity: 0.45; }

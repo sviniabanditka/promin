@@ -10,7 +10,8 @@ import { initI18n, t } from './core/i18n';
 import { toast } from './ui/toast';
 import { mountHome } from './screens/home';
 import { mountPinEntry } from './screens/pin';
-import { openTitle } from './screens/nav';
+import { openTitle, openRoute } from './screens/nav';
+import { Direction } from './core/nav';
 import { dispatchRemote, RemoteAction } from './core/player/remote';
 import { isLogged, clearLocal, onAuthChange } from './core/auth';
 import { setDeadSessionHook, getPing } from './core/api';
@@ -169,13 +170,23 @@ function boot(): void {
     // Reset the screen stack first: a title opened while the player is running
     // must not pile a second player on top of the first (both kept playing and
     // reporting state — the remote flickered between them).
-    router.replaceRoot(mountHome);
+    router.replaceRoot(mountHome, '/');
     openTitle(type, tmdbID, resume, season, episode);
     toast({ kind: 'info', icon: '✈', title: t('telegram.opened'), text: title });
   });
   // Remote-control presses from the bot: the player consumes playback actions;
   // night mode is global and works from any screen.
   sync.setRemoteEventHandler(function (action, value, key, str) {
+    // D-pad from the bot / Mini App: the same entry points the remote's keys
+    // reach, so it works on every screen (title page, source picker, player).
+    if (action.slice(0, 4) === 'nav_') {
+      screensaver.activity();
+      const k = action.slice(4);
+      if (k === 'ok') Controller.enter();
+      else if (k === 'back') Controller.back();
+      else if (k === 'up' || k === 'down' || k === 'left' || k === 'right') Controller.move(k as Direction);
+      return;
+    }
     if (action === 'night') {
       setNightMode(!isNightMode());
       return;
@@ -193,7 +204,7 @@ function boot(): void {
   });
   // Language switched from the bot or another device: repaint the app.
   setLangChangedHook(function () {
-    if (isLogged()) router.replaceRoot(mountHome);
+    if (isLogged()) openRoute(router.currentPath());
   });
   setScreensaverChangedHook(screensaver.reschedule);
   // Tell the server this TV's device-local settings (for the Mini App).
@@ -243,10 +254,12 @@ function routeInitial(): void {
     return;
   }
   sync.start();
-  router.replaceRoot(mountHome);
-  // Pull server-side settings; re-paint home if the server's language wins.
+  // Deep link (#/title/tv/1399, #/catalog/trending, …) or Home.
+  openRoute(window.location.hash);
+  // Pull server-side settings; re-paint the current screen if the server's
+  // language wins.
   syncFromServer(function () {
-    router.replaceRoot(mountHome);
+    openRoute(router.currentPath());
   });
 }
 

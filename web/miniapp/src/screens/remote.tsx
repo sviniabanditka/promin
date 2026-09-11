@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import type { NavAction } from '../api';
 import { fmtTime, seLabel, t } from '../i18n';
 import { navigate, titlePath } from '../router';
 import { livePos, sendOpen, sendRemote, sendRemoteStr, targetDevice, toast, useStore, type LiveState } from '../store';
@@ -128,6 +129,35 @@ function Tracks({ st }: { st: LiveState }) {
   );
 }
 
+// Arrows + OK + Back for the TV UI itself (title page, source picker, player
+// menus). Lives in the Remote tab and in the sheet that pops after "open on TV".
+export function DPad() {
+  const key = (action: NavAction, label: preact.ComponentChildren, cls = '') => (
+    <button class={'key ' + cls} onClick={() => sendRemote(action)} aria-label={action}>
+      {label}
+    </button>
+  );
+  return (
+    <div class="dpad">
+      <span />
+      {key('nav_up', '▲')}
+      <span />
+      {key('nav_left', '◀')}
+      {key('nav_ok', 'OK', 'key-ok')}
+      {key('nav_right', '▶')}
+      {key(
+        'nav_back',
+        <span class="key-stack">
+          ↩<small>{t('remote.back')}</small>
+        </span>,
+        'key-back'
+      )}
+      {key('nav_down', '▼')}
+      <span />
+    </div>
+  );
+}
+
 export function Remote() {
   const s = useStore();
   const [sleepOpen, setSleepOpen] = useState(false);
@@ -145,6 +175,7 @@ export function Remote() {
     const cont = s.home?.rows.find((r) => r.id === 'continue_watching')?.items.slice(0, 6) ?? [];
     return (
       <div class="screen remote">
+        <DPad />
         <Empty icon="💤" title={t('remote.nothing')} hint={t('remote.nothing_hint')} />
         {cont.length > 0 && (
           <>
@@ -231,6 +262,8 @@ export function Remote() {
           😴
         </button>
       </div>
+
+      <DPad />
 
       {sleepOpen && (
         <div class="sleep">

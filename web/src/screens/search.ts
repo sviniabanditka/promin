@@ -27,11 +27,15 @@ import { buildFooter } from '../ui/shell';
 import { buildCard } from '../ui/card';
 import { buildState } from '../ui/state';
 import { iconEl, ICON_SEARCH } from '../ui/icons';
-import { openTitle } from './nav';
+import { openTitle, searchPath } from './nav';
 
 const MAX_SUGGESTIONS = 6;
 
-export function mountSearch(container: HTMLElement): Screen {
+export interface SearchParams {
+  q?: string; // deep link: run this query on mount
+}
+
+export function mountSearch(container: HTMLElement, params?: SearchParams): Screen {
   container.className += ' search-screen';
 
   const background = new Background();
@@ -327,9 +331,15 @@ export function mountSearch(container: HTMLElement): Screen {
   }
 
   // Fill the field from a history entry / suggestion and search right away.
+  // Keep the route in step with the query so a reload / shared link reruns it.
+  function syncPath(): void {
+    router.setPath(container, searchPath(query));
+  }
+
   function applyQuery(q: string): void {
     keyboard.setValue(q);
     query = q;
+    syncPath();
     if (debounce) window.clearTimeout(debounce);
     if (query.trim().length < 1) {
       showHistory();
@@ -341,6 +351,7 @@ export function mountSearch(container: HTMLElement): Screen {
 
   function scheduleSearch(): void {
     if (debounce) window.clearTimeout(debounce);
+    syncPath();
     const q = query.trim();
     if (q.length < 1) {
       spinner.classList.remove('is-active');
@@ -406,6 +417,7 @@ export function mountSearch(container: HTMLElement): Screen {
   showHistory();
   registerControllers();
   keyboard.focus();
+  if (params && params.q && params.q.trim()) applyQuery(params.q.trim());
 
   return {
     destroy: function () {

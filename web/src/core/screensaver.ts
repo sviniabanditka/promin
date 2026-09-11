@@ -448,6 +448,12 @@ export function init(): void {
   schedule();
 }
 
+// Input that never reaches the window listeners (a d-pad press relayed from
+// the Telegram bot / Mini App): dismiss the screensaver and re-arm the timer.
+export function activity(): void {
+  onActivity();
+}
+
 // Re-arm after the timeout setting changes (settings screen calls this).
 export function reschedule(): void {
   schedule();

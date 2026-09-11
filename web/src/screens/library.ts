@@ -115,6 +115,7 @@ export function mountLibrary(container: HTMLElement): ScreenInstance {
   let lanes: Lane[] = [];
   let active = 0;
   let destroyed = false;
+  let paused = false;
   // The user has moved focus themselves (rail up/down) since this load started —
   // buildLanes then must NOT yank focus into lane 0 when the data finally lands.
   let touched = false;
@@ -254,6 +255,9 @@ export function mountLibrary(container: HTMLElement): ScreenInstance {
     // Downloads (torrents moved off the rail into the Library).
     addLane(t('menu.torrents'), [moreTile(t('catalog.more'), function () { openTorrents(); })]);
 
+    // Hidden under a pushed screen (deep link to a playlist / bookmarks lands
+    // before the lanes load): leave the controller alone, resume() takes it.
+    if (paused) return;
     Controller.add('content', contentController);
     if (!lanes.length) {
       Controller.toggle('menu'); // nothing focusable — park on the rail
@@ -335,7 +339,11 @@ export function mountLibrary(container: HTMLElement): ScreenInstance {
       destroyed = true;
       head.destroy();
     },
+    pause: function () {
+      paused = true;
+    },
     resume: function () {
+      paused = false;
       // 'content' was overwritten by a pushed screen (title/playlist items);
       // rebuild from fresh data so a just-watched item / new playlist shows.
       menu.activate();

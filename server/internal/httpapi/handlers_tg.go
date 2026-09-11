@@ -26,6 +26,8 @@ var remoteActions = map[string]bool{
 	"toggle_play": true, "seek": true, "seek_to": true, "prev": true, "next": true, "set_local": true,
 	"mute": true, "night": true, "sleep": true,
 	"set_voice": true, "set_subtitle": true, "volume": true,
+	// D-pad relayed to the TV UI (works on any screen, not just the player).
+	"nav_up": true, "nav_down": true, "nav_left": true, "nav_right": true, "nav_ok": true, "nav_back": true,
 }
 
 // login: POST /api/v1/tg/auth {init_data, platform?} → {token, user:{id, login}}.

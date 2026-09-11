@@ -248,7 +248,9 @@ export interface AuthUser {
   login: string;
 }
 
-export type RemoteAction = 'toggle_play' | 'seek' | 'seek_to' | 'prev' | 'next' | 'mute' | 'night' | 'sleep' | 'volume';
+export type RemoteAction = 'toggle_play' | 'seek' | 'seek_to' | 'prev' | 'next' | 'mute' | 'night' | 'sleep' | 'volume' | NavAction;
+// D-pad relayed to the TV UI: works on every screen, not only in the player.
+export type NavAction = 'nav_up' | 'nav_down' | 'nav_left' | 'nav_right' | 'nav_ok' | 'nav_back';
 export type RemoteStrAction = 'set_voice' | 'set_subtitle';
 export interface OpenCmd {
   tmdb_id: number;

@@ -23,7 +23,7 @@ const pageSize = 5
 //	page:<n>                          page n of this message's listing
 //	dev:<device_id>                   device picked for the chat's pending action
 //	home:<row_id>                     show a home row ("what to watch")
-//	rc:<action>                       remote: play|back|fwd|prev|next|mute|night|sleep
+//	rc:<action>                       remote: up|down|left|right|ok|bk (D-pad) | play|back|fwd|prev|next|mute|night|sleep
 //	lang:<code>                       set interface language
 //	unlink:ask|yes|no
 type callback struct {
@@ -249,7 +249,7 @@ func homeMenu(rows []catalog.Row) *InlineKeyboardMarkup {
 // RemotePayload is the sync.EventRemote payload.
 type RemotePayload struct {
 	DeviceID string  `json:"device_id"`
-	Action   string  `json:"action"` // toggle_play | seek | seek_to | prev | next | mute | night | sleep | set_local | set_voice | set_subtitle | volume
+	Action   string  `json:"action"` // nav_up | nav_down | nav_left | nav_right | nav_ok | nav_back | toggle_play | seek | seek_to | prev | next | mute | night | sleep | set_local | set_voice | set_subtitle | volume
 	Value    float64 `json:"value"`  // seek: seconds (±30); seek_to: absolute seconds; sleep: minutes; volume: 0..100
 	// set_local: a device-local TV setting (legacy_tv_mode | reduce_motion |
 	// debug_mode) and its new value ("true" | "false").
@@ -261,6 +261,12 @@ type RemotePayload struct {
 
 // remoteActions maps rc:<key> to the published action/value.
 var remoteActions = map[string]RemotePayload{
+	"up":    {Action: "nav_up"},
+	"down":  {Action: "nav_down"},
+	"left":  {Action: "nav_left"},
+	"right": {Action: "nav_right"},
+	"ok":    {Action: "nav_ok"},
+	"bk":    {Action: "nav_back"},
 	"play":  {Action: "toggle_play"},
 	"back":  {Action: "seek", Value: -30},
 	"fwd":   {Action: "seek", Value: 30},
@@ -283,7 +289,14 @@ func remoteKeyboard(lang string) *InlineKeyboardMarkup {
 	rc := func(text, key string) InlineKeyboardButton {
 		return InlineKeyboardButton{Text: text, CallbackData: callback{Kind: "rc", Arg: key}.String()}
 	}
+	// D-pad first: after "open on TV" the title page is up and the user still
+	// has to pick a source / episode — arrows + OK + Back do that without the
+	// physical remote. Transport rows below act on the player once it runs.
 	return &InlineKeyboardMarkup{InlineKeyboard: [][]InlineKeyboardButton{
+		{rc("▲", "up")},
+		{rc("◀", "left"), rc("OK", "ok"), rc("▶", "right")},
+		{rc("▼", "down")},
+		{rc(tr(lang, "remote.back"), "bk")},
 		{rc("⏪ 30", "back"), rc("⏯", "play"), rc("⏩ 30", "fwd")},
 		{rc("⏮", "prev"), rc("⏭", "next")},
 		{rc("🔇", "mute"), rc(tr(lang, "remote.night"), "night"), rc(tr(lang, "remote.sleep"), "sleep")},

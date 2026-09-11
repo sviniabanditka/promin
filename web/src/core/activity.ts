@@ -27,6 +27,9 @@ export type RenderFn = (container: HTMLElement) => ScreenInstance | void;
 interface Entry {
   container: HTMLElement;
   screen: ScreenInstance | null;
+  // Route of this screen ("/title/tv/1399"); the router mirrors the top
+  // entry's path into location.hash. undefined = keep the hash as it is (PIN).
+  path?: string;
 }
 
 export class Activity {
@@ -40,7 +43,7 @@ export class Activity {
     this.maxActivities = maxActivities;
   }
 
-  push(render: RenderFn): HTMLElement {
+  push(render: RenderFn, path?: string): HTMLElement {
     const prev = this.stack[this.stack.length - 1];
     if (prev) {
       if (prev.screen && prev.screen.pause) {
@@ -77,7 +80,7 @@ export class Activity {
       }
       throw err;
     }
-    this.stack.push({ container: container, screen: screen });
+    this.stack.push({ container: container, screen: screen, path: path });
 
     while (this.stack.length > this.maxActivities) {
       // Evict the second-oldest, never index 0: the root (Home) must survive so
@@ -92,14 +95,14 @@ export class Activity {
     return container;
   }
 
-  replaceRoot(render: RenderFn): HTMLElement {
+  replaceRoot(render: RenderFn, path?: string): HTMLElement {
     while (this.stack.length) {
       const entry = this.stack.pop();
       if (entry) {
         this.destroyEntry(entry);
       }
     }
-    return this.push(render);
+    return this.push(render, path);
   }
 
   back(): boolean {
@@ -122,6 +125,22 @@ export class Activity {
 
   size(): number {
     return this.stack.length;
+  }
+
+  // Route of the visible screen ('' when it has none).
+  topPath(): string {
+    const top = this.stack[this.stack.length - 1];
+    return top && top.path ? top.path : '';
+  }
+
+  // A screen updates its own route (search query changed). Ignored unless the
+  // caller's container is the visible top — a blur handler firing while a
+  // title is being pushed must not rename the title's route.
+  setTopPath(container: HTMLElement, path: string): boolean {
+    const top = this.stack[this.stack.length - 1];
+    if (!top || top.container !== container) return false;
+    top.path = path;
+    return true;
   }
 
   private destroyEntry(entry: Entry): void {

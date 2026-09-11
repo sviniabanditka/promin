@@ -527,7 +527,7 @@ func (b *Bot) handleCallback(ctx context.Context, cq *CallbackQuery) {
 		b.mu.Unlock()
 		b.publish(userID, *dev, act)
 		answer(tr(lang, "remote.sent"))
-		edit(b.doneText(lang, *dev, act), nil)
+		edit(b.doneText(lang, *dev, act), b.doneKeyboard(lang, act))
 
 	case "home":
 		home, err := b.catalog.Home(ctx, lang)
@@ -631,7 +631,16 @@ func (b *Bot) dispatch(ctx context.Context, cq *CallbackQuery, userID int64, lan
 		return
 	}
 	_ = b.api.AnswerCallback(ctx, cq.ID, "")
-	b.reply(ctx, chatID, b.doneText(lang, *target, act), nil)
+	b.reply(ctx, chatID, b.doneText(lang, *target, act), b.doneKeyboard(lang, act))
+}
+
+// doneKeyboard is what follows "Opened on <TV>": the remote, so the user can
+// pick a source / episode on the title page without the physical remote.
+func (b *Bot) doneKeyboard(lang string, act *action) *InlineKeyboardMarkup {
+	if act.kind == "remote" {
+		return nil
+	}
+	return remoteKeyboard(lang)
 }
 
 func (b *Bot) doneText(lang string, dev promsync.DeviceInfo, act *action) string {

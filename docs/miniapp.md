@@ -77,7 +77,16 @@ WebSocket. Writes are throttled server-side to one publish per second per device
 { "device_id": "...", "remote": { "action": "set_voice", "str": "track:1" } }
 { "device_id": "...", "remote": { "action": "set_subtitle", "str": "sub:0" } }
 { "device_id": "...", "remote": { "action": "volume", "value": 65 } }
+{ "device_id": "...", "remote": { "action": "nav_up" } }
 ```
+
+`nav_up | nav_down | nav_left | nav_right | nav_ok | nav_back` are a D-pad for
+the TV UI itself: the TV feeds them into the same `Controller.move / enter /
+back` entry points its remote keys reach, so they work on every screen (title
+page, source and episode picker, player menus), and they wake the screensaver
+like a real key. After a successful `open` the Mini App shows this D-pad in a
+bottom sheet on top of whatever screen it is on: the TV is now on the title
+page and the source / episode still have to be picked.
 
 `set_voice` / `set_subtitle` take an id from the device's `PlayerState.voices` /
 `.subtitles` (`"off"` disables subtitles); the TV runs the same code path as the
@@ -163,7 +172,9 @@ from there (SPA fallback to `index.html`). `index.html` loads
 - **Home** — target-TV chip listing only devices that are online now (hidden with one device), "Now playing" card with
   a live progress bar and ⏯, "Continue" row (`GET /api/v1/sync/bootstrap` /
   timecodes), search field, rows from `GET /api/v1/catalog/home`.
-- **Search** — `GET /api/v1/catalog/search?q=` with posters.
+- **Search** — `GET /api/v1/catalog/search?q=` with posters. Recent queries
+  (last 10, `localStorage`) are shown as chips while the field is empty; a query
+  is remembered when the user presses Enter or opens a result.
 - **Title** — `GET /api/v1/catalog/title/{tmdb_id}?type=` (+ `season=` for
   episodes): poster, overview, rating, ★ bookmark, seasons → episode list, each
   "▶ On TV" (send `open` with season/episode); "▶ Continue" when a timecode
@@ -172,7 +183,9 @@ from there (SPA fallback to `index.html`). `index.html` loads
   ⏮ ⏪30 ⏯ ⏩30 ⏭, a chip row 🎙 audio / 💬 subtitles / 🔊 volume (each opens a
   sheet: the list with the current row marked, or a 0..100 slider debounced
   150 ms into `volume`; chips are disabled until the TV has sent the lists),
-  🔇, 🌙 night, 😴 sleep, "next episode".
+  🔇, 🌙 night, 😴 sleep, "next episode", and the D-pad (▲ ◀ OK ▶ ▼ + Back)
+  for the TV UI. With nothing playing the tab shows the D-pad and the
+  "Continue" rows.
 - **Library** — bookmarks (`/api/v1/bookmarks`), playlists, history — each item
   opens Title.
 - **Settings** — language (`PUT /api/v1/settings/lang`), devices

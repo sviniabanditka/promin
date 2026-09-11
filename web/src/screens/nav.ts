@@ -34,17 +34,17 @@ export function openLogin(): void {
 
 export function openMenu(key: MenuKey): void {
   if (key === 'home') {
-    router.replaceRoot(mountHome);
+    router.replaceRoot(mountHome, '/');
   } else if (key === 'catalog') {
-    router.replaceRoot(mountCatalog);
+    router.replaceRoot(mountCatalog, '/catalog');
   } else if (key === 'search') {
-    router.replaceRoot(mountSearch);
+    router.replaceRoot(mountSearch, '/search');
   } else if (key === 'library') {
     // Library (favourites + playlists + continue) requires a session.
-    if (isLogged()) router.replaceRoot(mountLibrary);
+    if (isLogged()) router.replaceRoot(mountLibrary, '/library');
     else router.replaceRoot(mountPinEntry);
   } else if (key === 'settings') {
-    router.replaceRoot(mountSettings);
+    router.replaceRoot(mountSettings, '/settings');
   } else {
     toast({ kind: 'info', text: t('settings.soon') });
   }
@@ -54,7 +54,7 @@ export function openMenu(key: MenuKey): void {
 export function openDevices(): void {
   router.push(function (container: HTMLElement) {
     return mountDevices(container);
-  });
+  }, '/devices');
 }
 
 // Downloads screen, pushed from the Library "Завантаження" tile (torrents moved
@@ -62,21 +62,21 @@ export function openDevices(): void {
 export function openTorrents(): void {
   router.push(function (container: HTMLElement) {
     return mountTorrents(container);
-  });
+  }, '/torrents');
 }
 
 // Open one playlist's items grid (pushed from the playlists / library screen).
 export function openPlaylist(id: number, name: string): void {
   router.push(function (container: HTMLElement) {
     return mountPlaylistItems(container, { id: id, name: name });
-  });
+  }, '/playlist/' + id);
 }
 
 // Full favourites grid, pushed from the Library "Обране" lane's More tile.
 export function openBookmarks(): void {
   router.push(function (container: HTMLElement) {
     return mountBookmarks(container);
-  });
+  }, '/bookmarks');
 }
 
 // Full playlists CRUD screen, pushed from the Library "Плейлисти" lane's
@@ -84,7 +84,7 @@ export function openBookmarks(): void {
 export function openPlaylistsManage(): void {
   router.push(function (container: HTMLElement) {
     return mountPlaylists(container);
-  });
+  }, '/playlists');
 }
 
 // Open the full catalog scoped to a home-lane category (pushed from a lane's
@@ -92,7 +92,7 @@ export function openPlaylistsManage(): void {
 export function openCatalog(category: string): void {
   router.push(function (container: HTMLElement) {
     return mountCatalog(container, { category: category });
-  });
+  }, '/catalog/' + encodeURIComponent(category));
 }
 
 // resume: open the title AND immediately continue playback from the saved
@@ -109,5 +109,116 @@ export function openTitle(type: 'movie' | 'tv', id: number, resume?: boolean, se
       episode: episode != null ? episode : undefined,
       autoplay: !!autoplay,
     });
-  });
+  }, titlePath(type, id, season, episode));
+}
+
+// Route of a title screen; an episode deep link carries ?s=&e=.
+export function titlePath(type: 'movie' | 'tv', id: number, season?: number | null, episode?: number | null): string {
+  let p = '/title/' + type + '/' + id;
+  if (episode != null) p += '?s=' + (season != null ? season : 1) + '&e=' + episode;
+  return p;
+}
+
+// Route of the search screen for a query.
+export function searchPath(q: string): string {
+  const term = (q || '').trim();
+  return '/search' + (term ? '?q=' + encodeURIComponent(term) : '');
+}
+
+function parseQuery(qs: string): { [k: string]: string } {
+  const out: { [k: string]: string } = {};
+  const parts = qs.split('&');
+  for (let i = 0; i < parts.length; i++) {
+    if (!parts[i]) continue;
+    const eq = parts[i].indexOf('=');
+    const k = eq >= 0 ? parts[i].slice(0, eq) : parts[i];
+    const v = eq >= 0 ? parts[i].slice(eq + 1) : '';
+    try {
+      out[decodeURIComponent(k)] = decodeURIComponent(v.replace(/\+/g, ' '));
+    } catch (e) {
+      /* malformed escape — skip the pair */
+    }
+  }
+  return out;
+}
+
+function intOrNull(v: string | undefined): number | null {
+  if (v == null || v === '') return null;
+  const n = parseInt(v, 10);
+  return isNaN(n) ? null : n;
+}
+
+// Open the screen a route names, rebuilding the stack from scratch: the
+// section's menu-level screen as the root plus the detail screen on top, so
+// Back from a deep-linked title lands on Home like it does when browsing.
+// Accepts a bare path or a location.hash ("#/title/tv/1399?s=1&e=3").
+// Anything unknown or malformed opens Home. Callers must have checked
+// isLogged() — the PIN gate is routed by app.ts.
+export function openRoute(raw: string): void {
+  const s = (raw || '').replace(/^#/, '').replace(/^\/+/, '');
+  const qi = s.indexOf('?');
+  const path = qi >= 0 ? s.slice(0, qi) : s;
+  const q = parseQuery(qi >= 0 ? s.slice(qi + 1) : '');
+  const seg = path.split('/');
+  let arg = '';
+  try {
+    arg = decodeURIComponent(seg[1] || '');
+  } catch (e) {
+    arg = '';
+  }
+
+  switch (seg[0]) {
+    case 'title': {
+      const type = seg[1] === 'tv' ? 'tv' : 'movie';
+      const id = parseInt(seg[2] || '', 10);
+      if (!(id > 0)) break;
+      router.replaceRoot(mountHome, '/');
+      openTitle(type, id, false, intOrNull(q.s), intOrNull(q.e));
+      return;
+    }
+    case 'catalog':
+      if (arg) {
+        router.replaceRoot(function (container: HTMLElement) {
+          return mountCatalog(container, { category: arg });
+        }, '/catalog/' + encodeURIComponent(arg));
+      } else {
+        router.replaceRoot(mountCatalog, '/catalog');
+      }
+      return;
+    case 'search':
+      router.replaceRoot(function (container: HTMLElement) {
+        return mountSearch(container, { q: q.q || '' });
+      }, searchPath(q.q || ''));
+      return;
+    case 'library':
+      openMenu('library');
+      return;
+    case 'settings':
+      openMenu('settings');
+      return;
+    case 'playlist': {
+      const id = parseInt(seg[1] || '', 10);
+      if (!(id > 0)) break;
+      openMenu('library');
+      openPlaylist(id, '');
+      return;
+    }
+    case 'bookmarks':
+      openMenu('library');
+      openBookmarks();
+      return;
+    case 'playlists':
+      openMenu('library');
+      openPlaylistsManage();
+      return;
+    case 'torrents':
+      openMenu('library');
+      openTorrents();
+      return;
+    case 'devices':
+      openMenu('settings');
+      openDevices();
+      return;
+  }
+  router.replaceRoot(mountHome, '/');
 }

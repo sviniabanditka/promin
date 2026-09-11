@@ -5,11 +5,11 @@ import { pickLang, t } from './i18n';
 import { back, navigate, TABS, useRoute, type Screen } from './router';
 import { Home } from './screens/home';
 import { Library } from './screens/library';
-import { Remote } from './screens/remote';
+import { DPad, Remote } from './screens/remote';
 import { Search } from './screens/search';
 import { Settings } from './screens/settings';
 import { Title } from './screens/title';
-import { chooseDevice, getState, loadBootstrap, loadHiddenIds, refreshDevices, setLang, setState, targetDevice, useStore, visibleDevices } from './store';
+import { chooseDevice, closePad, getState, loadBootstrap, loadHiddenIds, refreshDevices, setLang, setState, targetDevice, useStore, visibleDevices } from './store';
 import { applyTheme, haptic, inTelegram, tg } from './tg';
 import { Empty, Sheet } from './ui';
 import { startWs, stopWs } from './ws';
@@ -186,6 +186,20 @@ function App() {
           </button>
         ))}
       </nav>
+      <Sheet open={s.padOpen} title={t('remote.pad')} onClose={closePad}>
+        <DPad />
+        {route.screen !== 'remote' && (
+          <button
+            class="btn btn-ghost"
+            onClick={() => {
+              closePad();
+              navigate('/remote', true);
+            }}
+          >
+            {t('remote.full')}
+          </button>
+        )}
+      </Sheet>
       {s.toast && <div class="toast">{s.toast}</div>}
     </div>
   );

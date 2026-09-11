@@ -29,6 +29,7 @@ export interface State {
   queue: QueueItem[] | null;
   settings: Record<string, string>;
   toast: string | null;
+  padOpen: boolean; // D-pad sheet, opened after "open on TV" so the source/episode can be picked from the phone
 }
 
 const DEVICE_KEY = 'promin_tg_device';
@@ -55,6 +56,7 @@ let state: State = {
   queue: null,
   settings: {},
   toast: null,
+  padOpen: false,
 };
 
 const subs = new Set<() => void>();
@@ -309,9 +311,17 @@ async function sendTo(body: (deviceId: string) => api.SendBody, okMsg?: string):
   }
 }
 
-export function sendOpen(open: OpenCmd): Promise<boolean> {
+export async function sendOpen(open: OpenCmd): Promise<boolean> {
   const dev = targetDevice(state);
-  return sendTo((device_id) => ({ device_id, open }), dev ? t('title.sent', { name: dev.name }) : undefined);
+  const ok = await sendTo((device_id) => ({ device_id, open }), dev ? t('title.sent', { name: dev.name }) : undefined);
+  // The TV now shows the title page; the rest (source, episode, play) is
+  // D-pad work, so offer it right here instead of making the user find the remote.
+  if (ok) setState({ padOpen: true });
+  return ok;
+}
+
+export function closePad(): void {
+  setState({ padOpen: false });
 }
 
 export function sendRemote(action: RemoteAction, value?: number): Promise<boolean> {

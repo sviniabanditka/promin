@@ -42,7 +42,7 @@ The floor is the pre-2022 Samsung webview (Chromium ~47) and webOS 3 (Chromium 3
 6. `installGlobalHooks()` + `report('boot', viewportInfo())` — diagnostics.
 7. `Controller.initInput()` — global keydown/keyup; `initPointer()` — mouse/touch/wheel/pointer layers.
 8. `setDeadSessionHook(gateToPin)` — any 401 on an authed call clears the token and remounts the PIN screen.
-9. `router.init(root, exitToast)`, `screensaver.init()`, then `routeInitial()`: no token → PIN screen; token → `sync.start()`, mount Home, `syncFromServer()` pulls server settings and re-mounts Home if the server language differs.
+9. `router.init(root, exitToast)`, `screensaver.init()`, then `routeInitial()`: no token → PIN screen (the URL hash is left alone, so the deep link survives the gate and is opened after login); token → `sync.start()`, `openRoute(location.hash)`, `syncFromServer()` pulls server settings and re-opens the current route if the server language differs.
 
 ## Navigation model
 
@@ -57,6 +57,23 @@ Three layers, all in `web/src/core`:
 Screens register modes with `Controller.add(name, calls)` and switch with `Controller.toggle(name)`; a mode's `toggle` handler typically calls `Controller.collectionSet(rootEl)` and `Controller.collectionFocus(el, rootEl)`. Modes are removed with `Controller.remove` when a modal or the player is destroyed.
 
 Screens live on an **Activity stack** (`core/activity.ts`, `core/router.ts`): `push()` hides the previous screen (paused, DOM kept) and mounts a new container; `back()` destroys the top and resumes the one beneath; `replaceRoot()` tears everything down for a menu-level screen. At most 5 activities are kept; the second-oldest is evicted, never the root. Between `push()` and the new screen's first `toggle`, a throwaway `activity_pending` mode owns input so an OK during a spinner cannot reach the hidden screen. `back()` at the root shows an exit toast — the host platform handles real exit.
+
+A screen that loads asynchronously and can end up hidden under a pushed screen before its data arrives (Home under a title opened from the bot or a deep link, Library under a deep-linked playlist, a title under a second title) must not touch the Controller from that late callback: it would steal focus from the visible screen and overwrite its mode names. Home, Library and Title keep a `paused` flag (set in `pause()`, cleared in `resume()`) and only remember what to activate; `resume()` activates it.
+
+## Routes (URL hash)
+
+Every screen carries a route; the visible screen's route is mirrored into `location.hash` with `history.replaceState` (never `pushState`, so the browser history stays flat and the platform Back key keeps driving the app's own stack). A reload or a shared link re-opens the same screen through `screens/nav.ts openRoute()`, which rebuilds the stack as the section's menu-level screen plus the detail screen on top (Back from a deep-linked title lands on Home).
+
+| Route | Screen |
+|---|---|
+| `#/` | Home |
+| `#/catalog`, `#/catalog/<category>` | Catalog (a home-lane category as the filter preset) |
+| `#/search`, `#/search?q=<query>` | Search; the query is re-run on load and tracked as it changes |
+| `#/library`, `#/bookmarks`, `#/playlists`, `#/playlist/<id>`, `#/torrents` | Library and the screens it pushes |
+| `#/settings`, `#/devices` | Settings and the device manager |
+| `#/title/<movie|tv>/<tmdb_id>`, `…?s=<season>&e=<episode>` | Title page; with `s`/`e` the watch modal opens on that episode |
+
+Unknown or malformed routes open Home. The Mini App at `/tg/` has its own hash router (docs/miniapp.md).
 
 ## Input layers
 

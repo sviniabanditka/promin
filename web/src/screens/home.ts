@@ -6,7 +6,7 @@
 // Phase 0; only the data source and card DTO changed.
 
 import { Navigator } from '../core/nav';
-import Controller, { on } from '../core/controller';
+import Controller, { ControllerCalls, on } from '../core/controller';
 import { Scroll } from '../core/scroll';
 import { t } from '../core/i18n';
 import { ScreenInstance } from '../core/activity';
@@ -132,7 +132,8 @@ function buildLine(row: HomeRow, lineIndex: number, handlers: LineHandlers): Lin
 interface Content {
   el: HTMLElement;
   load: () => void;
-  activate: () => void;
+  pause: () => void;
+  resume: () => void;
   destroy: () => void;
 }
 
@@ -142,6 +143,13 @@ function buildContent(onBackdrop: (backdrop: string) => void): Content {
   let lines: Line[] = [];
   let active = 0;
   let destroyed = false;
+  // Hidden under a pushed screen (a title opened from the bot / a deep link
+  // lands before getHome() resolves). The late render must not register or
+  // toggle 'content' then — it would steal focus from the visible title and
+  // clobber its controller names. resume() does it once we're on top again.
+  let paused = false;
+  // Controller the visible content wants: the lanes, or the error/retry box.
+  let calls: ControllerCalls | null = null;
 
   function focusLine(index: number): void {
     lines[index].toggle();
@@ -188,8 +196,13 @@ function buildContent(onBackdrop: (backdrop: string) => void): Content {
     },
   };
 
+  // Until data arrives the lane controller stands in (no lanes → no focus,
+  // but Left still reaches the rail), so a resume() mid-load owns input.
+  calls = contentController;
+
   function activate(): void {
-    Controller.add('content', contentController);
+    if (!calls) return;
+    Controller.add('content', calls);
     Controller.toggle('content');
   }
 
@@ -228,7 +241,8 @@ function buildContent(onBackdrop: (backdrop: string) => void): Content {
     }
 
     if (lines.length) {
-      activate();
+      calls = contentController;
+      if (!paused) activate();
     } else {
       // Rows came back but every one was empty (all items filtered out) → no
       // lane, no controller, no focus. Show the error/retry state instead of a
@@ -264,7 +278,7 @@ function buildContent(onBackdrop: (backdrop: string) => void): Content {
     center.appendChild(box);
     wrap.appendChild(center);
 
-    Controller.add('content', {
+    calls = {
       toggle: function () {
         Controller.collectionSet(box);
         Controller.collectionFocus(false, box);
@@ -275,8 +289,8 @@ function buildContent(onBackdrop: (backdrop: string) => void): Content {
       back: function () {
         Controller.toggle('menu');
       },
-    });
-    Controller.toggle('content');
+    };
+    if (!paused) activate();
   }
 
   function load(): void {
@@ -300,7 +314,13 @@ function buildContent(onBackdrop: (backdrop: string) => void): Content {
   return {
     el: wrap,
     load: load,
-    activate: activate,
+    pause: function () {
+      paused = true;
+    },
+    resume: function () {
+      paused = false;
+      activate();
+    },
     destroy: function () {
       destroyed = true;
     },
@@ -335,9 +355,12 @@ export function mountHome(container: HTMLElement): ScreenInstance {
       head.destroy();
       content.destroy();
     },
+    pause: function () {
+      content.pause();
+    },
     resume: function () {
       menu.activate();
-      content.activate();
+      content.resume();
     },
   };
 }
