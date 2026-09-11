@@ -97,3 +97,42 @@ Rough effort: 1–2 weeks to MVP; ongoing maintenance is the real cost.
 
 Go/no-go after the one-week extraction test from the node. If it goes,
 build in the order above; SponsorBlock and search first, subscriptions second.
+
+## Why not extract and play on the TV itself?
+
+That is what SmartTube does, and it would sidestep the datacenter-IP problem
+entirely: media URLs are bound to the IP that called `/player`, so if the TV
+calls it, the TV can download. Three walls stand in the way *in our runtime*
+— a web page inside Media Station X on Chromium ~47:
+
+1. **CORS.** InnerTube does not send `Access-Control-Allow-Origin` for foreign
+   origins; the browser withholds the response from a promin.club page. No
+   JSONP, no media-element trick returns JSON. Proxying `/player` through our
+   server defeats the purpose (URLs then bind to the server IP → 403 on the
+   TV). MSX does not relax the browser's origin policy.
+2. **Player challenge + BotGuard.** The `n`/signature solver must execute
+   pieces of YouTube's `base.js`; yt-dlp now ships those solvers as separate
+   JS scripts, which a browser could run. BotGuard (PO token) is designed for
+   browsers. But a 2016 engine lacks APIs both may need — unverified.
+3. **Playback.** 1080p is separate video and audio; without a server mux
+   that means DASH: MSE with two source buffers (old shaka/dash.js on
+   Chromium 47) or the TV's native pipeline (Tizen AVPlay and webOS both play
+   DASH natively — but only from a packaged app).
+
+All three disappear if Promin ships as a **packaged Tizen (.wgt) / webOS
+(.ipk) app**: packaged web apps declare `access origin="*"` and make
+cross-origin requests freely, and get AVPlay/DASH. That is how every
+third-party YouTube client on Samsung/LG works. The price is sideloading:
+Samsung developer mode with a yearly certificate, LG Developer Mode with its
+50-hour timer (or Homebrew with root) — the same bargain SmartTube users
+accept by installing an APK. A packaged app would also give Promin its own
+icon without MSX, which is a separate large project.
+
+Middle path without changing platform: a small **home box** (old phone,
+router, Pi) behind the household's residential IP running the extractor,
+tunnelled to the cluster; extraction and download leave from home, the TV
+stays in MSX, the server only muxes and serves. One more device to keep alive.
+
+Order of cheap checks: (1) the one-week yt-dlp test from the node; if the
+datacenter IP is challenged, (2) compare home box vs packaged app — the
+packaged app carries the bigger product upside.
