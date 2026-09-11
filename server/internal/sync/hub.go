@@ -117,11 +117,20 @@ func (h *Hub) Publish(userID int64, eventType string, payload any) Event {
 	return ev
 }
 
+// eventLogMax bounds the per-user journal by count as well as by age: a
+// client that pushes many events per second must not turn an hour of history
+// into hundreds of megabytes. A client whose cursor falls off the end gets
+// ok=false from Since and re-bootstraps, which is the designed fallback.
+const eventLogMax = 256
+
 func pruneLog(events []Event, now time.Time) []Event {
 	cutoff := now.Add(-eventLogTTL)
 	i := 0
 	for i < len(events) && events[i].at.Before(cutoff) {
 		i++
+	}
+	if over := len(events) - i - eventLogMax; over > 0 {
+		i += over
 	}
 	if i == 0 {
 		return events

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -47,7 +48,19 @@ func imgProxy(dataDir string, logger *slog.Logger) http.Handler {
 	var negMu sync.Mutex
 	negative := map[string]time.Time{} // disk path → expiry of a remembered 404
 
+	// The route is open (poster <img> tags carry no token) and every hit is
+	// written to the shared data volume forever, so an anonymous client could
+	// fill the disk that holds promin.db. Bound it three ways: a per-IP rate
+	// cap, a size cap on the cache directory (oldest files go first), and a
+	// cap on the remembered-404 map.
+	limiter := newIPLimiter(600, time.Minute) // a Home screen is ~120 posters
+	go sweepImgCache(filepath.Join(dataDir, "img"), imgCacheLimitBytes, logger)
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !limiter.allow(clientIP(r)) {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
 		rest := strings.TrimPrefix(r.URL.Path, "/img/")
 		size, file, ok := strings.Cut(rest, "/")
 		if !ok || size == "" || file == "" || strings.Contains(file, "..") || strings.Contains(file, "/") {
@@ -92,6 +105,9 @@ func imgProxy(dataDir string, logger *slog.Logger) http.Handler {
 		defer resp.Body.Close()
 		if resp.StatusCode == http.StatusNotFound {
 			negMu.Lock()
+			if len(negative) > 10000 {
+				negative = map[string]time.Time{} // ponytail: flush instead of LRU; entries are cheap to re-learn
+			}
 			negative[diskPath] = time.Now().Add(negativeTTL)
 			negMu.Unlock()
 			http.NotFound(w, r)
@@ -158,4 +174,56 @@ func serveImageStream(w http.ResponseWriter, file string, body io.Reader) {
 	imageHeaders(w, file)
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.Copy(w, body)
+}
+
+// imgCacheLimitBytes caps the on-disk poster cache. The catalog a household
+// actually browses is a few GB; the rest is churn.
+const imgCacheLimitBytes = 8 << 30
+
+// sweepImgCache deletes the oldest files under dir until the total is below
+// limit. Runs at start and hourly; a full walk of the cache is cheap next to
+// the disk it protects.
+func sweepImgCache(dir string, limit int64, logger *slog.Logger) {
+	for {
+		sweepImgCacheOnce(dir, limit, logger)
+		time.Sleep(time.Hour)
+	}
+}
+
+func sweepImgCacheOnce(dir string, limit int64, logger *slog.Logger) {
+	type f struct {
+		path string
+		size int64
+		mod  time.Time
+	}
+	var files []f
+	var total int64
+	_ = filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		files = append(files, f{p, info.Size(), info.ModTime()})
+		total += info.Size()
+		return nil
+	})
+	if total <= limit {
+		return
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].mod.Before(files[j].mod) })
+	target := limit * 8 / 10
+	removed := 0
+	for _, x := range files {
+		if total <= target {
+			break
+		}
+		if os.Remove(x.path) == nil {
+			total -= x.size
+			removed++
+		}
+	}
+	logger.Info("img cache swept", "removed", removed, "bytes_left", total)
 }

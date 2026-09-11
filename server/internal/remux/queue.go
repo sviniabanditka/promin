@@ -307,7 +307,10 @@ func (q *Queue) run(job *Job) {
 	// Create + publish the cancel BEFORE waiting on the sem, so a job stuck in
 	// the queue can still be interrupted (stopJob/shutdown) — otherwise its
 	// cancel is nil until it acquires a slot.
-	ctx, cancel := context.WithCancel(context.Background())
+	// Hard wall clock: a source that trickles bytes forever would otherwise
+	// hold one of the few ffmpeg slots indefinitely (per-read timeouts reset
+	// on every byte). Six hours covers any film plus a slow start.
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Hour)
 	job.mu.Lock()
 	job.cancel = cancel
 	job.mu.Unlock()

@@ -23,8 +23,15 @@ func (h *playerStateHandlers) set(w http.ResponseWriter, r *http.Request) {
 		Closed bool `json:"closed"`
 		Lists  bool `json:"lists"` // voices/subtitles present in this report
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	// A report is a few hundred bytes; the voice/subtitle lists a few dozen
+	// rows. Anything larger is stored per device in memory and fanned out to
+	// every phone, so cap it here rather than at the generic 1 MiB body limit.
+	if err := json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&req); err != nil {
 		writeBadRequest(w, "невірне тіло запиту")
+		return
+	}
+	if len(req.Title) > 300 || len(req.Voices) > 64 || len(req.Subtitles) > 64 {
+		writeBadRequest(w, "title ≤ 300, voices/subtitles ≤ 64")
 		return
 	}
 	dev := auth.TokenID(info.Session.Token)

@@ -48,11 +48,13 @@ type chatState struct {
 	lastDevAt  time.Time
 	linkFails  int       // wrong link codes from this chat
 	linkLocked time.Time // no link attempts accepted before this
+	unlinkedAt time.Time // last "not linked" reply — one per unlinkedReplyEvery
 }
 
 const (
-	linkMaxFails = 5
-	linkLockFor  = 15 * time.Minute
+	linkMaxFails       = 5
+	linkLockFor        = 15 * time.Minute
+	unlinkedReplyEvery = 10 * time.Minute
 )
 
 // OpenTitlePayload is the sync.EventOpenTitle payload.
@@ -244,7 +246,18 @@ func (b *Bot) handleMessage(ctx context.Context, m *Message) {
 
 	userID, err := b.repo.UserByChat(chatID)
 	if errors.Is(err, store.ErrNotFound) {
-		b.reply(ctx, chatID, tr(lang, "unlinked"), nil)
+		// Updates are handled one at a time; a stranger spamming the bot must
+		// not cost a Telegram round trip per message. One reply per window.
+		b.mu.Lock()
+		st := b.state(chatID)
+		recent := time.Since(st.unlinkedAt) < unlinkedReplyEvery
+		if !recent {
+			st.unlinkedAt = time.Now()
+		}
+		b.mu.Unlock()
+		if !recent {
+			b.reply(ctx, chatID, tr(lang, "unlinked"), nil)
+		}
 		return
 	}
 	if err != nil {

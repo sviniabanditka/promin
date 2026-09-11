@@ -1,6 +1,9 @@
 package sync
 
-import "github.com/sviniabanditka/promin/server/internal/store"
+import (
+	"errors"
+	"github.com/sviniabanditka/promin/server/internal/store"
+)
 
 // Watch queue (docs/miniapp.md): the phone lines items up, the TV pops the
 // head when what it plays has no next episode. Every mutation publishes
@@ -38,9 +41,19 @@ func (s *Service) publishQueue(userID int64) error {
 
 // AddQueue appends; a duplicate returns the existing item with created=false
 // and publishes nothing.
+// queueMax bounds a profile's watch queue: Move renumbers every row and every
+// mutation republishes the whole list, so an unbounded queue is a CPU, DB
+// and journal sink that one PIN can fill.
+const queueMax = 200
+
+var ErrQueueFull = errors.New("sync: queue full")
+
 func (s *Service) AddQueue(userID, tmdbID int64, mediaType string, season, episode *int) (QueueItemDTO, bool, error) {
 	if !validMediaType(mediaType) {
 		return QueueItemDTO{}, false, ErrInvalidMediaType
+	}
+	if cur, err := s.queue.List(userID); err == nil && len(cur) >= queueMax {
+		return QueueItemDTO{}, false, ErrQueueFull
 	}
 	if mediaType == "movie" {
 		season, episode = nil, nil

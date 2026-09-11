@@ -288,6 +288,13 @@ func (h *syncHandlers) putSetting(w http.ResponseWriter, r *http.Request) {
 		writeBadRequest(w, "невірне тіло запиту")
 		return
 	}
+	// A setting is a short scalar or the 15-entry search history; anything
+	// bigger is abuse — it would be persisted AND broadcast to every TV and
+	// kept in the in-memory event journal for an hour.
+	if len(key) > 64 || len(req.Value) > 4096 {
+		writeBadRequest(w, "key ≤ 64 байт, value ≤ 4 КіБ")
+		return
+	}
 	if err := h.svc.SetSetting(info.User.ID, key, req.Value); err != nil {
 		writeSyncError(w, err)
 		return
@@ -325,6 +332,8 @@ func writeSyncError(w http.ResponseWriter, err error) {
 		writeNotFound(w, "not_found", "запис не знайдено")
 	case errors.Is(err, sync.ErrInvalidMediaType):
 		writeBadRequest(w, "media_type має бути movie або tv")
+	case errors.Is(err, sync.ErrQueueFull):
+		writeError(w, http.StatusConflict, "queue_full", "черга заповнена (200 елементів)")
 	default:
 		writeInternal(w, err)
 	}
