@@ -64,7 +64,10 @@ function applyViewportScale(): void {
   fixCroppedViewport();
   const phone = document.documentElement.classList.contains('is-phone');
   if (phone) {
-    const dim = Math.min(window.innerWidth || PHONE_BASE, window.innerHeight || PHONE_BASE);
+    // screen.*, not innerWidth/innerHeight: the soft keyboard shrinks the inner
+    // height (landscape: to ~170px) and fired a resize that scaled the whole UI
+    // to the 0.75 floor under the user's finger while typing.
+    const dim = Math.min(screen.width || PHONE_BASE, screen.height || PHONE_BASE);
     const scale = Math.max(dim / PHONE_BASE, PHONE_FLOOR);
     document.documentElement.style.fontSize = BASE_ROOT_FONT_SIZE * scale + 'px';
     return;

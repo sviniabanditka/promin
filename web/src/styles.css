@@ -731,6 +731,7 @@ body.reduce-motion .toast__progress::after {
   text-align: center;
   min-height: 24rem;
   padding: 4rem 3.2rem;
+  width: 100%; /* a flex item of a wrap-row grid body (search/bookmarks) must still span the column to center */
 }
 .state > * + * { margin-top: 2rem; }
 .state__spinner {
@@ -1557,6 +1558,7 @@ body.reduce-motion .toast__progress::after {
 
 .search-screen { position: relative; width: 100%; height: 100%; overflow: hidden; }
 
+/* Two columns: query bar + on-screen keyboard on the left, results on the right. */
 .search-panel {
   position: fixed;
   z-index: 1;
@@ -1566,33 +1568,35 @@ body.reduce-motion .toast__progress::after {
   bottom: 0;
   padding: 3.2rem;
   display: flex;
+  flex-direction: row;
+  align-items: stretch;
+}
+
+.search-left {
+  flex: 0 0 50rem;
+  width: 50rem;
+  margin-right: 3.2rem;
+  display: flex;
   flex-direction: column;
 }
 
 @keyframes spin { 100% { transform: rotate(360deg); } }
 
-/* One full-width search bar at the top (icon · input · spinner), results below.
-   The bar is the D-pad focusable; the native <input> inside pops the system IME
-   on OK and shows the typed value — no separate query display. */
+/* Query bar: icon · text (or a native <input> on a phone) · spinner. Not a
+   D-pad target on TV — the keyboard below owns typing. */
 .search-bar {
   display: flex;
   flex-direction: row;
   align-items: center;
   height: 6.4rem;
   padding: 0 2rem;
-  margin-bottom: 2.8rem;
-  max-width: 92rem;
+  margin-bottom: 2.4rem;
   border-radius: 1.2rem;
   background: rgba(255, 255, 255, 0.06);
   border: 0.2rem solid rgba(255, 255, 255, 0.12);
 }
 .search-bar > * + * { margin-left: 1.4rem; }
 
-.search-bar.selector.focus {
-  border-color: #ffffff;
-  background: rgba(255, 255, 255, 0.12);
-  box-shadow: inset 0 0 0 0.2rem #ffffff;
-}
 
 .search-bar__ico {
   flex: 0 0 auto;
@@ -1614,6 +1618,33 @@ body.reduce-motion .toast__progress::after {
   border: 0;
   outline: none;
 }
+/* TV: the typed text with a blinking caret; muted placeholder while empty. */
+.search-input--text {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+}
+/* Shrinkable, end-aligned: a long query shows its tail and the caret. */
+.search-input__txt {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+.search-input--empty { color: var(--muted); }
+.search-caret {
+  flex: 0 0 auto;
+  width: 0.2rem;
+  height: 2.8rem;
+  margin-left: 0.3rem;
+  background: #ffffff;
+  animation: caret-blink 1s steps(2, start) infinite;
+}
+.search-input--empty .search-caret { background: var(--muted); }
+@keyframes caret-blink { to { visibility: hidden; } }
 .search-input::placeholder { color: var(--muted); }
 .search-input::-webkit-input-placeholder { color: var(--muted); } /* Chromium 47: unprefixed ::placeholder is Chrome 57+ */
 
@@ -1633,8 +1664,7 @@ body.reduce-motion .toast__progress::after {
 
 .keyboard {
   flex: 0 0 auto;
-  width: 54rem;
-  margin-right: 3.2rem;
+  width: 100%;
 }
 
 .keyboard__grid {
@@ -1650,8 +1680,9 @@ body.reduce-motion .toast__progress::after {
   justify-content: center;
 }
 
+/* 12 keys × (3.6 + 0.5) = 49.2rem fit the 50rem column. */
 .keyboard__row .key {
-  width: 3.9rem;
+  width: 3.6rem;
   height: 4.2rem;
   margin: 0.25rem;
   font-size: 1.8rem;
@@ -1690,125 +1721,73 @@ body.reduce-motion .toast__progress::after {
 
 .search-results {
   flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
 }
 
 .search-results > .scroll { width: 100%; height: 100%; }
 
+/* Top padding gives the focused card's lift room inside the clipping column;
+   the bottom padding lets the last row scroll clear of the edge. */
 .search-results__body {
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
+  padding: 1rem 0 6rem;
 }
 
+/* 4 columns in the 60rem results column: 4 × (13.6 + 1.2) = 59.2rem, with
+   0.8rem slack so sub-pixel rem values (1366px panels) cannot wrap the 4th. */
 .search-results__body .card {
-  width: 15.6rem;
-  margin-right: 1.4rem;
+  width: 13.6rem;
+  margin-right: 1.2rem;
   margin-bottom: 2rem;
 }
 
-/* History + suggestions occupy a full row in the flex-wrap body, so the card
-   grid wraps beneath them. */
-.search-history,
-.search-suggest {
+/* Recent queries (empty field): title, hint, chips. */
+.search-history {
   flex: 0 0 100%;
   width: 100%;
 }
 
-.search-history__head {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 1.4rem;
-}
-
-.search-history__title,
-.search-suggest__title {
+.search-history__title {
   font-size: 2rem;
   font-weight: bold;
   color: var(--ink-2);
 }
 
-.search-history__clear {
-  font-size: 1.6rem;
+.search-history__hint {
+  margin-top: 0.4rem;
+  margin-bottom: 1.4rem;
+  font-size: 1.5rem;
   color: var(--muted);
-  padding: 0.6rem 1.4rem;
-  border-radius: var(--radius-xs);
-  background-color: rgba(255, 255, 255, 0.06);
 }
 
-.search-history__list {
-  display: flex;
-  flex-direction: column;
-}
-
-.search-history__item {
-  display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  margin-bottom: 0.8rem;
-}
-
-.search-history__label {
-  flex: 1 1 auto;
-  font-size: 2rem;
-  color: #ffffff;
-  padding: 1rem 1.6rem;
-  border-radius: var(--radius-xs);
-  background-color: rgba(255, 255, 255, 0.06);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.search-history__del {
-  flex: 0 0 auto;
-  width: 4.4rem;
-  margin-left: 0.8rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.8rem;
-  color: var(--muted);
-  border-radius: var(--radius-xs);
-  background-color: rgba(255, 255, 255, 0.06);
-}
-
-.search-history__clear.focus,
-.search-history__label.focus,
-.search-history__del.focus,
-.search-suggest__chip.focus {
-  background-color: var(--surface-2);
-  box-shadow: inset 0 0 0 0.2rem var(--focus);
-  color: var(--ink);
-}
-
-.search-suggest {
-  margin-bottom: 1.6rem;
-}
-
-.search-suggest__title {
-  margin-bottom: 1rem;
-}
-
-.search-suggest__chips {
+.search-history__chips {
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
 }
 
-.search-suggest__chip {
+.search-history__chip {
   font-size: 1.8rem;
   color: #ffffff;
   padding: 0.8rem 1.6rem;
   margin: 0 0.8rem 0.8rem 0;
   border-radius: 2rem;
   background-color: rgba(255, 255, 255, 0.08);
-  max-width: 30rem;
+  max-width: 28rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.search-history__chip--clear { color: var(--muted); }
+
+.search-history__chip.focus {
+  background-color: var(--surface-2);
+  box-shadow: inset 0 0 0 0.2rem var(--focus);
+  color: var(--ink);
 }
 
 /* ================================================================ */
@@ -3039,7 +3018,6 @@ body.reduce-motion .toast__progress::after {
   flex-wrap: wrap;
 }
 
-.bookmarks-grid__body .state { width: 100%; }
 
 .bookmarks-grid__body .card {
   width: 15.6rem;
@@ -3382,6 +3360,7 @@ body.reduce-motion .state__spinner,
 body.reduce-motion .player__spinner-ring {
   animation: player-spin 0.9s linear infinite !important;
 }
+body.reduce-motion .search-caret { animation: none; }
 body.reduce-motion .search-bar__spinner.is-active {
   animation: spin 0.8s linear infinite !important;
 }
@@ -3523,6 +3502,14 @@ html.is-phone, html.is-phone body { touch-action: pan-x pan-y; }
 
 /* Every full-height screen container is fixed at left:8.4rem (the rail) with
    bottom:0. On phone: drop the left inset and lift the bottom above the tab bar. */
+/* Phone: bar over results, native field instead of the key grid (the phone has
+   its own keyboard), 1.6rem gutters so two 15.6rem cards fit a 390px screen,
+   and no long-press hint — touch has no long OK. */
+.is-phone .search-panel { flex-direction: column; padding: 1.6rem; }
+.is-phone .search-left { flex: 0 0 auto; width: 100%; margin: 0; }
+.is-phone .search-screen .keyboard { display: none; }
+.is-phone .search-results__body .card { width: 15.6rem; margin-right: 1.6rem; margin-bottom: 2.4rem; }
+.is-phone .search-history__hint { display: none; }
 .is-phone .content,
 .is-phone .catalog-grid,
 .is-phone .search-panel,

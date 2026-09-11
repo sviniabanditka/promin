@@ -146,7 +146,7 @@ Menu-level screens are reached from the left icon rail (`ui/menu.ts`: Home, Cata
 | PIN | `screens/pin.ts` | 6-digit dialer, hard gate; D-pad, mouse, touch and number keys. |
 | Home | `screens/home.ts` | Vertical stack of horizontal lanes from `GET /catalog/home`; focus tints the backdrop. |
 | Catalog | `screens/catalog.ts` | Filter bar (type/genre/year/sort) + paged flex-wrap grid, next page prefetched near the end. |
-| Search | `screens/search.ts` + `ui/keyboard.ts` | On-screen keyboard (uk/ru, latin, digits), 500 ms debounce, recent queries, suggestion chips. |
+| Search | `screens/search.ts` + `ui/keyboard.ts` | Query bar + on-screen keyboard (uk/ru, latin, digits) on the left, 4-column results on the right; 500 ms debounce. Empty field shows recent queries as chips (OK re-runs, long OK deletes; a query is remembered when a title is opened from its results). Physical keyboard types through a document listener; `html.is-phone` swaps the key grid for a native field. No host IME on TV — its confirm/blur timing differed per platform and left focus stranded. |
 | Title | `screens/title.ts` | Full-height card; "Watch"/"Torrents" open an in-place action sheet that resolves online sources or adds a torrent and opens the player. |
 | Library | `screens/library.ts` | Continue-watching, favourites, playlists lanes; links to `bookmarks.ts`, `playlists.ts`. |
 | Torrents | `screens/torrents.ts` | Active torrents on the server; play or delete. |

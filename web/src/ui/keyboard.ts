@@ -15,7 +15,7 @@
 
 import { Navigator } from '../core/nav';
 import Controller, { on } from '../core/controller';
-import { t } from '../core/i18n';
+import { t, getLang } from '../core/i18n';
 import { el, empty } from './dom';
 
 type LayoutId = 'uk' | 'ru' | 'lat';
@@ -42,14 +42,17 @@ const LAYOUT_ORDER: LayoutId[] = ['uk', 'ru', 'lat'];
 const LAYOUT_NEXT_LABEL: { [id: string]: string } = { uk: 'РУС', ru: 'QWERTY', lat: 'УКР' };
 const DIGITS: string[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
 
+// Last layout the user picked; before any pick, the one matching the UI
+// language (a Russian UI opening on ЙЦУКЕН-with-Ї looked wrong).
 function loadLayout(): LayoutId {
   try {
     const v = window.localStorage.getItem('promin_kb_layout');
     if (v === 'uk' || v === 'ru' || v === 'lat') return v;
   } catch (e) {
-    /* localStorage может быть недоступен */
+    /* localStorage may be unavailable */
   }
-  return 'uk';
+  const lang = getLang();
+  return lang === 'ru' ? 'ru' : lang === 'en' ? 'lat' : 'uk';
 }
 
 function saveLayout(id: LayoutId): void {
@@ -108,7 +111,13 @@ export function buildKeyboard(opts: KeyboardOptions): Keyboard {
 
   function focusKey(r: number, c: number): void {
     keyPos = { r: r, c: c };
-    Navigator.focus(keyGrid[r][c]);
+    // A pointer hover elsewhere (pointer.ts) can retarget the Navigator
+    // collection while this mode stays active; focus() then refuses a key it
+    // does not own. Re-own the collection and retry instead of going dead.
+    if (!Navigator.focus(keyGrid[r][c])) {
+      Controller.collectionSet(keyboard);
+      Navigator.focus(keyGrid[r][c]);
+    }
   }
 
   function keyboardMove(dir: 'left' | 'right' | 'up' | 'down'): boolean {
@@ -261,7 +270,11 @@ export function buildKeyboard(opts: KeyboardOptions): Keyboard {
   const controller = {
     toggle: function () {
       Controller.collectionSet(keyboard);
-      Controller.collectionFocus(firstKey || false, keyboard);
+      // Come back to the key the user left from (results → keyboard round
+      // trips), not to the first key every time. A layout switch rebuilds the
+      // grid and resets keyPos, so it still starts at the first key.
+      const cur = keyGrid[keyPos.r] && keyGrid[keyPos.r][keyPos.c];
+      Controller.collectionFocus(cur || firstKey || false, keyboard);
     },
     left: function () {
       if (!keyboardMove('left') && opts.onLeftEdge) opts.onLeftEdge();
