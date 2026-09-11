@@ -407,6 +407,31 @@ read access to `promin-providers` — and passes `GO_TAGS=providers` to the imag
 build. A checkout without the submodule still builds and runs: catalog, torrents,
 accounts and sync work, the sources tab is empty.
 
+## Host firewall
+
+The node has no firewall of its own (INPUT policy ACCEPT), so the k3s API
+server (6443), the kubelet (10250) and node_exporter (9100) were reachable from
+the whole internet and being scanned. `k8s/host/promin-guard.sh` builds an
+`iptables`/`ip6tables` chain `PROMIN-GUARD`, jumped to first in INPUT, that
+accepts those ports only from loopback, the node IP, the pod CIDR 10.42/16 and
+the cluster-IP CIDR 10.43/16, and drops the rest. 22, 80, 443 and 8444 are
+untouched; kubectl on the host (127.0.0.1:6443) and the CI deploy keep working.
+If you use a kubeconfig that points at the public IP, add your own address to
+the accept list first.
+
+Install once, as root on the node:
+
+```
+install -m 0755 k8s/host/promin-guard.sh /usr/local/sbin/promin-guard.sh
+install -m 0644 k8s/host/promin-guard.service /etc/systemd/system/
+systemctl daemon-reload && systemctl enable --now promin-guard.service
+iptables -S PROMIN-GUARD
+```
+
+Check from outside: `nc -zw3 <node-ip> 6443` must fail, `nc -zw3 <node-ip> 443`
+must succeed. In-cluster: Prometheus targets for the kubelet and node_exporter
+stay UP (they come from pod IPs).
+
 ## Monitoring
 
 `k8s/monitoring.yaml` (applied by the same workflow) plugs Promin into the

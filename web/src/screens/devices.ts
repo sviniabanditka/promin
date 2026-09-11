@@ -59,6 +59,7 @@ export function mountDevices(container: HTMLElement): ScreenInstance {
 
   let lastRow: HTMLElement | false = false;
   let destroyed = false;
+  let paused = false; // hidden under a pushed screen: never toggle from a late load
   let cache: Device[] = [];
 
   // Back handler for the content mode; the confirm dialog overrides it while open.
@@ -208,7 +209,7 @@ export function mountDevices(container: HTMLElement): ScreenInstance {
         if (destroyed) return;
         cache = res && res.devices ? res.devices : [];
         renderList(cache);
-        Controller.toggle('content');
+        if (!paused) Controller.toggle('content');
       },
       function () {
         if (destroyed) return;
@@ -217,7 +218,7 @@ export function mountDevices(container: HTMLElement): ScreenInstance {
         empty(body);
         lastRow = false;
         body.appendChild(buildState({ kind: 'error', text: t('error.load'), onRetry: load }));
-        Controller.toggle('content');
+        if (!paused) Controller.toggle('content');
       }
     );
   }
@@ -229,7 +230,11 @@ export function mountDevices(container: HTMLElement): ScreenInstance {
       destroyed = true;
       head.destroy();
     },
+    pause: function () {
+      paused = true;
+    },
     resume: function () {
+      paused = false;
       Controller.add('content', contentController);
       Controller.toggle('content');
     },

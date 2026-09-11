@@ -1,0 +1,12 @@
+[Unit]
+Description=Promin host firewall: control-plane ports reachable only from the cluster
+After=network-online.target k3s.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/promin-guard.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

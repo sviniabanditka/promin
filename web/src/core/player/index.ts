@@ -2302,14 +2302,14 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     const my = ++loadSeq;
     const rawUrl = currentUrl();
     if (!rawUrl) {
-      showError(t('sources.resolve_failed'));
+      showError('upstream'); // the source resolved to no playable stream
       return;
     }
     setBuffering(true);
     prepareStream(rawUrl, my).then(function (url) {
       if (destroyed || my !== loadSeq) return; // superseded by a newer load
       if (!url) {
-        showError(t('sources.resolve_failed'));
+        showError(urlIsRemux() ? 'remux' : 'upstream'); // warmup never produced a playlist
         return;
       }
       startEngineWith(url, my);
@@ -2408,7 +2408,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
             }, 1200);
             return;
           }
-          showError(t('player.error_network'));
+          showError(classifyHls(d));
         });
         // Capture the audio-track list straight off the manifest events (the
         // reliable source — see captureHlsAudio) and reveal the button. The 1s
@@ -2467,7 +2467,34 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   }
 
   // ---- error overlay ----
-  function showError(message: string): void {
+  // One overlay for every way playback can die, each with a plain-language
+  // title, a hint that says what to do, and the same two actions. The kind is
+  // derived from where the stream comes from (relay / torrent remux / native
+  // file) and what failed, not from the raw error code.
+  type ErrKind = 'network' | 'upstream' | 'remux' | 'stall' | 'decode' | 'unsupported' | 'generic';
+
+  function urlIsTorrent(): boolean {
+    const u = currentUrl();
+    return u.indexOf('/stream/') >= 0 || u.indexOf('/remux/') >= 0;
+  }
+  function urlIsRemux(): boolean {
+    return currentUrl().indexOf('/remux/') >= 0;
+  }
+
+  // hls.js fatal → kind. Manifest/level failures mean the server never handed
+  // out a playlist (remux job did not start, or the source's playlist is gone);
+  // fragment failures on a torrent are a starving swarm; media errors are the
+  // decoder; the rest is the network between the TV and the server.
+  function classifyHls(d: { type?: string; details?: string }): ErrKind {
+    const det = (d.details || '').toLowerCase();
+    if (d.type === 'mediaError') return 'decode';
+    if (det.indexOf('manifest') >= 0 || det.indexOf('level') >= 0) return urlIsRemux() ? 'remux' : 'upstream';
+    if (det.indexOf('frag') >= 0) return urlIsTorrent() ? 'stall' : 'upstream';
+    return 'network';
+  }
+
+  function showError(kind: ErrKind): void {
+    diag('player:error', { kind: kind, url: currentUrl().slice(0, 80) });
     setBuffering(false);
     // Stop the engine: hls.js kept retrying fragments (network + CPU + log
     // noise) behind the overlay. Retry/reload rebuild it from scratch anyway.
@@ -2481,7 +2508,8 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     if (errorBox && errorBox.parentNode) errorBox.parentNode.removeChild(errorBox);
 
     const box = el('div', 'player__error');
-    box.appendChild(el('div', 'player__error-text', message));
+    box.appendChild(el('div', 'player__error-title', t('player.err.' + kind)));
+    box.appendChild(el('div', 'player__error-text', t('player.err.' + kind + '_hint')));
     const row = el('div', 'player__error-actions');
 
     const retry = el('div', 'button selector', t('action.retry'));
@@ -2640,7 +2668,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       toast({ kind: 'warning', title: t('player.stalled'), text: t('player.stalled_hint') });
     } else if (stallTicks >= STALL_FAIL_S) {
       stallTicks = 0;
-      showError(t('player.error_network'));
+      showError(urlIsTorrent() ? 'stall' : 'upstream');
     }
   }
   function onBuffered(): void {
@@ -3111,11 +3139,11 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       }, 800);
       return;
     }
-    let msg = t('player.error_generic');
-    if (code === 2) msg = t('player.error_network');
-    else if (code === 3) msg = t('player.error_decode');
-    else if (code === 4) msg = t('player.error_unsupported');
-    showError(msg);
+    let kind: ErrKind = 'generic';
+    if (code === 2) kind = urlIsTorrent() ? 'stall' : 'network'; // a torrent read that never came back
+    else if (code === 3) kind = 'decode';
+    else if (code === 4) kind = 'unsupported';
+    showError(kind);
   }
 
   // Laptop parity. Without these the panel, once auto-hidden, could not be

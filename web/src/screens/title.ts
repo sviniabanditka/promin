@@ -634,6 +634,11 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
     lastMode = returnMode;
   }
 
+  // Close hook of the open trailer overlay (null when none). The screen's
+  // destroy() calls it silently: otherwise its iframe timeout fired after the
+  // screen was gone and re-toggled a mode of a dead screen.
+  let closeTrailer: ((silent: boolean) => void) | null = null;
+
   function openTrailer(trailer: Trailer): void {
     const returnMode = lastMode;
     const key = trailer.key || '';
@@ -646,15 +651,18 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
     let closed = false;
     let timer = 0;
 
-    function close(): void {
+    function close(silent?: boolean): void {
       if (closed) return;
       closed = true;
+      closeTrailer = null;
       if (timer) window.clearTimeout(timer);
       window.removeEventListener('blur', refocus);
       if (ov.parentNode) ov.parentNode.removeChild(ov);
+      if (silent) return; // screen is being destroyed — no mode to return to
       Controller.toggle(returnMode);
       Controller.remove('trailer');
     }
+    closeTrailer = close;
 
     // Fallback panel: message + "open on YouTube" link (a real .selector so the
     // controller can focus and Enter it).
@@ -2539,6 +2547,7 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
       destroyed = true;
       head.destroy();
       if (unsubBookmarks) unsubBookmarks();
+      if (closeTrailer) closeTrailer(true);
     },
     pause: function () {
       paused = true;

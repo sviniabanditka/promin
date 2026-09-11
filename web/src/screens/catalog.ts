@@ -188,6 +188,7 @@ export function mountCatalog(container: HTMLElement, params?: CatalogParams): Sc
   let loadSeq = 0; // generation token: a page-1 load bumps it; stale page results bail
   let lastCard: HTMLElement | false = false;
   let destroyed = false;
+  let paused = false; // hidden under a pushed title: never toggle from a late page load
 
   function queryParams(page: number): QueryParams {
     const p: QueryParams = {
@@ -296,7 +297,7 @@ export function mountCatalog(container: HTMLElement, params?: CatalogParams): Sc
       },
     });
     gridBody.appendChild(box);
-    if (Controller.enabled().name === 'content') Controller.toggle('content');
+    if (!paused && Controller.enabled().name === 'content') Controller.toggle('content');
   }
 
   function renderFirstPage(items: Card[]): void {
@@ -315,7 +316,7 @@ export function mountCatalog(container: HTMLElement, params?: CatalogParams): Sc
     // Only pull focus into the grid if the user is already there (e.g. after
     // a filter-change reload while browsing). On first open focus stays on
     // the filter bar until the user presses Down.
-    if (Controller.enabled().name === 'content') {
+    if (!paused && Controller.enabled().name === 'content') {
       Controller.toggle('content');
     }
   }
@@ -582,7 +583,11 @@ export function mountCatalog(container: HTMLElement, params?: CatalogParams): Sc
     destroy: function () {
       destroyed = true;
     },
+    pause: function () {
+      paused = true;
+    },
     resume: function () {
+      paused = false;
       registerControllers();
       menu.activate();
       // Back from a title returns to the card you left (home/search already did);

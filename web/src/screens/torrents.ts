@@ -46,6 +46,7 @@ export function mountTorrents(container: HTMLElement): ScreenInstance {
 
   let lastRow: HTMLElement | false = false;
   let destroyed = false;
+  let paused = false; // hidden under a pushed screen: never toggle from a late load
   let cache: ActiveTorrent[] = [];
 
   // Back handler for the content mode — default returns to the menu rail; the
@@ -108,7 +109,7 @@ export function mountTorrents(container: HTMLElement): ScreenInstance {
   function renderList(list: ActiveTorrent[], focus: boolean): void {
     if (!list.length) {
       showState('empty', t('torrents.empty'), true);
-      if (focus) Controller.toggle('content');
+      if (focus && !paused) Controller.toggle('content');
       return;
     }
     empty(body);
@@ -175,7 +176,7 @@ export function mountTorrents(container: HTMLElement): ScreenInstance {
       if (keep) lastRow = keep;
     }
     scroll.reset();
-    if (focus) Controller.toggle('content');
+    if (focus && !paused) Controller.toggle('content');
   }
 
   // Deleting a torrent drops its cached data from disk — not cheaply reversible,
@@ -285,7 +286,7 @@ export function mountTorrents(container: HTMLElement): ScreenInstance {
       function () {
         if (destroyed) return;
         showState('error', t('error.load'), false);
-        if (focus) Controller.toggle('content');
+        if (focus && !paused) Controller.toggle('content');
       }
     );
   }
@@ -298,7 +299,11 @@ export function mountTorrents(container: HTMLElement): ScreenInstance {
       destroyed = true;
       head.destroy();
     },
+    pause: function () {
+      paused = true;
+    },
     resume: function () {
+      paused = false;
       menu.activate();
       load(true);
     },

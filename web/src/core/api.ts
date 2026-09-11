@@ -277,9 +277,22 @@ function request<T>(method: string, path: string, params?: QueryParams, body?: u
   return new Promise<T>(function (resolve, reject) {
     let done = false;
 
+    // Abort the underlying request on timeout where the webview can (Chrome
+    // 66+); on Chromium 47 the socket stays open until the server answers,
+    // which is the old behaviour — the promise still settles on time.
+    const AC = (window as unknown as { AbortController?: new () => AbortController }).AbortController;
+    const aborter = AC ? new AC() : null;
+
     const timer = window.setTimeout(function () {
       if (done) return;
       done = true;
+      if (aborter) {
+        try {
+          aborter.abort();
+        } catch (e) {
+          /* ignore */
+        }
+      }
       reject({ status: 0, code: 'timeout', message: 'timeout' } as ApiError);
     }, limit);
 
@@ -292,6 +305,7 @@ function request<T>(method: string, path: string, params?: QueryParams, body?: u
 
     const init: RequestInit = { method: method, headers: buildHeaders(hasBody) };
     if (hasBody) init.body = JSON.stringify(body);
+    if (aborter) init.signal = aborter.signal;
 
     fetch(url, init)
       .then(function (res) {

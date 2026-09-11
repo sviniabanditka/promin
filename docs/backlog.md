@@ -17,8 +17,6 @@ system itself is described in the other documents.
 - **Voice vs. in-stream audio track UX.** Both live in one menu now; decide
   whether a source voice change should preserve the in-stream track choice.
 - **Mini-player / PiP**: keep the `<video>` alive across routes.
-- **Error states**: uniform messages for source-unavailable, relay failure,
-  remux failure, torrent with no peers.
 - **Remux job reaper by client liveness**: heartbeat while watching, kill idle
   jobs after a TTL instead of the current eviction rules.
 
@@ -29,14 +27,8 @@ system itself is described in the other documents.
 
 ## Frontend
 
-- `api.ts`: abort the underlying request on timeout (sockets stay open).
-- `scroll.ts`: `transitionend` listeners can accumulate → double lazy-append.
-- Catalog: pagination race on fast filter changes (`reqSeq` guard), and a
-  visible indicator while the next page loads.
 - Shared popup/overlay lifecycle (`openPopup(box)` + tracked close) instead of
   per-screen variants.
-- `sync.ts`: WebSocket without a token does not reconnect; trailer timer must be
-  cleared on destroy.
 - One spacing grid (3.2 / 4 / 6 / 8.4 rem today).
 - Backdrop on list screens for consistency.
 - Catalog filters by country / language (needs discover support in the backend).

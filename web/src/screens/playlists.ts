@@ -138,6 +138,7 @@ export function mountPlaylists(container: HTMLElement): ScreenInstance {
 
   let lastRow: HTMLElement | false = false;
   let destroyed = false;
+  let paused = false; // hidden under a pushed screen: never toggle from a late load
   let cache: Playlist[] = [];
 
   const contentController = {
@@ -297,7 +298,7 @@ export function mountPlaylists(container: HTMLElement): ScreenInstance {
         if (destroyed) return;
         cache = res && res.playlists ? res.playlists : [];
         renderList(cache);
-        if (focus) Controller.toggle('content');
+        if (focus && !paused) Controller.toggle('content');
       },
       function () {
         if (destroyed) return;
@@ -306,7 +307,7 @@ export function mountPlaylists(container: HTMLElement): ScreenInstance {
         body.appendChild(
           buildState({ kind: 'error', text: t('error.load'), onRetry: function () { load(true); } })
         );
-        if (focus) Controller.toggle('content');
+        if (focus && !paused) Controller.toggle('content');
       }
     );
   }
@@ -319,7 +320,11 @@ export function mountPlaylists(container: HTMLElement): ScreenInstance {
       destroyed = true;
       head.destroy();
     },
+    pause: function () {
+      paused = true;
+    },
     resume: function () {
+      paused = false;
       // Re-register (the 'content' name was overwritten by the pushed
       // playlist-items screen) AND re-focus. load(true) re-renders then
       // toggles 'content', so the Navigator collection points at the fresh
@@ -354,6 +359,7 @@ export function mountPlaylistItems(container: HTMLElement, params: PlaylistItems
 
   let lastRow: HTMLElement | false = false;
   let destroyed = false;
+  let paused = false; // hidden under a pushed screen: never toggle from a late load
   let cache: PlaylistItem[] = [];
 
   const contentController = {
@@ -500,7 +506,7 @@ export function mountPlaylistItems(container: HTMLElement, params: PlaylistItems
         renderList(cache);
         // Empty list renders a selector-less state block — focus the rail, not
         // an unfocusable 'content'.
-        Controller.toggle(cache.length ? 'content' : 'menu');
+        if (!paused) Controller.toggle(cache.length ? 'content' : 'menu');
       },
       function () {
         if (destroyed) return;
@@ -509,7 +515,7 @@ export function mountPlaylistItems(container: HTMLElement, params: PlaylistItems
         body.appendChild(
           buildState({ kind: 'error', text: t('error.load'), onRetry: function () { load(); } })
         );
-        Controller.toggle('content');
+        if (!paused) Controller.toggle('content');
       }
     );
   }
@@ -520,7 +526,11 @@ export function mountPlaylistItems(container: HTMLElement, params: PlaylistItems
     destroy: function () {
       destroyed = true;
     },
+    pause: function () {
+      paused = true;
+    },
     resume: function () {
+      paused = false;
       Controller.add('content', contentController);
       Controller.toggle('content');
     },
