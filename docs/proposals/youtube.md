@@ -192,3 +192,40 @@ known TV client (rejected by InnerTube).
 3. **Packaged Tizen/webOS app** that logs into youtube.com/tv inside its own
    webview and plays from the TV's IP — the real "SmartTube for Samsung/LG",
    a separate product.
+
+## OAuth follow-up: SmartTube's exact request, 2026-09-12 (later)
+
+Read SmartTube's engine (MediaServiceCore, commit 0365be3 of the same day):
+- Its YouTube login is our flow exactly (youtube.com/o/oauth2 device code,
+  scope gdata + paid-content, model `ytlr::`), and the client identity is
+  parsed at runtime from the TV app's JS bundle — the same
+  `861556708454-d6dlm3lh05idd8npek18k6be8ba3oc68` we used. (The identity in
+  its `constants.json` release file is a separate Google project for Drive /
+  sign-in and refuses the YouTube scopes.) So our token was fine.
+- Auth is supported only on TV clients. The player request pins
+  `TVHTML5 7.20260707.07.00`, a Cobalt 4 user agent, no visitorData, region
+  fields, a `user` safety chunk, a `cpn`, and a `signatureTimestamp` read from
+  `tv-player-ias.js` named by the Cobalt-served youtube.com/tv page. Its own
+  comment: a wrong/missing timestamp yields "The page needs to be reloaded".
+
+Reproducing that request from the laptop with our token: **`status=OK`, 31
+formats up to 1080p** — the "unplayable" wall was the request shape, not the
+token or the IP. (VPS repeat pending: `6-node-test.sh`.)
+
+But the adaptive formats carry **no URL and no signatureCipher**: the TV
+client now delivers adaptive media only through **SABR**
+(`streamingData.serverAbrStreamingUrl`, a POST/protobuf/UMP streaming
+protocol). Only progressive itag 18 (360p) has a URL, and fetching it gave 403
+— it still needs the `n`-parameter transform (nsig) from the player JS.
+
+What this means for a build:
+- Extraction = login (done) + player (done) + **SABR client** + **nsig/sig
+  solver**. Both exist in the open-source world: YouTube.js with its
+  `googlevideo` package implements SABR; yt-dlp's ejs scripts solve nsig in
+  Deno. Writing them ourselves is a project; wrapping YouTube.js as a Deno
+  sidecar is the realistic route (its TV flow needs the same request fixes
+  SmartTube applies — the stock v18 `getBasicInfo(id,'TV')` returned
+  UNPLAYABLE for us).
+- SmartTube itself marks SABR as TODO and keeps working on URL-bearing
+  variants; expect YouTube to finish the SABR migration, at which point every
+  third-party client needs the SABR path anyway.
