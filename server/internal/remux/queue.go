@@ -142,7 +142,18 @@ func (q *Queue) SubmitCopyMKVFrom(source string, audioIndex int, audio []AudioMe
 	return q.submit(KindCopyMKV, source, audioIndex, false, audio, startSec)
 }
 
+// SubmitMux2 muxes a video track URL and an audio track URL into one HLS job.
+// Both inputs are internal (the YouTube sidecar), so this bypasses the public
+// /remux handler and its upstream checks on purpose.
+func (q *Queue) SubmitMux2(videoURL, audioURL string) (*Job, error) {
+	return q.submit2(KindMux2, videoURL, audioURL, 0, false, nil, 0)
+}
+
 func (q *Queue) submit(kind Kind, source string, audioIndex int, hdr bool, audio []AudioMeta, startSec float64) (*Job, error) {
+	return q.submit2(kind, source, "", audioIndex, hdr, audio, startSec)
+}
+
+func (q *Queue) submit2(kind Kind, source, source2 string, audioIndex int, hdr bool, audio []AudioMeta, startSec float64) (*Job, error) {
 	if startSec < 0 {
 		startSec = 0
 	}
@@ -184,6 +195,7 @@ func (q *Queue) submit(kind Kind, source string, audioIndex int, hdr bool, audio
 	id := newJobID()
 	outputDir := filepath.Join(q.cfg.DataDir, "remux", id)
 	job := newJob(id, kind, source, audioIndex, outputDir, hdr, audio, startSec)
+	job.Source2 = source2
 	q.jobs[id] = job
 	q.dedup[key] = id
 	q.mu.Unlock()
@@ -347,12 +359,14 @@ func (q *Queue) run(job *Job) {
 		// otherwise a plain (washed) SDR conversion, which still plays.
 		tonemap := job.HDR && q.zscale
 		args = buildTranscodeHEVCArgs(job.Source, job.AudioIndex, job.OutputDir, tonemap)
+	case KindMux2:
+		args = buildMux2HLSArgs(job.Source, job.Source2, job.OutputDir)
 	}
 	if job.StartSec > 0 && len(args) > 0 {
 		args = withInputSeek(args, job.StartSec)
 	}
 	switch job.Kind {
-	case KindCopyHLS, KindCopyMKV, KindTranscodeHEVC:
+	case KindCopyHLS, KindCopyMKV, KindTranscodeHEVC, KindMux2:
 	default:
 		job.setFailed(fmt.Errorf("remux: unsupported job kind %q", job.Kind))
 		return

@@ -1,0 +1,89 @@
+# ytx — the YouTube extractor sidecar (see ytx/README.md, docs/youtube.md).
+# Internal only: no ingress, a ClusterIP service, and a NetworkPolicy that
+# admits traffic from the promin pods alone — the sidecar has no auth of its
+# own and holds the profiles' YouTube refresh tokens.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ytx-data
+  namespace: promin
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ytx
+  namespace: promin
+  labels: { app: ytx }
+spec:
+  replicas: 1
+  strategy: { type: Recreate } # the account store is one file on a RWO volume
+  selector:
+    matchLabels: { app: ytx }
+  template:
+    metadata:
+      labels: { app: ytx }
+    spec:
+      securityContext:
+        fsGroup: 65532
+      containers:
+        - name: ytx
+          image: ghcr.io/sviniabanditka/promin-ytx:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: YTX_ADDR, value: ":8091" }
+            - { name: YTX_DATA, value: "/data/ytx" }
+          ports:
+            - { name: http, containerPort: 8091 }
+          volumeMounts:
+            - { name: data, mountPath: /data/ytx }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8091 }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8091 }
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+          resources:
+            requests: { cpu: "50m", memory: "128Mi" }
+            limits: { memory: "768Mi" } # SABR buffers for a few concurrent tracks
+      volumes:
+        - { name: data, persistentVolumeClaim: { claimName: ytx-data } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ytx
+  namespace: promin
+spec:
+  selector: { app: ytx }
+  ports:
+    - { name: http, port: 8091, targetPort: 8091 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ytx-from-promin-only
+  namespace: promin
+spec:
+  podSelector:
+    matchLabels: { app: ytx }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app: promin }
+      ports:
+        - { protocol: TCP, port: 8091 }

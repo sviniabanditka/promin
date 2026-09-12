@@ -105,6 +105,8 @@ spec:
             - { name: PROMIN_NATIVE_SOURCES, value: "true" }
             # Резидентный UA-прокси (secret lampac-proxy, имя историческое) — только для
             # страниц каталогов, которые режут датацентровые IP.
+            - name: PROMIN_YTX_URL # YouTube sidecar (k8s/ytx.yaml); empty = section off
+              value: "http://ytx.promin.svc.cluster.local:8091"
             - name: PROMIN_RELAY_BLOCK_IPS # the node itself: its 443 fronts internal vhosts
               value: "109.199.115.31"
             - name: PROMIN_NATIVE_PROXY_URL

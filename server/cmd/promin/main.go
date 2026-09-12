@@ -30,6 +30,7 @@ import (
 	"github.com/sviniabanditka/promin/server/internal/telegram"
 	"github.com/sviniabanditka/promin/server/internal/torrent"
 	"github.com/sviniabanditka/promin/server/internal/weather"
+	"github.com/sviniabanditka/promin/server/internal/youtube"
 )
 
 // version is set via -ldflags "-X main.version=...".
@@ -254,7 +255,7 @@ func main() {
 		logger.Info("sessions: legacy tokens hashed", "count", n)
 	}
 	httpapi.SetRelayBlockedIPs(cfg.RelayBlockIPs)
-	handler := httpapi.NewServer(version, logger, cfg.DataDir, catalogSvc, sourcesSvc, remuxQueue, torrentMgr, authSvc, syncSvc, cfg.HTTPAddr, logBuf, cfg.LogsPassword, weatherSvc, cfg.WeatherPlace, cfg.H1Host, cfg.MainHost, tgBot, subsClient)
+	handler := httpapi.NewServer(version, logger, cfg.DataDir, catalogSvc, sourcesSvc, remuxQueue, torrentMgr, authSvc, syncSvc, cfg.HTTPAddr, logBuf, cfg.LogsPassword, weatherSvc, cfg.WeatherPlace, cfg.H1Host, cfg.MainHost, tgBot, subsClient, youtube.New(cfg.YTXURL))
 	srv := &http.Server{
 		Addr:    cfg.HTTPAddr,
 		Handler: handler,

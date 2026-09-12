@@ -94,6 +94,31 @@ func buildCopyHLSArgs(masterURL string, audioIndex int, outputDir string) []stri
 	}
 }
 
+// buildMux2HLSArgs: two elementary streams (fMP4 video + fMP4/WebM audio,
+// served as growing HTTP bodies by the YouTube sidecar) copy-muxed into the
+// same HLS EVENT shape as the other kinds. No reconnect: the inputs are
+// one-shot chunked responses; if one drops the job fails and the player
+// re-requests.
+func buildMux2HLSArgs(videoURL, audioURL, outputDir string) []string {
+	return []string{
+		"-y",
+		"-nostdin",
+		"-nostats",
+		"-i", videoURL,
+		"-i", audioURL,
+		"-map", "0:v:0",
+		"-map", "1:a:0",
+		"-c", "copy",
+		"-f", "hls",
+		"-hls_time", "6",
+		"-hls_list_size", "0",
+		"-hls_playlist_type", "event",
+		"-hls_flags", "independent_segments",
+		"-hls_segment_filename", filepath.Join(outputDir, "seg-%06d.ts"),
+		filepath.Join(outputDir, "playlist.m3u8"),
+	}
+}
+
 // buildCopyMKVHLSArgs builds ffmpeg command #3 from docs/streaming.md
 // section 4: MKV -> muxed HLS. Video is copied (H264 plays as-is), but AUDIO is
 // re-encoded to stereo AAC: torrent MKVs almost always carry AC3/EAC3/DTS, which

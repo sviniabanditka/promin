@@ -113,6 +113,10 @@ type Config struct {
 	// RelayBlockIPs: public addresses /relay and /remux must never dial, on top
 	// of the private/loopback ranges — the node's own IP. PROMIN_RELAY_BLOCK_IPS.
 	RelayBlockIPs []string
+	// YTXURL is the YouTube sidecar (ytx) base URL, e.g. http://ytx:8091. Empty
+	// disables the YouTube section entirely (routes answer 503, the TV hides
+	// the rail item).
+	YTXURL string
 	// StableProxyToken: read-only API token of the proxy vendor, used only to
 	// publish the traffic package as metrics. Secret key stableproxy-token.
 	StableProxyToken    string
@@ -183,6 +187,7 @@ func Load() Config {
 		NativeSourcesEnable:    getenvBool("PROMIN_NATIVE_SOURCES", false),
 		NativeProxyURL:         getenv("PROMIN_NATIVE_PROXY_URL", ""),
 		RelayBlockIPs:          getenvList("PROMIN_RELAY_BLOCK_IPS", ""),
+		YTXURL:                 strings.TrimRight(getenv("PROMIN_YTX_URL", ""), "/"),
 		StableProxyToken:       getenv("PROMIN_STABLEPROXY_TOKEN", ""),
 		OpenSubtitlesAPIKey:    getenv("PROMIN_OPENSUBTITLES_API_KEY", ""),
 		OpenSubtitlesUser:      getenv("PROMIN_OPENSUBTITLES_USER", ""),

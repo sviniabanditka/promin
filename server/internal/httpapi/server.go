@@ -25,6 +25,7 @@ import (
 	"github.com/sviniabanditka/promin/server/internal/telegram"
 	torrentpkg "github.com/sviniabanditka/promin/server/internal/torrent"
 	"github.com/sviniabanditka/promin/server/internal/weather"
+	"github.com/sviniabanditka/promin/server/internal/youtube"
 )
 
 // NewServer builds the http.Handler for the promin binary: healthz, ping,
@@ -52,6 +53,7 @@ func NewServer(
 	mainHost string,
 	tgBot *telegram.Bot, // nil when PROMIN_TELEGRAM_BOT_TOKEN is unset
 	subsClient *subtitles.Client, // nil/disabled when PROMIN_OPENSUBTITLES_API_KEY is unset
+	ytClient *youtube.Client, // nil when PROMIN_YTX_URL is unset — the YouTube section is off
 ) http.Handler {
 	mux := http.NewServeMux()
 
@@ -68,7 +70,7 @@ func NewServer(
 	selfBaseURL := "http://127.0.0.1" + port
 
 	mux.HandleFunc("GET /healthz", handleHealthz)
-	mux.HandleFunc("GET /api/v1/ping", handlePing(version, h1Host, mainHost))
+	mux.HandleFunc("GET /api/v1/ping", handlePing(version, h1Host, mainHost, ytClient.Enabled()))
 	// Client diagnostics (Налаштування → «Режим діагностики»): key codes, viewport,
 	// JS errors from a TV that has no devtools — straight into the server log.
 	// No auth gate: the report that matters most comes from a device that cannot
@@ -208,6 +210,19 @@ func NewServer(
 
 	// Telegram Mini App (docs/miniapp.md): initData login, devices + player
 	// state, send-to-TV. The TV reports its player via /player/state.
+	// YouTube section (docs/proposals/youtube.md): the ytx sidecar does the
+	// sign-in, feeds and SABR tracks; /play hands two track URLs to a mux2
+	// remux job so the TV plays it through the ordinary /remux path.
+	ytH := &ytHandlers{yt: ytClient, queue: remuxQueue}
+	mux.HandleFunc("GET /api/v1/yt/account", requireAuth(authSvc, ytH.account))
+	mux.HandleFunc("POST /api/v1/yt/account/login", requireAuth(authSvc, ytH.login))
+	mux.HandleFunc("DELETE /api/v1/yt/account", requireAuth(authSvc, ytH.unlink))
+	mux.HandleFunc("GET /api/v1/yt/browse/{page}", requireAuth(authSvc, ytH.browse))
+	mux.HandleFunc("GET /api/v1/yt/search", requireAuth(authSvc, ytH.search))
+	mux.HandleFunc("GET /api/v1/yt/video/{id}", requireAuth(authSvc, ytH.video))
+	mux.HandleFunc("GET /api/v1/yt/play/{id}", requireAuth(authSvc, ytH.play))
+	mux.HandleFunc("GET /api/v1/yt/segments/{id}", requireAuth(authSvc, ytH.segments))
+
 	tgApp := &tgAppHandlers{bot: tgBot, auth: authSvc, sync: syncSvc, cat: catalogSvc}
 	mux.HandleFunc("POST /api/v1/tg/auth", tgApp.login) // open pre-gate: initData is the credential
 	mux.HandleFunc("GET /api/v1/tg/devices", requireAuth(authSvc, tgApp.devices))
@@ -326,11 +341,12 @@ func handleDiag(logger *slog.Logger) http.HandlerFunc {
 	}
 }
 
-func handlePing(version, h1Host, mainHost string) http.HandlerFunc {
+func handlePing(version, h1Host, mainHost string, youtubeOn bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"pong":      true,
 			"version":   version,
+			"youtube":   youtubeOn, // the TV shows the YouTube rail item only when the sidecar is configured
 			"h1_host":   h1Host,
 			"main_host": mainHost,
 		})

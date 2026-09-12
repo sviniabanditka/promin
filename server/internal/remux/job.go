@@ -28,6 +28,9 @@ const (
 	KindCopyHLS       Kind = "copy_hls"
 	KindCopyMKV       Kind = "copy_mkv"
 	KindTranscodeHEVC Kind = "transcode_hevc"
+	// KindMux2: two elementary inputs (video URL + audio URL, e.g. the YouTube
+	// sidecar's SABR tracks) copy-muxed into one HLS event playlist.
+	KindMux2 Kind = "mux2"
 )
 
 // State is the job lifecycle, per docs/backend.md
@@ -46,7 +49,9 @@ const (
 type Job struct {
 	ID     string
 	Kind   Kind
-	Source string // upstream m3u8 URL (copy_hls) or local file path (copy_mkv/transcode)
+	Source string // upstream m3u8 URL (copy_hls) or local file path (copy_mkv/transcode); video track URL (mux2)
+	// Source2 is the audio track URL of a mux2 job; empty for the other kinds.
+	Source2 string
 	// StartSec > 0: ffmpeg starts muxing at this source offset (-ss) so a resume
 	// deep into a file plays immediately instead of waiting for the mux to
 	// reach it; the client keeps time as playlist time + StartSec.
