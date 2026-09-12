@@ -162,6 +162,10 @@ func (h *ytHandlers) play(w http.ResponseWriter, r *http.Request) {
 		h.writeYTError(w, err)
 		return
 	}
+	if err := h.yt.Probe(r.Context(), info.User.ID, id); err != nil {
+		h.writeYTError(w, err)
+		return
+	}
 	// start=N (seconds): resume / far seek — the sidecar begins the SABR pull
 	// there and the playlist carries X-Remux-Start, like torrent offset jobs.
 	start, _ := strconv.ParseFloat(r.URL.Query().Get("start"), 64)

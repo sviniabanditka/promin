@@ -189,6 +189,14 @@ func (c *Client) TrackURL(userID int64, videoID, track, quality string, startSec
 	return u
 }
 
+// Probe asks the sidecar whether media for the video can be fetched right
+// now (anonymous web player + PO token) — the answer ffmpeg would otherwise
+// discover mid-job. Returns the sidecar's *Error (409 unplayable with the
+// reason, e.g. "Sign in to confirm you're not a bot") or nil.
+func (c *Client) Probe(ctx context.Context, userID int64, videoID string) error {
+	return c.do(ctx, http.MethodGet, "/v1/accounts/"+account(userID)+"/stream/"+url.PathEscape(videoID)+"/probe", nil, nil)
+}
+
 // Watch reports a playback position to the account's YouTube history (the
 // sidecar sends the stats pings as the signed-in TV client).
 func (c *Client) Watch(ctx context.Context, userID int64, videoID string, positionSec, durationSec float64) error {

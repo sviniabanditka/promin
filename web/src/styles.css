@@ -4041,8 +4041,9 @@ body.night-mode #night-shade { display: block; }
   display: flex;
   flex-direction: row;
 }
-.yt-panel--video { display: block; padding: 0 3.2rem; }
-.yt-panel--video > .scroll { width: 100%; height: 100%; }
+.yt-panel--video { display: flex; flex-direction: column; padding: 2.4rem 3.2rem 0; }
+.yt-panel--video > .scroll { flex: 1 1 auto; min-height: 0; width: 100%; }
+.yt-hero-slot { flex: 0 0 auto; }
 
 /* Section sidebar: home / subscriptions / history / … */
 .yt-side {
@@ -4073,13 +4074,15 @@ body.night-mode #night-shade { display: block; }
 .yt-shelf__title { font-size: 2rem; font-weight: bold; color: var(--ink-2); margin: 0.4rem 0 1.2rem; }
 .yt-grid { display: flex; flex-direction: row; flex-wrap: wrap; }
 
-/* 16:9 tile. 3 per row in the 91rem content column: 3 × (28 + 1.6) = 88.8rem. */
+/* 16:9 tile, four per row whatever the column width (no CSS grid on Chromium
+   47): 4 × 23.5% + 3 × 2% = 100%, no calc rounding that drops the 4th tile. */
 .yt-card {
   flex: 0 0 auto;
-  width: 28rem;
-  margin: 0 1.6rem 2rem 0;
+  width: 23.5%;
+  margin: 0 2% 2rem 0;
   border-radius: var(--radius-sm);
 }
+.yt-card:nth-child(4n) { margin-right: 0; }
 .yt-card__thumb {
   position: relative;
   width: 100%;
@@ -4090,7 +4093,7 @@ body.night-mode #night-shade { display: block; }
   transition: transform 0.15s ease-out, box-shadow 0.15s ease-out;
 }
 .yt-card__img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.yt-card--channel .yt-card__thumb { border-radius: 50%; width: 16rem; padding-top: 16rem; margin: 0 auto; }
+.yt-card--channel .yt-card__thumb { border-radius: 50%; margin: 0 auto; }
 .yt-card--channel .yt-card__title { text-align: center; }
 .yt-card__badge {
   position: absolute;
@@ -4125,7 +4128,8 @@ body.night-mode #night-shade { display: block; }
 .yt-card__sub { margin-top: 0.3rem; font-size: 1.4rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .yt-card.focus .yt-card__thumb { box-shadow: inset 0 0 0 0.3rem var(--focus), 0 0 0 0.3rem var(--focus); transform: translateY(-0.3rem); }
 .yt-card--more .yt-card__more-label {
-  height: 15.75rem; /* matches the 16:9 thumb of a 28rem tile */
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4134,6 +4138,7 @@ body.night-mode #night-shade { display: block; }
   font-size: 2rem;
   color: var(--ink-2);
 }
+.yt-card--more .yt-card__thumb { background: none; }
 .yt-card--more.focus .yt-card__more-label { box-shadow: inset 0 0 0 0.3rem var(--focus); color: var(--ink); }
 .yt-card--more.is-loading .yt-card__more-label { opacity: 0.5; }
 
@@ -4156,12 +4161,12 @@ body.night-mode #night-shade { display: block; }
 .yt-account__error { font-size: 1.6rem; color: #ff6b6b; margin-bottom: 1.6rem; }
 
 /* Video page */
-.yt-video__body { padding: 2.4rem 0 6rem; }
-.yt-hero { display: flex; flex-direction: row; align-items: flex-start; margin-bottom: 2.4rem; }
+.yt-video__body { padding: 0.6rem 0 6rem; }
+.yt-hero { display: flex; flex-direction: row; align-items: flex-start; margin-bottom: 2rem; }
 .yt-hero__thumb {
-  flex: 0 0 56rem;
-  width: 56rem;
-  height: 31.5rem;
+  flex: 0 0 44rem;
+  width: 44rem;
+  height: 24.75rem;
   border-radius: var(--radius-sm);
   overflow: hidden;
   background-color: rgba(255, 255, 255, 0.06);
@@ -4180,7 +4185,10 @@ body.night-mode #night-shade { display: block; }
 .is-phone .yt-panel { left: 0; bottom: 5.6rem; padding: 1.6rem; flex-direction: column; }
 .is-phone .yt-side { flex: 0 0 auto; width: 100%; flex-direction: row; flex-wrap: wrap; margin: 0 0 1.2rem; }
 .is-phone .yt-side__item { margin-right: 0.6rem; font-size: 1.6rem; padding: 0.8rem 1.2rem; }
-.is-phone .yt-card { width: calc(50% - 1.6rem); }
+.is-phone .yt-card { width: 48%; margin-right: 4%; }
+.is-phone .yt-card:nth-child(4n) { margin-right: 4%; }
+.is-phone .yt-card:nth-child(2n) { margin-right: 0; }
+.yt-card--channel .yt-card__thumb { width: 60%; padding-top: 60%; }
 .is-phone .yt-hero { flex-direction: column; }
 .is-phone .yt-hero__thumb { flex: 0 0 auto; width: 100%; height: auto; aspect-ratio: 16 / 9; margin: 0 0 1.6rem; }
 .vp-tall .yt-panel, .vp-tall .yt-screen { bottom: auto; height: 72rem; }

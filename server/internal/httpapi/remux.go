@@ -145,7 +145,9 @@ func (h *remuxHandlers) servePlaylist(w http.ResponseWriter, job *remux.Job, fil
 			// only — the client gets a short fixed reason, not a wall of ffmpeg
 			// output rendered in the player.
 			h.logger.Warn("remux: job failed", "job_id", job.ID, "error", job.Err())
-			writeError(w, http.StatusBadGateway, "upstream_unavailable", "remux завершився помилкою")
+			// 410, not 5xx: the player gives up on 4xx instead of polling a dead
+			// job 60 times (that polling once fired the 5xx-ratio alert).
+			writeError(w, http.StatusGone, "remux_failed", "remux завершився помилкою")
 			return
 		}
 		// A master playlist can't be faked with an empty media playlist — if it

@@ -157,6 +157,13 @@ function resumeState(stream, options, startMs, durationMs) {
   return { durationMs, playerTimeMs: startMs, initializedFormats: [fake(videoFormat), fake(audioFormat)] };
 }
 
+// Can media be fetched now? Same player call the tracks will use (cached).
+export async function probe(videoId, log) {
+  if (!playback) playback = new Playback(log);
+  await playback.player(videoId);
+  return { ok: true };
+}
+
 export async function openTrack(videoId, track, quality, log, startSec = 0) {
   if (!QUALITIES.includes(quality)) quality = '1080p';
   if (!playback) playback = new Playback(log);

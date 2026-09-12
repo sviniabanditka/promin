@@ -93,7 +93,9 @@ export function buildYtShelf(shelf: YtShelf, opts: YtShelfOptions): HTMLElement 
     }
     if (!cont || !opts.loadMore) return;
     more = el('div', 'yt-card yt-card--more selector');
-    more.appendChild(el('div', 'yt-card__more-label', t('yt.more')));
+    const box = el('div', 'yt-card__thumb');
+    box.appendChild(el('div', 'yt-card__more-label', t('yt.more')));
+    more.appendChild(box);
     if (opts.onFocus) {
       const m = more;
       on(m, 'hover:focus', function () {

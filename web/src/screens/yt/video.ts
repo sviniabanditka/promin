@@ -73,8 +73,12 @@ export function mountYtVideo(container: HTMLElement, params: YtVideoParams): Scr
   container.appendChild(head.el);
   container.appendChild(buildFooter());
 
+  // The hero (thumb + actions) sits above the scroll, so focusing an action
+  // never scrolls it away; only the related shelves scroll.
   const wrap = el('div', 'yt-panel yt-panel--video');
   container.appendChild(wrap);
+  const heroSlot = el('div', 'yt-hero-slot');
+  wrap.appendChild(heroSlot);
   const scroll = new Scroll({ mask: true, over: true });
   wrap.appendChild(scroll.render());
   const body = scroll.body();
@@ -188,6 +192,7 @@ export function mountYtVideo(container: HTMLElement, params: YtVideoParams): Scr
 
   function render(video: YtVideo): void {
     empty(body);
+    empty(heroSlot);
     const hero = el('div', 'yt-hero');
     const thumb = el('div', 'yt-hero__thumb');
     if (video.thumbnail) {
@@ -260,7 +265,7 @@ export function mountYtVideo(container: HTMLElement, params: YtVideoParams): Scr
     }
     info.appendChild(actions);
     hero.appendChild(info);
-    body.appendChild(hero);
+    heroSlot.appendChild(hero);
 
     const related = video.related || [];
     for (let i = 0; i < related.length; i++) {
@@ -283,6 +288,7 @@ export function mountYtVideo(container: HTMLElement, params: YtVideoParams): Scr
 
   function showError(text: string): void {
     empty(body);
+    empty(heroSlot);
     const box = buildState({ kind: 'error', text: text, onRetry: load });
     body.appendChild(box);
     actions = box;
@@ -291,6 +297,7 @@ export function mountYtVideo(container: HTMLElement, params: YtVideoParams): Scr
 
   function load(): void {
     empty(body);
+    empty(heroSlot);
     body.appendChild(buildState({ kind: 'loading' }));
     // SponsorBlock spans ride along; a failure there must not block the page.
     ytSegments(params.id).then(
