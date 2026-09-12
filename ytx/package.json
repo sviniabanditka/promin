@@ -4,13 +4,17 @@
   "private": true,
   "description": "Promin YouTube extractor sidecar: TV-client sign-in, feeds, search and SABR media tracks over a small HTTP API",
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "start": "node src/server.js",
-    "check": "node --check src/server.js && node --check src/tv.js && node --check src/accounts.js && node --check src/stream.js"
+    "check": "node --check src/server.js && node --check src/tv.js && node --check src/accounts.js && node --check src/stream.js && node --check src/potoken.js"
   },
   "dependencies": {
+    "bgutils-js": "^4.0.3",
     "googlevideo": "^4.1.1",
+    "jsdom": "^30.0.1",
     "youtubei.js": "^18.0.0"
   }
 }

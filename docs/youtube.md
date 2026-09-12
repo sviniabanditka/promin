@@ -10,7 +10,7 @@ not notice. Background and the tests that led here: `docs/proposals/youtube.md`.
 
 | Piece | Path | Role |
 |---|---|---|
-| `ytx` sidecar | `ytx/` (Node 22, `youtubei.js` + `googlevideo`) | Signs a profile into YouTube as the TV app (device code), reads the account's feeds through InnerTube's TV client, serves media tracks pulled over SABR |
+| `ytx` sidecar | `ytx/` (Node 22, `youtubei.js` + `googlevideo` + `bgutils-js`) | Signs a profile into YouTube as the TV app (device code), reads the account's feeds through InnerTube's TV client, serves media tracks pulled over SABR by an anonymous web client with PO tokens |
 | `youtube` package | `server/internal/youtube` | Client for the sidecar + cached SponsorBlock lookup |
 | handlers | `server/internal/httpapi/handlers_yt.go` | `/api/v1/yt/*` (session required) |
 | remux kind `mux2` | `server/internal/remux` | Two elementary inputs (video URL + audio URL) copy-muxed to the usual HLS EVENT playlist |
@@ -31,10 +31,21 @@ routes answer `503 youtube_disabled`.
 - **The player request must carry the player's `signatureTimestamp`**,
   otherwise the TV client answers "The page needs to be reloaded" with no
   formats.
-- **The TV client delivers adaptive formats only through SABR** (server-side
+- **Every client delivers adaptive formats only through SABR** (server-side
   ABR: a binary UMP protocol on `serverAbrStreamingUrl`). `googlevideo`'s
   `SabrStream` pulls a track; the sidecar writes the fragments to the HTTP
   response as they come. Measured on the node: first byte in 0.4 s.
+- **Media is fetched anonymously, as the web client, with PO tokens.** The
+  SABR server flips `StreamProtectionStatus` to 2 and cuts the stream after
+  ~12 MB (~70 s of 1080p) unless the request carries a PO token it accepts.
+  A BotGuard token minted the way the web player does it (`bgutils-js` in
+  Node + jsdom, challenge taken from the youtube.com page) is accepted by the
+  WEB client (status 1, 128 MB in 40 s) but not by the signed-in TV client;
+  the old TV build that still hands out plain URLs caps them at ~10 MB too.
+  So `ytx/src/stream.js` keeps one anonymous web session (visitor data +
+  session-bound token, rebuilt every 4 h) and mints a video-bound token per
+  play. Consequences: playback is not written to the account's watch history
+  and age-restricted videos do not play.
 - **TV layouts are not modelled by youtubei.js**, so `ytx/src/tv.js` asks for
   raw JSON and normalises `tileRenderer` / `lockupViewModel` shelves, grids,
   playlist lists and watch-next pivots into one shape.
@@ -62,9 +73,11 @@ duration_text, meta[], thumbnail, progress_pct, live}`.
 
 - Sidecar image `ghcr.io/sviniabanditka/promin-ytx`, built and imported by the
   same workflow as promin; deployed by `kubectl set image` with the commit sha.
-- When YouTube changes something: bump `youtubei.js` / `googlevideo` in
-  `ytx/package.json`, run `npm run check`, redeploy. Symptoms: `502
-  youtube_upstream` on browse, `409 unplayable` or a failed `mux2` job on play.
+- When YouTube changes something: bump `youtubei.js` / `googlevideo` /
+  `bgutils-js` in `ytx/package.json`, run `npm run check`, redeploy. Symptoms:
+  `502 youtube_upstream` on browse, `409 unplayable` or a failed `mux2` job on
+  play, `sabr stream protection status=2` in the ytx log (PO token no longer
+  accepted → playback stops after about a minute).
 - The player treats `/remux/<job>/playlist.m3u8` as a growing source and
   polls it until 200, the same as torrent HLS; SponsorBlock spans ride in
   `PlayerContext.skipSegments` and are skipped from the 1 s stats tick.

@@ -61,7 +61,7 @@ async function route(req, res) {
     if (rest[0] === 'browse' && rest[1]) return json(res, 200, await browse(yt, rest[1], cont));
     if (rest[0] === 'search') return json(res, 200, await search(yt, url.searchParams.get('q') || '', cont));
     if (rest[0] === 'video' && rest[1]) return json(res, 200, await video(yt, rest[1]));
-    if (rest[0] === 'stream' && rest[1] && (rest[2] === 'video' || rest[2] === 'audio')) return await streamTrack(req, res, yt, rest[1], rest[2], url.searchParams.get('quality') || '1080p');
+    if (rest[0] === 'stream' && rest[1] && (rest[2] === 'video' || rest[2] === 'audio')) return await streamTrack(req, res, rest[1], rest[2], url.searchParams.get('quality') || '1080p');
   } catch (e) {
     // A rejected token: drop the cached session so the next call re-signs in.
     if (e instanceof HttpError && e.code === 'youtube_auth') accounts.reset(id);
@@ -70,9 +70,10 @@ async function route(req, res) {
   throw new HttpError(404, 'not_found', 'no such route');
 }
 
-async function streamTrack(req, res, yt, vid, track, quality) {
+async function streamTrack(req, res, vid, track, quality) {
   if (!/^[A-Za-z0-9_-]{11}$/.test(vid)) throw new HttpError(400, 'bad_id', 'video id');
-  const t = await openTrack(yt, vid, track, quality, log);
+  // Anonymous web playback (stream.js); the profile only has to be linked.
+  const t = await openTrack(vid, track, quality, log);
   const mime = (t.format.mimeType || '').split(';')[0] || (track === 'audio' ? 'audio/mp4' : 'video/mp4');
   res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'no-store', 'X-Ytx-Itag': String(t.format.itag || ''), 'X-Ytx-Quality': t.format.qualityLabel || '' });
   let bytes = 0;
