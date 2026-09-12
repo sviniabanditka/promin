@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "node src/server.js",
-    "check": "node --check src/server.js && node --check src/tv.js && node --check src/accounts.js && node --check src/stream.js && node --check src/potoken.js"
+    "check": "node --check src/server.js && node --check src/tv.js && node --check src/accounts.js && node --check src/stream.js && node --check src/potoken.js && node --check src/watch.js"
   },
   "dependencies": {
     "bgutils-js": "^4.0.3",

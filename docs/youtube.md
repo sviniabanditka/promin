@@ -62,8 +62,9 @@ routes answer `503 youtube_disabled`.
 | DELETE | `/account` | unlink (revokes the token) |
 | GET | `/browse/{page}?cont=` | `home\|subscriptions\|history\|playlists\|library\|liked\|watch_later\|UC…\|VL…` → `{shelves:[{title, items, cont}], cont}` |
 | GET | `/search?q=&cont=` | same shape |
-| GET | `/video/{id}` | `{id, title, channel{id,name}, channel_avatar, duration_sec, views_text, published_text, playable, reason, qualities, related}` |
-| GET | `/play/{id}?quality=1080p&sb=a,b` | submits a `mux2` job → `{job_id, playlist_url, quality, segments}`; play `playlist_url` with `?t=` like any remux |
+| GET | `/video/{id}` | `{id, title, channel{id,name}, channel_avatar, duration_sec, views_text, published_text, playable, reason, qualities, resume_sec, related}`; `resume_sec` comes from the history tile's percent watched (0 = start over) |
+| GET | `/play/{id}?quality=1080p&start=N&sb=a,b` | submits a `mux2` job → `{job_id, playlist_url, quality, segments}`; `start=N` (seconds) begins the SABR pull there and the playlist carries `X-Remux-Start`, like torrent offset jobs — the player uses it for resume and far seeks |
+| POST | `/watch/{id}` `{position_sec, duration_sec}` | reports a position to the account's YouTube history (stats pings as the signed-in TV client); the TV player calls it every ~20 s and on seeks |
 | GET | `/segments/{id}?cats=` | SponsorBlock spans `{segments:[{category,start,end}]}` |
 
 Item: `{kind: video|channel|playlist, id, title, channel{id,name}, duration_sec,
@@ -84,5 +85,18 @@ duration_text, meta[], thumbnail, progress_pct, live}`.
 - Live streams are reported `playable: false, reason: "live"`: SABR delivered
   no bytes for them in tests, so the TV shows "not supported yet" instead of a
   hanging player.
-- Not done yet: live streams, seeking beyond the muxed range (SABR start
-  offset), a per-profile cap on live tracks, the Mini App / bot surfaces.
+- **Resume and far seeks** start the SABR pull at the requested second:
+  `SabrStream` has no seek API, so `ytx/src/stream.js` restores it with a
+  phantom segment of that length (the first request is built as if no format
+  were initialised, so the server still sends the init segment). Both tracks
+  start at the same offset; ffmpeg's output timeline restarts at 0 and the
+  player adds `X-Remux-Start`, exactly the torrent `start=` contract.
+- **History and "continue watching"** on the account come from the stats
+  pings (`ytx/src/watch.js`): `videostats_playback` once per playback
+  session (the video lands in history), `videostats_watchtime` with
+  `st/et/cmt` on every report. YouTube derives the tile's percent from the
+  reported watch time, so the TV reports every ~20 s. Exact seconds for the
+  same TV live in `localStorage` (`promin:yt:resume`); the account's percent
+  is the cross-device fallback. No age-restricted videos (media is anonymous).
+- Not done yet: live streams, a per-profile cap on live tracks, the Mini
+  App / bot surfaces.

@@ -96,7 +96,40 @@ class Playback {
 
 let playback = null;
 
-export async function openTrack(videoId, track, quality, log) {
+// SabrStream has no seek API: its request position is the total duration of
+// the segments it has downloaded. To begin at `startMs` we hand it a restore
+// state whose formats already "have" one phantom segment of that length and
+// no buffered ranges, so the first request asks for startMs. Two details:
+// the server sends the init segment only when the request names no
+// "initialized" formats (`prepareFormatSelections`), so that first request is
+// built as if the map were empty; and the server's real format metadata
+// replaces our entries, so the phantom is re-added on `formatInitialization`.
+function resumeState(stream, options, startMs, durationMs) {
+  const { videoFormat, audioFormat } = stream.selectFormats(options);
+  const prepare = stream.prepareFormatSelections.bind(stream);
+  let first = true;
+  stream.prepareFormatSelections = (formats, ranges) => {
+    if (!first) return prepare(formats, ranges);
+    first = false;
+    const saved = stream.initializedFormatsMap;
+    stream.initializedFormatsMap = new Map();
+    try { return prepare(formats, ranges); } finally { stream.initializedFormatsMap = saved; }
+  };
+  const phantom = () => [-1, { segmentNumber: -1, durationMs: String(startMs) }];
+  const fake = (f) => ({
+    formatKey: `${f.itag}:${f.xtags || ''}`,
+    formatInitializationMetadata: { formatId: { itag: f.itag, lastModified: f.lastModified, xtags: f.xtags }, mimeType: f.mimeType, durationUnits: '0', durationTimescale: '0' },
+    downloadedSegments: [phantom()],
+    lastMediaHeaders: [],
+  });
+  stream.on('formatInitialization', (f) => { const [k, v] = phantom(); f.downloadedSegments.set(k, v); });
+  // The end-of-stream audit expects segments from 0; with a phantom it would
+  // report the skipped range as an error after all data was delivered.
+  stream.validateDownloadedSegments = () => {};
+  return { durationMs, playerTimeMs: startMs, initializedFormats: [fake(videoFormat), fake(audioFormat)] };
+}
+
+export async function openTrack(videoId, track, quality, log, startSec = 0) {
   if (!QUALITIES.includes(quality)) quality = '1080p';
   if (!playback) playback = new Playback(log);
   const pr = await playback.player(videoId);
@@ -130,12 +163,16 @@ export async function openTrack(videoId, track, quality, log) {
   });
   stream.on('error', (e) => log.warn('sabr error', { videoId, track, error: String(e).slice(0, 200) }));
 
-  const { videoStream, audioStream, selectedFormats } = await stream.start({
+  const options = {
     videoQuality: quality,
     audioQuality: 'AUDIO_QUALITY_MEDIUM',
     preferH264: true, preferMP4: true, preferOpus: false,
     enabledTrackTypes: track === 'audio' ? EnabledTrackTypes.AUDIO_ONLY : EnabledTrackTypes.VIDEO_ONLY,
-  });
+  };
+  const durationMs = Number(pr.video_details?.duration || 0) * 1000;
+  const startMs = Math.floor(Math.max(0, startSec) * 1000);
+  if (startMs > 0 && durationMs > 0 && startMs < durationMs - 5000) options.state = resumeState(stream, options, startMs, durationMs);
+  const { videoStream, audioStream, selectedFormats } = await stream.start(options);
   const fmt = track === 'audio' ? selectedFormats.audioFormat : selectedFormats.videoFormat;
   return { stream, readable: track === 'audio' ? audioStream : videoStream, format: fmt, abort: () => stream.abort() };
 }

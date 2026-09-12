@@ -8,7 +8,8 @@
 //   GET    /v1/accounts/:id/browse/:page     home|subscriptions|history|playlists|library|trending|liked|watch_later|UC…|VL…  ?cont=
 //   GET    /v1/accounts/:id/search?q=&cont=
 //   GET    /v1/accounts/:id/video/:vid       details + related
-//   GET    /v1/accounts/:id/stream/:vid/:track?quality=1080p   video|audio track, chunked media
+//   GET    /v1/accounts/:id/stream/:vid/:track?quality=1080p&start=SEC   video|audio track, chunked media
+//   POST   /v1/accounts/:id/watch/:vid {position_sec, duration_sec}      history + resume point pings
 //   GET    /healthz
 //
 // Env: YTX_ADDR (default :8091), YTX_DATA (default /data/ytx).
@@ -17,6 +18,7 @@ import http from 'node:http';
 import { Accounts } from './accounts.js';
 import { browse, search, video } from './tv.js';
 import { openTrack } from './stream.js';
+import { watch } from './watch.js';
 import { HttpError } from './util.js';
 
 const ADDR = process.env.YTX_ADDR || ':8091';
@@ -52,6 +54,11 @@ async function route(req, res) {
     if (req.method === 'DELETE') { await accounts.unlink(id); return json(res, 204, {}); }
   }
   if (rest[0] === 'login' && req.method === 'POST') return json(res, 200, await accounts.startLogin(id));
+  if (rest[0] === 'watch' && rest[1] && req.method === 'POST') {
+    const body = await readJson(req);
+    const yt = await accounts.session(id);
+    return json(res, 200, await watch(yt, id, rest[1], Number(body.position_sec) || 0, Number(body.duration_sec) || 0, log));
+  }
 
   if (req.method !== 'GET') throw new HttpError(405, 'method', 'GET only');
   const yt = await accounts.session(id);
@@ -61,7 +68,7 @@ async function route(req, res) {
     if (rest[0] === 'browse' && rest[1]) return json(res, 200, await browse(yt, rest[1], cont));
     if (rest[0] === 'search') return json(res, 200, await search(yt, url.searchParams.get('q') || '', cont));
     if (rest[0] === 'video' && rest[1]) return json(res, 200, await video(yt, rest[1]));
-    if (rest[0] === 'stream' && rest[1] && (rest[2] === 'video' || rest[2] === 'audio')) return await streamTrack(req, res, rest[1], rest[2], url.searchParams.get('quality') || '1080p');
+    if (rest[0] === 'stream' && rest[1] && (rest[2] === 'video' || rest[2] === 'audio')) return await streamTrack(req, res, rest[1], rest[2], url.searchParams.get('quality') || '1080p', Number(url.searchParams.get('start')) || 0);
   } catch (e) {
     // A rejected token: drop the cached session so the next call re-signs in.
     if (e instanceof HttpError && e.code === 'youtube_auth') accounts.reset(id);
@@ -70,10 +77,19 @@ async function route(req, res) {
   throw new HttpError(404, 'not_found', 'no such route');
 }
 
-async function streamTrack(req, res, vid, track, quality) {
+function readJson(req) {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    req.on('data', (c) => { data += c; if (data.length > 4096) { reject(new HttpError(413, 'too_large', 'body too large')); req.destroy(); } });
+    req.on('end', () => { try { resolve(data ? JSON.parse(data) : {}); } catch { reject(new HttpError(400, 'bad_json', 'invalid JSON')); } });
+    req.on('error', reject);
+  });
+}
+
+async function streamTrack(req, res, vid, track, quality, startSec) {
   if (!/^[A-Za-z0-9_-]{11}$/.test(vid)) throw new HttpError(400, 'bad_id', 'video id');
   // Anonymous web playback (stream.js); the profile only has to be linked.
-  const t = await openTrack(vid, track, quality, log);
+  const t = await openTrack(vid, track, quality, log, startSec);
   const mime = (t.format.mimeType || '').split(';')[0] || (track === 'audio' ? 'audio/mp4' : 'video/mp4');
   res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'no-store', 'X-Ytx-Itag': String(t.format.itag || ''), 'X-Ytx-Quality': t.format.qualityLabel || '' });
   let bytes = 0;

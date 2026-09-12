@@ -3,8 +3,10 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/sviniabanditka/promin/server/internal/remux"
@@ -160,9 +162,17 @@ func (h *ytHandlers) play(w http.ResponseWriter, r *http.Request) {
 		h.writeYTError(w, err)
 		return
 	}
-	job, err := h.queue.SubmitMux2(
-		h.yt.TrackURL(info.User.ID, id, "video", quality),
-		h.yt.TrackURL(info.User.ID, id, "audio", quality),
+	// start=N (seconds): resume / far seek — the sidecar begins the SABR pull
+	// there and the playlist carries X-Remux-Start, like torrent offset jobs.
+	start, _ := strconv.ParseFloat(r.URL.Query().Get("start"), 64)
+	if start < 0 || math.IsNaN(start) || math.IsInf(start, 0) {
+		start = 0
+	}
+	start = math.Floor(start)
+	job, err := h.queue.SubmitMux2From(
+		h.yt.TrackURL(info.User.ID, id, "video", quality, start),
+		h.yt.TrackURL(info.User.ID, id, "audio", quality, start),
+		start,
 	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "не вдалося запустити remux")
@@ -178,6 +188,31 @@ func (h *ytHandlers) play(w http.ResponseWriter, r *http.Request) {
 		"quality":      quality,
 		"segments":     h.yt.Segments(r.Context(), id, cats),
 	})
+}
+
+// watch: POST /api/v1/yt/watch/{id} {position_sec, duration_sec} → the
+// account's YouTube history and resume point (the TV player calls it every
+// ~20 s and on pause/stop, docs/youtube.md).
+func (h *ytHandlers) watch(w http.ResponseWriter, r *http.Request) {
+	info, _ := authFrom(r)
+	id := r.PathValue("id")
+	if !ytVideoID.MatchString(id) {
+		writeBadRequest(w, "невірний id")
+		return
+	}
+	var body struct {
+		PositionSec float64 `json:"position_sec"`
+		DurationSec float64 `json:"duration_sec"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil || body.PositionSec < 0 || body.PositionSec > 1e7 {
+		writeBadRequest(w, "невірне тіло")
+		return
+	}
+	if err := h.yt.Watch(r.Context(), info.User.ID, id, body.PositionSec, body.DurationSec); err != nil {
+		h.writeYTError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // segments: GET /api/v1/yt/segments/{id}?cats=a,b → SponsorBlock spans.

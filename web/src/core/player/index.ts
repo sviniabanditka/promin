@@ -51,7 +51,7 @@ import { isResumable } from '../progress';
 import { report as diag } from '../diag';
 import { setRemoteHandler, RemoteAction } from './remote';
 import { ensureHls, HlsInstance, HlsCtor } from './hls';
-import { Stream, Subtitle, Voice, mediaUrl, postPlayerState, PlayerStateReport, searchSubtitles, subtitleFileUrl, SubtitleResult } from '../api';
+import { Stream, Subtitle, Voice, mediaUrl, postPlayerState, PlayerStateReport, searchSubtitles, subtitleFileUrl, SubtitleResult, buildHeaders } from '../api';
 
 export interface PlayerMedia {
   type: 'hls' | 'mp4';
@@ -2176,7 +2176,11 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     // Growing sources: an explicit /remux job, or a torrent /stream that the
     // server answers with an HLS playlist (mkv remux / HEVC transcode — the
     // client knows from media.type). Their playlists are muxed in real time.
-    const isRemux = rawUrl.indexOf('/remux?') !== -1;
+    // YouTube: /api/v1/yt/play/<id> answers the same {playlist_url} JSON as
+    // /remux?src= and honours start=N; it is an API route, so it needs the
+    // bearer header rather than the ?t= media token.
+    const isYtPlay = rawUrl.indexOf('/yt/play/') !== -1;
+    const isRemux = rawUrl.indexOf('/remux?') !== -1 || isYtPlay;
     const isTorrentHls = rawUrl.indexOf('/stream/') !== -1 && media.type === 'hls';
     // A job playlist handed over directly (YouTube mux2: /remux/<job>/playlist.m3u8).
     const isJobPlaylist = /\/remux\/[^/?]+\/playlist\.m3u8/.test(rawUrl);
@@ -2215,7 +2219,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     // Ask ffmpeg for the track the user picked (audio=0 by default). A different
     // index is a different dedup key server-side, i.e. its own mux job.
     const url = rawUrl.replace(/([?&])audio=\d+/, '$1audio=' + remuxAudioIndex);
-    return fetch(url)
+    return fetch(url, isYtPlay ? { headers: buildHeaders(false) } : undefined)
       .then(function (r) {
         return r.json();
       })

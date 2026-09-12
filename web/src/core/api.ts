@@ -259,7 +259,7 @@ function buildQuery(params: QueryParams | undefined): string {
 // Build request headers, adding Authorization: Bearer <token> when a token is
 // stored (docs/api.md — all endpoints except register/login require it). JSON
 // body requests also set Content-Type.
-function buildHeaders(hasBody: boolean): { [k: string]: string } {
+export function buildHeaders(hasBody: boolean): { [k: string]: string } {
   const h: { [k: string]: string } = { Accept: 'application/json' };
   if (hasBody) h['Content-Type'] = 'application/json';
   const token = getToken();
@@ -1105,6 +1105,7 @@ export interface YtVideo {
   published_text: string;
   description: string;
   is_live: boolean;
+  resume_sec: number; // account's resume point (whole percents of the duration), 0 if none
   thumbnail: string | null;
   playable: boolean;
   reason: string | null;
@@ -1140,6 +1141,15 @@ export function ytSearch(q: string, cont?: string | null): Promise<YtFeed> {
 export function getYtVideo(id: string): Promise<YtVideo> {
   return get<YtVideo>('/yt/video/' + encodeURIComponent(id), undefined, 40000);
 }
+export function ytSegments(id: string): Promise<{ segments: YtSegment[] }> {
+  return get<{ segments: YtSegment[] }>('/yt/segments/' + encodeURIComponent(id));
+}
+
+// Reports a playback position to the account's YouTube history / resume point.
+export function ytWatch(id: string, positionSec: number, durationSec: number): Promise<void> {
+  return post<void>('/yt/watch/' + encodeURIComponent(id), { position_sec: Math.floor(positionSec), duration_sec: Math.floor(durationSec) });
+}
+
 export function ytPlay(id: string, quality: string): Promise<YtPlay> {
   return get<YtPlay>('/yt/play/' + encodeURIComponent(id), { quality: quality }, 60000);
 }

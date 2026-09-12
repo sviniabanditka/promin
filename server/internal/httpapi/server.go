@@ -222,6 +222,7 @@ func NewServer(
 	mux.HandleFunc("GET /api/v1/yt/video/{id}", requireAuth(authSvc, ytH.video))
 	mux.HandleFunc("GET /api/v1/yt/play/{id}", requireAuth(authSvc, ytH.play))
 	mux.HandleFunc("GET /api/v1/yt/segments/{id}", requireAuth(authSvc, ytH.segments))
+	mux.HandleFunc("POST /api/v1/yt/watch/{id}", requireAuth(authSvc, ytH.watch))
 
 	tgApp := &tgAppHandlers{bot: tgBot, auth: authSvc, sync: syncSvc, cat: catalogSvc}
 	mux.HandleFunc("POST /api/v1/tg/auth", tgApp.login) // open pre-gate: initData is the credential

@@ -7,6 +7,7 @@
 package youtube
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -63,6 +64,11 @@ func (c *Client) Enabled() bool { return c != nil }
 func account(userID int64) string { return strconv.FormatInt(userID, 10) }
 
 func (c *Client) do(ctx context.Context, method, path string, q url.Values, out any) error {
+	return c.doBody(ctx, method, path, q, nil, out)
+}
+
+// doBody is do with an optional JSON payload.
+func (c *Client) doBody(ctx context.Context, method, path string, q url.Values, payload any, out any) error {
 	if c == nil {
 		return ErrDisabled
 	}
@@ -70,9 +76,20 @@ func (c *Client) do(ctx context.Context, method, path string, q url.Values, out 
 	if len(q) > 0 {
 		u += "?" + q.Encode()
 	}
-	req, err := http.NewRequestWithContext(ctx, method, u, nil)
+	var reqBody io.Reader
+	if payload != nil {
+		b, err := json.Marshal(payload)
+		if err != nil {
+			return err
+		}
+		reqBody = bytes.NewReader(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, u, reqBody)
 	if err != nil {
 		return err
+	}
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -161,8 +178,22 @@ func (c *Client) Video(ctx context.Context, userID int64, videoID string) (Feed,
 }
 
 // TrackURL is the sidecar URL ffmpeg reads one media track from.
-func (c *Client) TrackURL(userID int64, videoID, track, quality string) string {
-	return c.base + "/v1/accounts/" + account(userID) + "/stream/" + url.PathEscape(videoID) + "/" + track + "?quality=" + url.QueryEscape(quality)
+// TrackURL is the sidecar URL ffmpeg reads one elementary track from;
+// startSec > 0 makes the sidecar begin the SABR pull at that source second
+// (docs/youtube.md: resume and far seeks).
+func (c *Client) TrackURL(userID int64, videoID, track, quality string, startSec float64) string {
+	u := c.base + "/v1/accounts/" + account(userID) + "/stream/" + url.PathEscape(videoID) + "/" + track + "?quality=" + url.QueryEscape(quality)
+	if startSec > 0 {
+		u += "&start=" + strconv.FormatFloat(startSec, 'f', 3, 64)
+	}
+	return u
+}
+
+// Watch reports a playback position to the account's YouTube history (the
+// sidecar sends the stats pings as the signed-in TV client).
+func (c *Client) Watch(ctx context.Context, userID int64, videoID string, positionSec, durationSec float64) error {
+	body := map[string]float64{"position_sec": positionSec, "duration_sec": durationSec}
+	return c.doBody(ctx, http.MethodPost, "/v1/accounts/"+account(userID)+"/watch/"+url.PathEscape(videoID), nil, body, nil)
 }
 
 // ---- SponsorBlock ------------------------------------------------------------

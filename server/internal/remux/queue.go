@@ -149,6 +149,13 @@ func (q *Queue) SubmitMux2(videoURL, audioURL string) (*Job, error) {
 	return q.submit2(KindMux2, videoURL, audioURL, 0, false, nil, 0)
 }
 
+// SubmitMux2From is SubmitMux2 for inputs that already begin at startSec (the
+// URLs carry the offset; no -ss). StartSec is kept on the job so the playlist
+// reports X-Remux-Start like any other offset job.
+func (q *Queue) SubmitMux2From(videoURL, audioURL string, startSec float64) (*Job, error) {
+	return q.submit2(KindMux2, videoURL, audioURL, 0, false, nil, startSec)
+}
+
 func (q *Queue) submit(kind Kind, source string, audioIndex int, hdr bool, audio []AudioMeta, startSec float64) (*Job, error) {
 	return q.submit2(kind, source, "", audioIndex, hdr, audio, startSec)
 }
@@ -362,7 +369,8 @@ func (q *Queue) run(job *Job) {
 	case KindMux2:
 		args = buildMux2HLSArgs(job.Source, job.Source2, job.OutputDir)
 	}
-	if job.StartSec > 0 && len(args) > 0 {
+	// mux2 inputs start at the offset themselves (the sidecar seeks upstream).
+	if job.StartSec > 0 && len(args) > 0 && job.Kind != KindMux2 {
 		args = withInputSeek(args, job.StartSec)
 	}
 	switch job.Kind {

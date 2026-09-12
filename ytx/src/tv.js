@@ -8,7 +8,7 @@
 //            duration_sec, duration_text, meta: [..], thumbnail, progress_pct, live }
 // Ads (`adSlotRenderer`) are dropped.
 
-import { YTNodes } from 'youtubei.js';
+import { YTNodes, Parser } from 'youtubei.js';
 import { text, walk, parseDuration, largestThumb, HttpError } from './util.js';
 
 const PAGES = {
@@ -184,7 +184,16 @@ export async function search(yt, q, cont) {
 
 // Player call with the player's signature timestamp — without it the TV
 // client answers "The page needs to be reloaded" and no formats.
+// Signed-in /player responses, per session, a few minutes: video(), watch()
+// and the quality list all want the same answer.
+const PLAYER_TTL_MS = 5 * 60 * 1000;
+const playerCache = new WeakMap(); // yt → Map(videoId → { pr, at })
+
 export async function player(yt, videoId, reload) {
+  let byVid = playerCache.get(yt);
+  if (!byVid) { byVid = new Map(); playerCache.set(yt, byVid); }
+  const hit = !reload && byVid.get(videoId);
+  if (hit && hit.at + PLAYER_TTL_MS > Date.now()) return hit.pr;
   const ep = new YTNodes.NavigationEndpoint({ watchEndpoint: { videoId } });
   const args = {
     playbackContext: {
@@ -193,20 +202,41 @@ export async function player(yt, videoId, reload) {
     },
     contentCheckOk: true,
     racyCheckOk: true,
-    parse: true,
+    parse: false,
   };
   if (reload) args.playbackContext.reloadPlaybackContext = reload;
+  let raw;
   try {
-    return await ep.call(yt.actions, args);
+    raw = await ep.call(yt.actions, args);
   } catch (e) {
     throw new HttpError(502, 'youtube_upstream', String(e?.message || e).slice(0, 200));
   }
+  const pr = Parser.parseResponse(raw.data);
+  if (!reload) byVid.set(videoId, { pr, at: Date.now() });
+  return pr;
 }
 
 // Video page: details from /player, related shelves from /next.
+// The TV /player response has no resume point; the account's history tiles
+// carry percentDurationWatched, which YouTube derives from the watchtime pings
+// (watch.js). First page only, cached a minute per session.
+const HISTORY_TTL_MS = 60 * 1000;
+const historyCache = new WeakMap(); // yt → { at, feed }
+async function historyProgress(yt, videoId) {
+  try {
+    let h = historyCache.get(yt);
+    if (!h || h.at + HISTORY_TTL_MS < Date.now()) {
+      h = { at: Date.now(), feed: await browse(yt, 'history') };
+      historyCache.set(yt, h);
+    }
+    for (const shelf of h.feed.shelves) for (const item of shelf.items) if (item.id === videoId) return item.progress_pct || 0;
+  } catch (e) { /* no history → no resume point */ }
+  return 0;
+}
+
 export async function video(yt, videoId) {
   if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) throw new HttpError(400, 'bad_id', 'video id');
-  const [pr, next] = await Promise.all([player(yt, videoId), raw(yt, '/next', { videoId })]);
+  const [pr, next, resumePct] = await Promise.all([player(yt, videoId), raw(yt, '/next', { videoId }), historyProgress(yt, videoId)]);
   const d = pr.video_details;
   const ps = pr.playability_status || {};
   const formats = (pr.streaming_data?.adaptive_formats || []).filter((f) => f.has_video && f.quality_label).map((f) => f.quality_label);
@@ -225,6 +255,7 @@ export async function video(yt, videoId) {
     published_text: text(meta?.publishedTimeText) || text(meta?.dateText) || '',
     description: d?.short_description || '',
     is_live: !!d?.is_live,
+    resume_sec: resumePct > 3 && resumePct < 97 && d?.duration ? Math.round((resumePct / 100) * d.duration) : 0,
     thumbnail: largestThumb(d?.thumbnail) || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
     // Live streams: SABR delivers nothing for them yet (verified: 0 B in 12 s), so
     // say so instead of hanging the player. ponytail: live = own path later.
