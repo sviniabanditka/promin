@@ -1,0 +1,16 @@
+{
+  "name": "ytx",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Promin YouTube extractor sidecar: TV-client sign-in, feeds, search and SABR media tracks over a small HTTP API",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node src/server.js",
+    "check": "node --check src/server.js && node --check src/tv.js && node --check src/accounts.js && node --check src/stream.js"
+  },
+  "dependencies": {
+    "googlevideo": "^4.1.1",
+    "youtubei.js": "^18.0.0"
+  }
+}
