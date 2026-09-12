@@ -18,6 +18,9 @@ import { mountPlaylists, mountPlaylistItems } from './playlists';
 import { mountLibrary } from './library';
 import { mountDevices } from './devices';
 import { mountPerson } from './person';
+import { mountYouTube, YtPage } from './yt/index';
+import { mountYtVideo } from './yt/video';
+import { mountYtSearch } from './yt/search';
 import { isLogged } from '../core/auth';
 
 export type MenuKey =
@@ -25,6 +28,7 @@ export type MenuKey =
   | 'catalog'
   | 'search'
   | 'library'
+  | 'youtube'
   | 'settings';
 
 // The service is closed by default: the only way in is a PIN. "Login" now means
@@ -43,6 +47,9 @@ export function openMenu(key: MenuKey): void {
   } else if (key === 'library') {
     // Library (favourites + playlists + continue) requires a session.
     if (isLogged()) router.replaceRoot(mountLibrary, '/library');
+    else router.replaceRoot(mountPinEntry);
+  } else if (key === 'youtube') {
+    if (isLogged()) openYt('home');
     else router.replaceRoot(mountPinEntry);
   } else if (key === 'settings') {
     router.replaceRoot(mountSettings, '/settings');
@@ -113,6 +120,40 @@ export function openTitle(type: 'movie' | 'tv', id: number, resume?: boolean, se
   }, titlePath(type, id, season, episode));
 }
 
+// ---- YouTube section (docs/youtube.md) ----------------------------------------
+
+// A section page (home / subscriptions / history / …) is the section's root.
+export function openYt(page: YtPage): void {
+  router.replaceRoot(function (container: HTMLElement) {
+    return mountYouTube(container, { page: page });
+  }, page === 'home' ? '/yt' : '/yt/' + page);
+}
+
+// Channel and playlist pages are the same browse screen, pushed.
+export function openYtChannel(id: string): void {
+  router.push(function (container: HTMLElement) {
+    return mountYouTube(container, { page: 'channel', browseId: id });
+  }, '/yt/channel/' + encodeURIComponent(id));
+}
+
+export function openYtPlaylist(id: string): void {
+  router.push(function (container: HTMLElement) {
+    return mountYouTube(container, { page: 'playlist', browseId: id });
+  }, '/yt/playlist/' + encodeURIComponent(id));
+}
+
+export function openYtVideo(id: string): void {
+  router.push(function (container: HTMLElement) {
+    return mountYtVideo(container, { id: id });
+  }, '/yt/video/' + encodeURIComponent(id));
+}
+
+export function openYtSearch(q?: string): void {
+  router.push(function (container: HTMLElement) {
+    return mountYtSearch(container, { q: q || '' });
+  }, '/yt/search' + (q ? '?q=' + encodeURIComponent(q) : ''));
+}
+
 // Actor / director page (pushed from a search person hit): filmography grid.
 export function openPerson(id: number): void {
   router.push(function (container: HTMLElement) {
@@ -153,6 +194,14 @@ function parseQuery(qs: string): { [k: string]: string } {
   return out;
 }
 
+function arg2(seg: string[]): string {
+  try {
+    return decodeURIComponent(seg[2] || '');
+  } catch (e) {
+    return seg[2] || '';
+  }
+}
+
 function intOrNull(v: string | undefined): number | null {
   if (v == null || v === '') return null;
   const n = parseInt(v, 10);
@@ -185,6 +234,32 @@ export function openRoute(raw: string): void {
       if (!(id > 0)) break;
       router.replaceRoot(mountHome, '/');
       openTitle(type, id, false, intOrNull(q.s), intOrNull(q.e));
+      return;
+    }
+    case 'yt': {
+      const sub = seg[1] || 'home';
+      if (sub === 'video' && seg[2]) {
+        openYt('home');
+        openYtVideo(arg2(seg));
+        return;
+      }
+      if (sub === 'channel' && seg[2]) {
+        openYt('home');
+        openYtChannel(arg2(seg));
+        return;
+      }
+      if (sub === 'playlist' && seg[2]) {
+        openYt('playlists');
+        openYtPlaylist(arg2(seg));
+        return;
+      }
+      if (sub === 'search') {
+        openYt('home');
+        openYtSearch(q.q || '');
+        return;
+      }
+      const pages: YtPage[] = ['home', 'subscriptions', 'history', 'playlists', 'liked', 'watch_later', 'account'];
+      openYt(pages.indexOf(sub as YtPage) >= 0 ? (sub as YtPage) : 'home');
       return;
     }
     case 'person': {

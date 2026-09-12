@@ -226,8 +226,10 @@ export async function video(yt, videoId) {
     description: d?.short_description || '',
     is_live: !!d?.is_live,
     thumbnail: largestThumb(d?.thumbnail) || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-    playable: ps.status === 'OK',
-    reason: ps.status === 'OK' ? null : (ps.reason || ps.status || 'unavailable'),
+    // Live streams: SABR delivers nothing for them yet (verified: 0 B in 12 s), so
+    // say so instead of hanging the player. ponytail: live = own path later.
+    playable: ps.status === 'OK' && !d?.is_live,
+    reason: d?.is_live ? 'live' : ps.status === 'OK' ? null : (ps.reason || ps.status || 'unavailable'),
     qualities,
     related: normalize(next).shelves,
   };

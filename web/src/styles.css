@@ -4026,3 +4026,161 @@ body.night-mode #night-shade { display: block; }
 /* keep .button's inline-flex (it centres the label); align-self stops the
    column flex parent from stretching the button across the sheet */
 .tg-close { align-self: flex-start; }
+
+/* ==== YouTube section (screens/yt) ==================================== */
+.yt-screen { position: relative; width: 100%; height: 100%; overflow: hidden; }
+
+.yt-panel {
+  position: fixed;
+  z-index: 1;
+  left: 8.4rem;
+  right: 0;
+  top: 7.2rem;
+  bottom: 0;
+  padding: 2.4rem 3.2rem 0;
+  display: flex;
+  flex-direction: row;
+}
+.yt-panel--video { display: block; padding: 0 3.2rem; }
+.yt-panel--video > .scroll { width: 100%; height: 100%; }
+
+/* Section sidebar: home / subscriptions / history / … */
+.yt-side {
+  flex: 0 0 22rem;
+  width: 22rem;
+  margin-right: 3.2rem;
+  display: flex;
+  flex-direction: column;
+}
+.yt-side__item {
+  font-size: 1.9rem;
+  color: var(--ink-2);
+  padding: 1.1rem 1.6rem;
+  margin-bottom: 0.4rem;
+  border-radius: var(--radius-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.yt-side__item.is-current { color: #ffffff; background-color: rgba(255, 255, 255, 0.06); }
+.yt-side__item.focus { background-color: var(--surface-2); color: var(--ink); box-shadow: inset 0 0 0 0.2rem var(--focus); }
+
+.yt-content { flex: 1 1 auto; min-width: 0; overflow: hidden; }
+.yt-content > .scroll { width: 100%; height: 100%; }
+.yt-content__body { padding: 1rem 0 6rem; }
+
+.yt-shelf { margin-bottom: 1.6rem; }
+.yt-shelf__title { font-size: 2rem; font-weight: bold; color: var(--ink-2); margin: 0.4rem 0 1.2rem; }
+.yt-grid { display: flex; flex-direction: row; flex-wrap: wrap; }
+
+/* 16:9 tile. 3 per row in the 91rem content column: 3 × (28 + 1.6) = 88.8rem. */
+.yt-card {
+  flex: 0 0 auto;
+  width: 28rem;
+  margin: 0 1.6rem 2rem 0;
+  border-radius: var(--radius-sm);
+}
+.yt-card__thumb {
+  position: relative;
+  width: 100%;
+  padding-top: 56.25%;
+  border-radius: var(--radius-sm);
+  background-color: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  transition: transform 0.15s ease-out, box-shadow 0.15s ease-out;
+}
+.yt-card__img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.yt-card--channel .yt-card__thumb { border-radius: 50%; width: 16rem; padding-top: 16rem; margin: 0 auto; }
+.yt-card--channel .yt-card__title { text-align: center; }
+.yt-card__badge {
+  position: absolute;
+  right: 0.8rem;
+  bottom: 0.8rem;
+  padding: 0.2rem 0.7rem;
+  border-radius: 0.6rem;
+  background: rgba(0, 0, 0, 0.75);
+  color: #ffffff;
+  font-size: 1.3rem;
+  font-weight: bold;
+}
+.yt-card__badge--live { background: #cc0000; }
+.yt-card__stack {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 30%;
+  background: rgba(0, 0, 0, 0.55);
+}
+.yt-card__progress { position: absolute; left: 0; right: 0; bottom: 0; height: 0.4rem; background: rgba(255, 255, 255, 0.25); }
+.yt-card__progress-fill { height: 100%; background: #ff0000; }
+.yt-card__title {
+  margin-top: 0.8rem;
+  font-size: 1.6rem;
+  line-height: 1.3;
+  color: #ffffff;
+  max-height: 4.2rem;
+  overflow: hidden;
+}
+.yt-card__sub { margin-top: 0.3rem; font-size: 1.4rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.yt-card.focus .yt-card__thumb { box-shadow: inset 0 0 0 0.3rem var(--focus), 0 0 0 0.3rem var(--focus); transform: translateY(-0.3rem); }
+.yt-card--more .yt-card__more-label {
+  height: 15.75rem; /* matches the 16:9 thumb of a 28rem tile */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background-color: rgba(255, 255, 255, 0.06);
+  font-size: 2rem;
+  color: var(--ink-2);
+}
+.yt-card--more.focus .yt-card__more-label { box-shadow: inset 0 0 0 0.3rem var(--focus); color: var(--ink); }
+.yt-card--more.is-loading .yt-card__more-label { opacity: 0.5; }
+
+/* Sign-in / account panel */
+.yt-account { max-width: 70rem; padding: 2rem 0; }
+.yt-account__title { font-size: 2.8rem; font-weight: bold; color: #ffffff; margin-bottom: 1rem; }
+.yt-account__text { font-size: 1.8rem; line-height: 1.4; color: var(--ink-2); margin-bottom: 2rem; }
+.yt-account__code {
+  display: inline-block;
+  font-size: 5.2rem;
+  letter-spacing: 0.4rem;
+  font-weight: bold;
+  color: #ffffff;
+  padding: 1.2rem 2.4rem;
+  border-radius: var(--radius-sm);
+  background-color: rgba(255, 255, 255, 0.08);
+  margin-bottom: 1.6rem;
+}
+.yt-account__wait { font-size: 1.6rem; color: var(--muted); }
+.yt-account__error { font-size: 1.6rem; color: #ff6b6b; margin-bottom: 1.6rem; }
+
+/* Video page */
+.yt-video__body { padding: 2.4rem 0 6rem; }
+.yt-hero { display: flex; flex-direction: row; align-items: flex-start; margin-bottom: 2.4rem; }
+.yt-hero__thumb {
+  flex: 0 0 56rem;
+  width: 56rem;
+  height: 31.5rem;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background-color: rgba(255, 255, 255, 0.06);
+  margin-right: 3.2rem;
+}
+.yt-hero__thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.yt-hero__info { flex: 1 1 auto; min-width: 0; }
+.yt-hero__title { font-size: 2.8rem; font-weight: bold; line-height: 1.25; color: #ffffff; max-height: 7rem; overflow: hidden; }
+.yt-hero__meta { margin-top: 0.8rem; font-size: 1.7rem; color: var(--muted); }
+.yt-hero__desc { margin-top: 1.2rem; font-size: 1.6rem; line-height: 1.4; color: var(--ink-2); max-height: 6.7rem; overflow: hidden; }
+.yt-hero__unplayable { margin-top: 1.2rem; font-size: 1.7rem; color: #ff6b6b; }
+.yt-actions { display: flex; flex-direction: row; flex-wrap: wrap; margin-top: 2rem; }
+.yt-actions .button { margin: 0 1.2rem 1.2rem 0; }
+.yt-actions .button.is-loading, .yt-account .button.is-loading { opacity: 0.6; }
+
+.is-phone .yt-panel { left: 0; bottom: 5.6rem; padding: 1.6rem; flex-direction: column; }
+.is-phone .yt-side { flex: 0 0 auto; width: 100%; flex-direction: row; flex-wrap: wrap; margin: 0 0 1.2rem; }
+.is-phone .yt-side__item { margin-right: 0.6rem; font-size: 1.6rem; padding: 0.8rem 1.2rem; }
+.is-phone .yt-card { width: calc(50% - 1.6rem); }
+.is-phone .yt-hero { flex-direction: column; }
+.is-phone .yt-hero__thumb { flex: 0 0 auto; width: 100%; height: auto; aspect-ratio: 16 / 9; margin: 0 0 1.6rem; }
+.vp-tall .yt-panel, .vp-tall .yt-screen { bottom: auto; height: 72rem; }

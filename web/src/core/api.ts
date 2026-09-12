@@ -945,6 +945,7 @@ export function deleteDevice(tokenId: string, force?: boolean): Promise<void> {
 export interface PingResponse {
   version?: string;
   status?: string;
+  youtube?: boolean; // the YouTube sidecar is configured → show the rail item
 }
 
 export function getPing(): Promise<PingResponse> {
@@ -1062,4 +1063,83 @@ export function searchSubtitles(imdbId: string, season: number | null | undefine
 }
 export function subtitleFileUrl(fileId: number | string): string {
   return API_BASE + '/subtitles/' + fileId + '.vtt';
+}
+
+// ---- YouTube section (docs/youtube.md) -----------------------------------------
+export interface YtItem {
+  kind: 'video' | 'channel' | 'playlist';
+  id: string;
+  title: string;
+  channel?: { id: string | null; name: string } | null;
+  duration_sec: number;
+  duration_text: string;
+  meta: string[];
+  thumbnail: string | null;
+  progress_pct: number;
+  live: boolean;
+}
+export interface YtShelf {
+  title: string;
+  items: YtItem[];
+  cont: string | null;
+}
+export interface YtFeed {
+  shelves: YtShelf[];
+  cont: string | null;
+}
+export interface YtAccount {
+  linked: boolean;
+  pending: boolean;
+  user_code?: string;
+  verification_url?: string;
+  expires_at?: number;
+  error?: string;
+}
+export interface YtVideo {
+  id: string;
+  title: string;
+  channel: { id: string | null; name: string };
+  channel_avatar?: string | null;
+  duration_sec: number;
+  views_text: string;
+  published_text: string;
+  description: string;
+  is_live: boolean;
+  thumbnail: string | null;
+  playable: boolean;
+  reason: string | null;
+  qualities: string[];
+  related: YtShelf[];
+}
+export interface YtSegment {
+  category: string;
+  start: number;
+  end: number;
+}
+export interface YtPlay {
+  job_id: string;
+  playlist_url: string;
+  quality: string;
+  segments: YtSegment[] | null;
+}
+export function getYtAccount(): Promise<YtAccount> {
+  return get<YtAccount>('/yt/account');
+}
+export function ytLogin(): Promise<YtAccount> {
+  return post<YtAccount>('/yt/account/login');
+}
+export function ytUnlink(): Promise<void> {
+  return del<void>('/yt/account');
+}
+export function ytBrowse(page: string, cont?: string | null): Promise<YtFeed> {
+  return get<YtFeed>('/yt/browse/' + encodeURIComponent(page), cont ? { cont: cont } : undefined, 40000);
+}
+export function ytSearch(q: string, cont?: string | null): Promise<YtFeed> {
+  return get<YtFeed>('/yt/search', cont ? { cont: cont } : { q: q }, 40000);
+}
+export function getYtVideo(id: string): Promise<YtVideo> {
+  return get<YtVideo>('/yt/video/' + encodeURIComponent(id), undefined, 40000);
+}
+export function ytPlay(id: string, quality: string): Promise<YtPlay> {
+  return get<YtPlay>('/yt/play/' + encodeURIComponent(id), { quality: quality }, 60000);
 }

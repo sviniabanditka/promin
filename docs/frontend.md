@@ -73,6 +73,10 @@ Every screen carries a route; the visible screen's route is mirrored into `locat
 | `#/settings`, `#/devices` | Settings and the device manager |
 | `#/title/<movie|tv>/<tmdb_id>`, `…?s=<season>&e=<episode>` | Title page; with `s`/`e` the watch modal opens on that episode |
 | `#/person/<id>` | Actor / director page (filmography grid), pushed over Home |
+| `#/yt`, `#/yt/<subscriptions\|history\|playlists\|liked\|watch_later\|account>` | YouTube section root (`screens/yt/index.ts`): sidebar + shelves; shown only while `/ping` reports `youtube: true` |
+| `#/yt/channel/<id>`, `#/yt/playlist/<id>` | Channel / playlist feed, pushed over the section home |
+| `#/yt/video/<id>` | Video page (`screens/yt/video.ts`): Watch per quality → `/api/v1/yt/play` → player on the mux2 playlist with SponsorBlock skips |
+| `#/yt/search?q=<query>` | YouTube search (`screens/yt/search.ts`), same keyboard as the main search |
 
 Unknown or malformed routes open Home. The Mini App at `/tg/` has its own hash router (docs/miniapp.md).
 

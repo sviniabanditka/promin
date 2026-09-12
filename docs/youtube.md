@@ -15,6 +15,7 @@ not notice. Background and the tests that led here: `docs/proposals/youtube.md`.
 | handlers | `server/internal/httpapi/handlers_yt.go` | `/api/v1/yt/*` (session required) |
 | remux kind `mux2` | `server/internal/remux` | Two elementary inputs (video URL + audio URL) copy-muxed to the usual HLS EVENT playlist |
 | deploy | `k8s/ytx.yaml` | Deployment + ClusterIP + PVC + NetworkPolicy (promin pods only) |
+| TV screens | `web/src/screens/yt/` | Rail item "YouTube" (hidden while `youtube: false`), sidebar + shelves, video page, search; controller modes `yt_side` / `yt_content` / `yt_actions` / `yt_related` |
 
 Config: `PROMIN_YTX_URL` (e.g. `http://ytx:8091`). Empty → the section is off:
 `/api/v1/ping` reports `youtube: false`, the TV hides the rail item, the
@@ -64,5 +65,11 @@ duration_text, meta[], thumbnail, progress_pct, live}`.
 - When YouTube changes something: bump `youtubei.js` / `googlevideo` in
   `ytx/package.json`, run `npm run check`, redeploy. Symptoms: `502
   youtube_upstream` on browse, `409 unplayable` or a failed `mux2` job on play.
-- Not done yet: seeking beyond the muxed range (SABR start offset), a
-  per-profile cap on live tracks, the Mini App / bot surfaces.
+- The player treats `/remux/<job>/playlist.m3u8` as a growing source and
+  polls it until 200, the same as torrent HLS; SponsorBlock spans ride in
+  `PlayerContext.skipSegments` and are skipped from the 1 s stats tick.
+- Live streams are reported `playable: false, reason: "live"`: SABR delivered
+  no bytes for them in tests, so the TV shows "not supported yet" instead of a
+  hanging player.
+- Not done yet: live streams, seeking beyond the muxed range (SABR start
+  offset), a per-profile cap on live tracks, the Mini App / bot surfaces.

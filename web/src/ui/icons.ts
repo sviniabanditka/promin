@@ -62,3 +62,9 @@ export const ICON_BOOKMARK_FILL =
   '<svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M6 3.5h12a1 1 0 0 1 1 1V21l-7-4-7 4V4.5a1 1 0 0 1 1-1z"/></svg>';
 export const ICON_SETTINGS_FILL =
   '<svg viewBox="0 0 28 29" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M2.36 18.19 3 17.51a5.63 5.63 0 0 0 0-6.23l-.64-.67a2.36 2.36 0 0 1-.29-2.37l.59-1.05a2.36 2.36 0 0 1 2.24-1.05l.79.2a5.62 5.62 0 0 0 3.3-.55 5.62 5.62 0 0 0 2.05-2.54l.25-.9A2.36 2.36 0 0 1 13.72 1h1.1a2.36 2.36 0 0 1 2.26 1.79l.25.9a5.62 5.62 0 0 0 2.05 2.54 5.62 5.62 0 0 0 3.3.55l.79-.2a2.36 2.36 0 0 1 2.24 1.05l.6 1.05a2.36 2.36 0 0 1-.3 2.37l-.64.67a5.63 5.63 0 0 0 0 6.23l.64.67a2.36 2.36 0 0 1 .3 2.37l-.6 1.05a2.36 2.36 0 0 1-2.24 1.05l-.79-.2a5.62 5.62 0 0 0-3.3.55 5.62 5.62 0 0 0-2.05 2.53l-.25.9a2.36 2.36 0 0 1-2.26 1.8h-1.11a2.36 2.36 0 0 1-2.26-1.8l-.25-.9a5.62 5.62 0 0 0-2.05-2.53 5.62 5.62 0 0 0-3.3-.55l-.79.2a2.36 2.36 0 0 1-2.24-1.05l-.6-1.05a2.36 2.36 0 0 1 .3-2.37ZM13.78 18.57a4.17 4.17 0 1 0-4.18-4.17 4.17 4.17 0 0 0 4.18 4.17Z"/></svg>';
+
+// YouTube section: a rounded rectangle with a play triangle (outline / filled).
+export const ICON_YOUTUBE =
+  '<svg viewBox="0 0 39 38" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2.5" y="7.5" width="34" height="23" rx="6.5" stroke="currentColor" stroke-width="3"/><path d="M16 13.5v11l9.5-5.5L16 13.5Z" fill="currentColor"/></svg>';
+export const ICON_YOUTUBE_FILL =
+  '<svg viewBox="0 0 39 38" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M9 6h21a8 8 0 0 1 8 8v10a8 8 0 0 1-8 8H9a8 8 0 0 1-8-8V14a8 8 0 0 1 8-8Zm7 7.5v11l9.5-5.5L16 13.5Z" fill-rule="evenodd"/></svg>';

@@ -14,8 +14,10 @@ import {
   ICON_SEARCH, ICON_SEARCH_FILL,
   ICON_SETTINGS, ICON_SETTINGS_FILL,
   ICON_BOOKMARK, ICON_BOOKMARK_FILL,
+  ICON_YOUTUBE, ICON_YOUTUBE_FILL,
 } from './icons';
 import { openMenu, MenuKey } from '../screens/nav';
+import { youtubeEnabled } from '../core/features';
 
 interface MenuDef {
   iconFill: string;
@@ -29,6 +31,9 @@ const ITEMS: MenuDef[] = [
   { key: 'catalog', labelKey: 'menu.catalog', icon: ICON_CATALOG, iconFill: ICON_CATALOG_FILL },
   { key: 'search', labelKey: 'menu.search', icon: ICON_SEARCH, iconFill: ICON_SEARCH_FILL },
   { key: 'library', labelKey: 'menu.library', icon: ICON_BOOKMARK, iconFill: ICON_BOOKMARK_FILL },
+  // The YouTube section is its own product inside Promin (docs/youtube.md);
+  // the item exists only when the server announces the sidecar.
+  { key: 'youtube', labelKey: 'menu.youtube', icon: ICON_YOUTUBE, iconFill: ICON_YOUTUBE_FILL },
   { key: 'settings', labelKey: 'menu.settings', icon: ICON_SETTINGS, iconFill: ICON_SETTINGS_FILL },
 ];
 
@@ -52,6 +57,7 @@ export function buildMenu(activeKey: MenuKey | 'none', returnMode: string): Menu
 
   for (let i = 0; i < ITEMS.length; i++) {
     const def = ITEMS[i];
+    if (def.key === 'youtube' && !youtubeEnabled()) continue;
     const item = el('div', 'menu__item selector');
     if (def.key === activeKey) {
       item.classList.add('menu__item--current');

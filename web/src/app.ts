@@ -12,6 +12,7 @@ import { mountHome } from './screens/home';
 import { mountPinEntry } from './screens/pin';
 import { openTitle, openRoute } from './screens/nav';
 import { Direction } from './core/nav';
+import { setFeatures } from './core/features';
 import { dispatchRemote, RemoteAction } from './core/player/remote';
 import { isLogged, clearLocal, onAuthChange } from './core/auth';
 import { setDeadSessionHook, getPing } from './core/api';
@@ -221,6 +222,7 @@ function startUpdateWatch(): void {
   const poll = function () {
     getPing().then(
       function (p) {
+        setFeatures({ youtube: !!(p && p.youtube) });
         const v = p && p.version ? p.version : '';
         if (!v) return;
         if (!known) {

@@ -120,6 +120,15 @@ export interface PlayerContext {
   // since the bundled hls.js can't play HLS alternate-audio renditions). Called
   // once after open; done([]) or absent → no track menu.
   loadAudioTracks?: (done: (tracks: CtxAudioTrack[]) => void) => void;
+  // Community-marked spans to jump over (SponsorBlock, YouTube section). The
+  // 1 s stats tick checks the position; a segment is skipped once per open.
+  skipSegments?: SkipSegment[];
+}
+
+export interface SkipSegment {
+  start: number;
+  end: number;
+  label: string;
 }
 
 export interface PlayerEpisode {
@@ -2169,18 +2178,24 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     // client knows from media.type). Their playlists are muxed in real time.
     const isRemux = rawUrl.indexOf('/remux?') !== -1;
     const isTorrentHls = rawUrl.indexOf('/stream/') !== -1 && media.type === 'hls';
-    growingSource = isRemux || isTorrentHls;
+    // A job playlist handed over directly (YouTube mux2: /remux/<job>/playlist.m3u8).
+    const isJobPlaylist = /\/remux\/[^/?]+\/playlist\.m3u8/.test(rawUrl);
+    growingSource = isRemux || isTorrentHls || isJobPlaylist;
     // Resume deep into a growing source: ask ffmpeg to start muxing THERE
     // (start=N → -ss). Without it the player could only jump to the ~2 minutes
     // already muxed and the saved spot was reached minutes later, if ever.
     timeBase = 0;
     let startAt = pendingResume ? resumePos : resumeAt;
-    if (growingSource && startAt > 30) {
+    if (growingSource && !isJobPlaylist && startAt > 30) {
       startAt = Math.floor(startAt);
       rawUrl = rawUrl.replace(/([?&])start=\d+/, '').replace(/[?&]$/, '');
       rawUrl += (rawUrl.indexOf('?') === -1 ? '?' : '&') + 'start=' + startAt;
       timeBase = startAt;
       diag('player:mux-from', { start: startAt, url: rawUrl.slice(0, 40) });
+    }
+    if (isJobPlaylist) {
+      remuxAudio = [];
+      return pollRemuxPlaylist(rawUrl, 60, my);
     }
     if (!isRemux) {
       remuxAudio = [];
@@ -2777,10 +2792,31 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     if (sec >= 60) return Math.floor(sec / 60) + ' ' + t('player.min');
     return Math.round(sec) + ' ' + t('player.sec');
   }
+  // SponsorBlock-style skips: jump to the segment's end the first time
+  // playback lands inside it. A 2 s guard past the end keeps a user seeking
+  // back into the segment from being thrown out again.
+  const skipped: { [idx: number]: boolean } = {};
+  function skipWatch(): void {
+    const segs = ctx.skipSegments;
+    if (!segs || !segs.length || video.paused || errorBox) return;
+    const pos = absTime();
+    for (let i = 0; i < segs.length; i++) {
+      const sg = segs[i];
+      if (skipped[i] || sg.end - sg.start < 1) continue;
+      if (pos >= sg.start && pos < sg.end - 1) {
+        skipped[i] = true;
+        seekTo(sg.end);
+        toast({ kind: 'info', icon: '⏭', text: t('yt.skipped', { what: sg.label }), duration: 2500 });
+        return;
+      }
+    }
+  }
+
   function updateStats(): void {
     applyPendingSeek(); // RC3: land a stashed seek even while timeupdate is frozen
     stallWatch();
     sleepTick();
+    skipWatch();
     // Reveal the audio-track button once hls.js has parsed its tracks.
     updateAudioTracks();
     if (!panelVisible) return; // the stats line is invisible — skip its DOM work
