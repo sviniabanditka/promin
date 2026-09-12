@@ -74,6 +74,24 @@ duration_text, meta[], thumbnail, progress_pct, live}`.
 
 - Sidecar image `ghcr.io/sviniabanditka/promin-ytx`, built and imported by the
   same workflow as promin; deployed by `kubectl set image` with the commit sha.
+- **Datacenter IP → "Sign in to confirm you're not a bot".** Measured from the
+  node (2026-09-12): the anonymous web player request is refused even with a
+  PO token, directly and through the residential proxy; the signed-in TV
+  session plays but its SABR stream is cut at ~12 MB (no TV-accepted token —
+  the TV player's own WAA key `Z1elNkAKLpSR3oPOUMSN`, att/get challenges,
+  chained streams and fresh /player responses were all tried). The way out is
+  a signed-in **web** session: export the browser's youtube.com cookies
+  (Netscape `cookies.txt`, e.g. the "Get cookies.txt LOCALLY" extension, from
+  a private window you then close so the session is not rotated) and put them
+  on the sidecar's volume:
+  ```
+  kubectl -n promin cp cookies.txt $(kubectl -n promin get pod -l app=ytx -o name | cut -d/ -f2):/data/ytx/cookies.txt
+  kubectl -n promin rollout restart deploy/ytx
+  ```
+  The log line `playback session ready … cookies:true logged_in:true`
+  confirms the pickup; then play something and watch for `sabr stream
+  protection status=2` (would mean the token binding for a logged-in session
+  needs the data-sync id). Cookies stay on the PVC only; never in git or CI.
 - When YouTube changes something: bump `youtubei.js` / `googlevideo` /
   `bgutils-js` in `ytx/package.json`, run `npm run check`, redeploy. Symptoms:
   `502 youtube_upstream` on browse, `409 unplayable` or a failed `mux2` job on

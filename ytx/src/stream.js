@@ -15,10 +15,20 @@
 // - an old TV build ("TV_DOWNGRADED") still gets plain URLs, but googlevideo
 //   caps them at ~10 MB as well (403), so that is no way out either.
 // Feeds, history and subscriptions stay on the signed-in TV session; the
-// price is that playback is not written to the account's history and
-// age-restricted videos do not play (anonymous). The session (visitor data +
-// session-bound token) is rebuilt every few hours or after an upstream error.
+// price is that age-restricted videos do not play (anonymous). The session
+// (visitor data + session-bound token) is rebuilt every few hours or after an
+// upstream error.
+//
+// Datacenter IPs: from the node the anonymous web client is answered with
+// "Sign in to confirm you're not a bot" even with a PO token (and through the
+// residential proxy too). The standard way out on a server is a signed-in
+// web session — browser cookies of a YouTube login. Drop a Netscape
+// cookies.txt (or a raw `Cookie:` header line) at YTX_COOKIES
+// (default <YTX_DATA>/cookies.txt) and restart: the playback session then
+// logs in with them. docs/youtube.md → Operations.
 
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import { Innertube, UniversalCache, YTNodes, Constants } from 'youtubei.js';
 import { SabrStream } from 'googlevideo/sabr-stream';
 import { buildSabrFormat, EnabledTrackTypes } from 'googlevideo/utils';
@@ -47,13 +57,15 @@ class Playback {
 
   async create() {
     const t0 = Date.now();
-    const probe = await Innertube.create({ cache: new UniversalCache(false), generate_session_locally: true });
+    const cookie = await loadCookies();
+    const base = { cache: new UniversalCache(false), generate_session_locally: true, ...(cookie ? { cookie } : {}) };
+    const probe = await Innertube.create(base);
     const visitor = probe.session.context.client.visitorData;
     const sessionPot = await this.pot.token(visitor);
-    this.yt = await Innertube.create({ cache: new UniversalCache(false), generate_session_locally: true, visitor_data: visitor, po_token: sessionPot });
+    this.yt = await Innertube.create({ ...base, visitor_data: visitor, po_token: sessionPot });
     this.ytUntil = Date.now() + SESSION_TTL_MS;
     this.players.clear();
-    this.log.info('playback session ready', { ms: Date.now() - t0 });
+    this.log.info('playback session ready', { ms: Date.now() - t0, cookies: !!cookie, logged_in: !!this.yt.session.logged_in });
     return this.yt;
   }
 
@@ -92,6 +104,22 @@ class Playback {
     if (!reload) this.players.set(videoId, { pr, at: Date.now() });
     return pr;
   }
+}
+
+// Netscape cookies.txt → "name=value; …", or the file's single line as-is.
+async function loadCookies() {
+  const file = process.env.YTX_COOKIES || path.join(process.env.YTX_DATA || '/data/ytx', 'cookies.txt');
+  let text;
+  try { text = await fs.readFile(file, 'utf8'); } catch { return ''; }
+  const pairs = [];
+  for (const line of text.split('\n')) {
+    const l = line.trim();
+    if (!l || l.startsWith('#')) continue;
+    const cols = l.split('\t');
+    if (cols.length >= 7) pairs.push(cols[5] + '=' + cols[6]);
+    else if (l.includes('=')) return l.replace(/^cookie:\s*/i, '');
+  }
+  return pairs.join('; ');
 }
 
 let playback = null;
