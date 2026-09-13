@@ -164,13 +164,13 @@ spec:
         - alert: ProminSourceFailing
           expr: |
             (
-              sum by (provider) (increase(promin_source_resolve_total{outcome!="ok"}[6h]))
-                / sum by (provider) (increase(promin_source_resolve_total[6h]))
+              sum by (provider) (increase(promin_source_resolve_total{outcome=~"error|empty"}[6h]))
+                / sum by (provider) (increase(promin_source_resolve_total{outcome!="paywalled"}[6h]))
             ) > 0.8
-            and sum by (provider) (increase(promin_source_resolve_total[6h])) >= 5
+            and sum by (provider) (increase(promin_source_resolve_total{outcome!="paywalled"}[6h])) >= 5
           labels: { severity: warning }
           annotations:
-            summary: "source {{ $labels.provider }} failing: {{ $value | humanizePercentage }} of resolves empty/error over 6h"
+            summary: "source {{ $labels.provider }} failing: {{ $value | humanizePercentage }} of resolves empty/error over 6h (paywalled ones excluded)"
         - alert: ProminHttp5xx
           expr: |
             sum(rate(promin_http_requests_total{status=~"5.."}[15m]))

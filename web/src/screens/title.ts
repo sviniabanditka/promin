@@ -1553,7 +1553,9 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
           2,
           function (res) {
             if (!res || !res.streams || !res.streams.length) {
-              showListMessage(t('sources.resolve_empty'), probeMovie);
+              // paywalled: the source has the film but sells it (Filmix PRO) —
+              // say so instead of "no stream", the other sources still work.
+              showListMessage(t(res && res.unresolved === 'paywalled' ? 'sources.paywalled' : 'sources.resolve_empty'), probeMovie);
               return;
             }
             movieMedia = toMedia(res, currentVoice);

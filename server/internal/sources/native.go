@@ -14,6 +14,7 @@ package sources
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -591,6 +592,13 @@ func (s *Service) resolveNative(ctx context.Context, np NativeProvider, req Reso
 		Episode: req.Episode,
 		Audio:   req.Voice,
 	}, np.Ctx)
+	if errors.Is(err, provider.ErrPaywalled) {
+		// The source has the title but sells it: a distinct outcome so the
+		// provider-failing alert and the dashboard don't read it as breakage.
+		outcome = metrics.OutcomePaywalled
+		s.logger.Info("native: paywalled", "provider", np.P.ID(), "source_id", sourceID, "error", err)
+		return ResolveResponse{Streams: []Stream{}, Voices: voices, Unresolved: "paywalled"}, nil
+	}
 	if err != nil {
 		s.logger.Warn("native: resolve failed", "provider", np.P.ID(), "source_id", sourceID, "error", err)
 		return ResolveResponse{Streams: []Stream{}, Voices: voices, Unresolved: "resolve_failed"}, nil

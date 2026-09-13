@@ -36,6 +36,11 @@ var (
 	// ErrResolveFailed: reached and parsed, but no playable stream for the
 	// requested selection (missing episode/voice, empty playlist).
 	ErrResolveFailed = errors.New("provider: resolve failed")
+	// ErrPaywalled: reached and parsed, the title exists, but the source
+	// withholds every stream without a paid account (Filmix marks all
+	// translations "Заблокировано" for non-PRO users). Not our failure and
+	// not retryable — the caller records it apart from errors.
+	ErrPaywalled = errors.New("provider: paywalled")
 )
 
 // SearchItem is one normalized catalog hit.

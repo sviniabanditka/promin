@@ -125,6 +125,11 @@ worse than showing no source.
    first resolve).
 3. `Resolve()` with `season`, `episode`, `voice`. Failure →
    `{streams: [], voices, unresolved: "resolve_failed"}`. The whole step runs
+   A provider that has the title but withholds every stream without a paid
+   account (Filmix: all translations "Заблокировано" for non-PRO users) returns
+   `provider.ErrPaywalled` → `{streams: [], unresolved: "paywalled"}`, metric
+   outcome `paywalled`; the failing-source alert ignores it. A PRO token
+   (`PROMIN_FILMIX_TOKEN`) lifts the stub for that account.
    under `navigationBudget` = 25 s.
 4. Streams: if the provider returned `Variants`, one `Stream` per quality
    (`quality: "1080p"`, `label`); otherwise a single `{quality: "auto", label:

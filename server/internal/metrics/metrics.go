@@ -26,6 +26,7 @@ const (
 	OutcomeError       = "error"
 	OutcomeOK          = "ok"
 	OutcomeEmpty       = "empty"
+	OutcomePaywalled   = "paywalled" // the source has the title but sells it (Filmix PRO stub)
 	OutcomeRateLimited = "rate_limited"
 )
 
@@ -47,7 +48,7 @@ var (
 		Buckets: []float64{.25, .5, 1, 2, 5, 10, 20, 40},
 	}, []string{"provider"})
 	sourceResolves = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "promin_source_resolve_total", Help: "Native provider stream resolves: ok|empty|error.",
+		Name: "promin_source_resolve_total", Help: "Native provider stream resolves: ok|empty|error|paywalled (paywalled = the source withholds the title without a paid account; not a failure).",
 	}, []string{"provider", "outcome"})
 	sourceResolveDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name: "promin_source_resolve_duration_seconds", Help: "Native provider stream resolve duration.",
