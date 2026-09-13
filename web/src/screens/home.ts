@@ -10,7 +10,8 @@ import Controller, { ControllerCalls, on } from '../core/controller';
 import { Scroll } from '../core/scroll';
 import { t } from '../core/i18n';
 import { ScreenInstance } from '../core/activity';
-import { getHome, HomeRow, Card } from '../core/api';
+import { getHome, HomeRow, Card, ytBrowse, YtItem } from '../core/api';
+import { youtubeEnabled } from '../core/features';
 import { el } from '../ui/dom';
 import { Background } from '../ui/background';
 import { buildHead, Head } from '../ui/head';
@@ -18,7 +19,8 @@ import { buildMenu, Menu } from '../ui/menu';
 import { buildCard, buildSkeletonCard, revealCards } from '../ui/card';
 import { buildFooter } from '../ui/shell';
 import { buildState } from '../ui/state';
-import { openTitle, openCatalog } from './nav';
+import { openTitle, openCatalog, openYt, YtPageName } from './nav';
+import { buildYtCard } from './yt/cards';
 import { hasCategoryPreset } from './catalog';
 
 // ---- one lane (items_line controller) ----------------------------------
@@ -93,6 +95,122 @@ function buildLine(row: HomeRow, lineIndex: number, handlers: LineHandlers): Lin
     });
     scroll.append(more);
   }
+
+  const controller = {
+    toggle: function () {
+      Controller.collectionSet(scroll.render());
+      Controller.collectionFocus(last || false, scroll.render());
+    },
+    right: function () {
+      Controller.moveOr('right');
+    },
+    left: function () {
+      Controller.moveOr('left', function () {
+        handlers.onLeft();
+      });
+    },
+    down: function () {
+      handlers.onDown();
+    },
+    up: function () {
+      handlers.onUp();
+    },
+    back: function () {
+      handlers.onLeft();
+    },
+  };
+
+  function toggle(): void {
+    handlers.onToggle();
+    Controller.add('items_line', controller);
+    Controller.toggle('items_line');
+  }
+
+  return { el: outer, toggle: toggle };
+}
+
+// ---- YouTube lanes on Home -------------------------------------------------
+// Two lanes from the linked account, placed under the first film row:
+// "continue watching" (history tiles with a partial progress) and "new in
+// subscriptions". Fetched alongside the catalog rows and dropped after a short
+// wait or on any error — YouTube must never delay or break the film home.
+
+interface YtLane {
+  title: string;
+  page: YtPageName;
+  items: YtItem[];
+}
+
+const YT_LANE_WAIT_MS = 4000;
+const YT_LANE_ITEMS = 12;
+
+function ytLanes(): Promise<YtLane[]> {
+  if (!youtubeEnabled()) return Promise.resolve([]);
+  const fetchLanes = Promise.all([
+    ytBrowse('history')['catch'](function () {
+      return null;
+    }),
+    ytBrowse('subscriptions')['catch'](function () {
+      return null;
+    }),
+  ]).then(function (res) {
+    const lanes: YtLane[] = [];
+    const hist = res[0] && res[0].shelves ? res[0].shelves : [];
+    const cont: YtItem[] = [];
+    for (let i = 0; i < hist.length; i++) {
+      for (let j = 0; j < hist[i].items.length && cont.length < YT_LANE_ITEMS; j++) {
+        const it = hist[i].items[j];
+        if (it.kind === 'video' && it.progress_pct >= 3 && it.progress_pct <= 95) cont.push(it);
+      }
+    }
+    if (cont.length) lanes.push({ title: t('home.yt_continue'), page: 'history', items: cont });
+    const subs = res[1] && res[1].shelves ? res[1].shelves : [];
+    const fresh: YtItem[] = [];
+    for (let i = 0; i < subs.length; i++) {
+      for (let j = 0; j < subs[i].items.length && fresh.length < YT_LANE_ITEMS; j++) {
+        if (subs[i].items[j].kind === 'video') fresh.push(subs[i].items[j]);
+      }
+    }
+    if (fresh.length) lanes.push({ title: t('home.yt_new'), page: 'subscriptions', items: fresh });
+    return lanes;
+  });
+  const timeout = new Promise<YtLane[]>(function (resolve) {
+    window.setTimeout(function () {
+      resolve([]);
+    }, YT_LANE_WAIT_MS);
+  });
+  return Promise.race([fetchLanes, timeout]);
+}
+
+function buildYtLine(lane: YtLane, lineIndex: number, handlers: LineHandlers): Line {
+  const outer = el('div', 'items-line items-line--yt');
+  outer.appendChild(el('div', 'items-line__title', lane.title));
+  const bodyWrap = el('div', 'items-line__body');
+  const scroll = new Scroll({ horizontal: true, step: 300 });
+  bodyWrap.appendChild(scroll.render());
+  outer.appendChild(bodyWrap);
+
+  let last: HTMLElement | false = false;
+  for (let i = 0; i < lane.items.length; i++) {
+    const card = buildYtCard(lane.items[i]);
+    on(card, 'hover:focus', function () {
+      last = card;
+      handlers.onActive(lineIndex);
+    });
+    scroll.append(card);
+  }
+  const more = el('div', 'yt-card yt-card--more selector');
+  const box = el('div', 'yt-card__thumb');
+  box.appendChild(el('div', 'yt-card__more-label', t('yt.more')));
+  more.appendChild(box);
+  on(more, 'hover:focus', function () {
+    last = more;
+    handlers.onActive(lineIndex);
+  });
+  on(more, 'hover:enter', function () {
+    openYt(lane.page);
+  });
+  scroll.append(more);
 
   const controller = {
     toggle: function () {
@@ -206,7 +324,7 @@ function buildContent(onBackdrop: (backdrop: string) => void): Content {
     Controller.toggle('content');
   }
 
-  function buildLines(rows: HomeRow[]): void {
+  function buildLines(rows: HomeRow[], yt: YtLane[]): void {
     while (wrap.firstChild) wrap.removeChild(wrap.firstChild);
     lines = [];
     active = 0;
@@ -215,10 +333,8 @@ function buildContent(onBackdrop: (backdrop: string) => void): Content {
     scroll = vscroll;
     wrap.appendChild(vscroll.render());
 
-    for (let i = 0; i < rows.length; i++) {
-      if (!rows[i].items || !rows[i].items.length) continue;
-      const lineIndex = lines.length;
-      const line = buildLine(rows[i], lineIndex, {
+    function handlersFor(getLine: () => Line | null): LineHandlers {
+      return {
         onDown: onDown,
         onUp: onUp,
         onLeft: onLeft,
@@ -226,7 +342,8 @@ function buildContent(onBackdrop: (backdrop: string) => void): Content {
           active = idx;
         },
         onToggle: function () {
-          if (scroll) scroll.update(line.el);
+          const line = getLine();
+          if (scroll && line) scroll.update(line.el);
         },
         onFocus: onBackdrop,
         onEnter: function (type: string, tmdb: number) {
@@ -235,9 +352,34 @@ function buildContent(onBackdrop: (backdrop: string) => void): Content {
         onMore: function (rowId: string) {
           openCatalog(rowId);
         },
-      });
+      };
+    }
+    function add(build: (lineIndex: number, handlers: LineHandlers) => Line): void {
+      let line: Line | null = null;
+      line = build(lines.length, handlersFor(function () {
+        return line;
+      }));
       lines.push(line);
       vscroll.append(line.el);
+    }
+
+    let ytPlaced = yt.length === 0;
+    for (let i = 0; i < rows.length; i++) {
+      if (!rows[i].items || !rows[i].items.length) continue;
+      const row = rows[i];
+      add(function (lineIndex, handlers) {
+        return buildLine(row, lineIndex, handlers);
+      });
+      if (!ytPlaced) {
+        // YouTube lanes right under the first film row.
+        ytPlaced = true;
+        for (let k = 0; k < yt.length; k++) {
+          const lane = yt[k];
+          add(function (lineIndex, handlers) {
+            return buildYtLine(lane, lineIndex, handlers);
+          });
+        }
+      }
     }
 
     if (lines.length) {
@@ -295,11 +437,12 @@ function buildContent(onBackdrop: (backdrop: string) => void): Content {
 
   function load(): void {
     showSkeleton();
-    getHome().then(
-      function (res) {
+    Promise.all([getHome(), ytLanes()]).then(
+      function (all) {
         if (destroyed) return;
+        const res = all[0];
         if (res && res.rows && res.rows.length) {
-          buildLines(res.rows);
+          buildLines(res.rows, all[1] || []);
         } else {
           showError();
         }

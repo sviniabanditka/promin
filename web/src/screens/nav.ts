@@ -123,6 +123,8 @@ export function openTitle(type: 'movie' | 'tv', id: number, resume?: boolean, se
 // ---- YouTube section (docs/youtube.md) ----------------------------------------
 
 // A section page (home / subscriptions / history / …) is the section's root.
+export type YtPageName = YtPage;
+
 export function openYt(page: YtPage): void {
   router.replaceRoot(function (container: HTMLElement) {
     return mountYouTube(container, { page: page });

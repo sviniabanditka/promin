@@ -13,6 +13,8 @@ const dictionaries: { [lang in Lang]: Dict } = {
   uk: {
     'home.title': 'Promin',
     'menu.home': 'Головна',
+    'home.yt_continue': 'YouTube · Продовжити перегляд',
+    'home.yt_new': 'YouTube · Нове в підписках',
     'menu.catalog': 'Каталог',
     'menu.search': 'Пошук',
     'menu.settings': 'Налаштування',
@@ -361,6 +363,8 @@ const dictionaries: { [lang in Lang]: Dict } = {
   ru: {
     'home.title': 'Promin',
     'menu.home': 'Главная',
+    'home.yt_continue': 'YouTube · Продолжить просмотр',
+    'home.yt_new': 'YouTube · Новое в подписках',
     'menu.catalog': 'Каталог',
     'menu.search': 'Поиск',
     'menu.settings': 'Настройки',
@@ -709,6 +713,8 @@ const dictionaries: { [lang in Lang]: Dict } = {
   en: {
     'home.title': 'Promin',
     'menu.home': 'Home',
+    'home.yt_continue': 'YouTube · Continue watching',
+    'home.yt_new': 'YouTube · New from subscriptions',
     'menu.catalog': 'Catalog',
     'menu.search': 'Search',
     'menu.settings': 'Settings',

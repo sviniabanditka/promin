@@ -4143,6 +4143,13 @@ body.night-mode #night-shade { display: block; }
 .yt-card--more.focus .yt-card__more-label { box-shadow: inset 0 0 0 0.3rem var(--focus); color: var(--ink); }
 .yt-card--more.is-loading .yt-card__more-label { opacity: 0.5; }
 
+/* YouTube lanes on Home: fixed-width tiles in the horizontal strip, the grid
+   percentages and 4n gutters do not apply. */
+.items-line .yt-card { width: 28rem; flex: 0 0 auto; margin: 0 1.6rem 0 0; }
+.items-line .yt-card:nth-child(4n) { margin-right: 1.6rem; }
+.items-line .yt-card:last-child { margin-right: 0; }
+.items-line .yt-card--more .yt-card__thumb { background-color: rgba(255, 255, 255, 0.06); }
+
 /* Sign-in / account panel */
 .yt-account { max-width: 70rem; padding: 2rem 0; }
 .yt-account__title { font-size: 2.8rem; font-weight: bold; color: #ffffff; margin-bottom: 1rem; }
