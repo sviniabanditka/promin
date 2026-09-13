@@ -204,6 +204,14 @@ function headingAbove(target: HTMLElement, block: HTMLElement, avail: number): H
   return bottom - hr.top <= avail ? heading : null;
 }
 
+function nothingFocusableBefore(body: HTMLElement, el: HTMLElement): boolean {
+  const all = body.querySelectorAll(SELECTOR);
+  for (let i = 0; i < all.length; i++) {
+    if (el.compareDocumentPosition(all[i]) & Node.DOCUMENT_POSITION_PRECEDING) return false;
+  }
+  return true;
+}
+
 // Scroll the enclosing Scroll(s) so the focused element is visible — and so
 // the heading of the row it sits under is visible too: if the vertical scroll
 // aligned to the element itself, that heading would slide up under the fixed
@@ -224,7 +232,12 @@ function autoScrollTo(target: HTMLElement): void {
         } else {
           const avail = sc.render().clientHeight - 2 * FOCUS_EDGE_MARGIN;
           const heading = child ? headingAbove(target, child, avail) : null;
-          if (heading && child && child.contains(heading)) sc.update(child);
+          if (heading && nothingFocusableBefore(node, heading) && node.firstElementChild) {
+            // First section of the page: nothing above it can ever take the
+            // focus (page title, a static row), so show the page from the top
+            // — otherwise that title would stay under the head for good.
+            sc.update(node.firstElementChild as HTMLElement);
+          } else if (heading && child && child.contains(heading)) sc.update(child);
           else if (heading) sc.update(heading);
           else sc.update(target);
         }
