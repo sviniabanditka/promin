@@ -10,7 +10,7 @@ not notice. Background and the tests that led here: `docs/proposals/youtube.md`.
 
 | Piece | Path | Role |
 |---|---|---|
-| `ytx` sidecar | `ytx/` (Node 22, `youtubei.js` + `googlevideo` + `bgutils-js`) | Signs a profile into YouTube as the TV app (device code), reads the account's feeds through InnerTube's TV client, serves media tracks pulled over SABR by an anonymous web client with PO tokens |
+| `ytx` sidecar | `ytx/` (Node 22, `youtubei.js` + `googlevideo` + `bgutils-js`) | Signs a profile into YouTube as the TV app (device code), reads the account's feeds through InnerTube's TV client, serves media tracks pulled over SABR by that same signed-in session with the TV app's PO token (`attest.js`) |
 | `youtube` package | `server/internal/youtube` | Client for the sidecar + cached SponsorBlock lookup |
 | handlers | `server/internal/httpapi/handlers_yt.go` | `/api/v1/yt/*` (session required) |
 | remux kind `mux2` | `server/internal/remux` | Two elementary inputs (video URL + audio URL) copy-muxed to the usual HLS EVENT playlist |
@@ -35,74 +35,31 @@ routes answer `503 youtube_disabled`.
   ABR: a binary UMP protocol on `serverAbrStreamingUrl`). `googlevideo`'s
   `SabrStream` pulls a track; the sidecar writes the fragments to the HTTP
   response as they come. Measured on the node: first byte in 0.4 s.
-- **Media is fetched anonymously, as the web client, with PO tokens.** The
-  SABR server flips `StreamProtectionStatus` to 2 and cuts the stream after
-  ~12 MB (~70 s of 1080p) unless the request carries a PO token it accepts.
-  A BotGuard token minted the way the web player does it (`bgutils-js` in
-  Node + jsdom, challenge taken from the youtube.com page) is accepted by the
-  WEB client (status 1, 128 MB in 40 s) but not by the signed-in TV client;
-  the old TV build that still hands out plain URLs caps them at ~10 MB too.
-  So `ytx/src/stream.js` keeps one anonymous web session (visitor data +
-  session-bound token, rebuilt every 4 h) and mints a video-bound token per
-  play. Consequences: playback is not written to the account's watch history
-  and age-restricted videos do not play.
-- **TV layouts are not modelled by youtubei.js**, so `ytx/src/tv.js` asks for
-  raw JSON and normalises `tileRenderer` / `lockupViewModel` shelves, grids,
-  playlist lists and watch-next pivots into one shape.
-- **SponsorBlock** uses the hash-prefix endpoint (`/api/skipSegments/<sha256
-  prefix>`), so the service never sees the exact video id; answers are cached
-  6 h; failures degrade to "no segments".
-
-## API (bearer, `/api/v1/yt`)
-
-| Method | Path | Notes |
-|---|---|---|
-| GET | `/account` | `{linked, pending, user_code?, verification_url?, expires_at?, error?}` |
-| POST | `/account/login` | starts the device flow; poll `/account` until `linked` |
-| DELETE | `/account` | unlink (revokes the token) |
-| GET | `/browse/{page}?cont=` | `home\|subscriptions\|history\|playlists\|library\|liked\|watch_later\|UC…\|VL…` → `{shelves:[{title, items, cont}], cont}` |
-| GET | `/search?q=&cont=` | same shape |
-| GET | `/video/{id}` | `{id, title, channel{id,name}, channel_avatar, duration_sec, views_text, published_text, playable, reason, qualities, resume_sec, related}`; `resume_sec` comes from the history tile's percent watched (0 = start over) |
-| GET | `/play/{id}?quality=1080p&start=N&sb=a,b` | submits a `mux2` job → `{job_id, playlist_url, quality, segments}`; `start=N` (seconds) begins the SABR pull there and the playlist carries `X-Remux-Start`, like torrent offset jobs — the player uses it for resume and far seeks |
-| POST | `/watch/{id}` `{position_sec, duration_sec}` | reports a position to the account's YouTube history (stats pings as the signed-in TV client); the TV player calls it every ~20 s and on seeks |
-| GET | `/segments/{id}?cats=` | SponsorBlock spans `{segments:[{category,start,end}]}` |
-
-Item: `{kind: video|channel|playlist, id, title, channel{id,name}, duration_sec,
-duration_text, meta[], thumbnail, progress_pct, live}`.
-
-## Operations
-
-- Sidecar image `ghcr.io/sviniabanditka/promin-ytx`, built and imported by the
-  same workflow as promin; deployed by `kubectl set image` with the commit sha.
-- **Datacenter IP → "Sign in to confirm you're not a bot".** Measured from the
-  node (2026-09-12): the anonymous web player request is refused even with a
-  PO token, directly and through the residential proxy; the signed-in TV
-  session plays but its SABR stream is cut at ~12 MB (no TV-accepted token —
-  the TV player's own WAA key `Z1elNkAKLpSR3oPOUMSN`, att/get challenges,
-  chained streams and fresh /player responses were all tried). The way out is
-  a signed-in **web** session: export the browser's youtube.com cookies
-  (Netscape `cookies.txt`, e.g. the "Get cookies.txt LOCALLY" extension, from
-  a private window you then close so the session is not rotated) and put them
-  on the sidecar's volume:
-  ```
-  kubectl -n promin cp cookies.txt $(kubectl -n promin get pod -l app=ytx -o name | cut -d/ -f2):/data/ytx/cookies.txt
-  kubectl -n promin rollout restart deploy/ytx
-  ```
-  The log line `playback session ready … cookies:true logged_in:true`
-  confirms the pickup; then play something and watch for `sabr stream
-  protection status=2` (would mean the token binding for a logged-in session
-  needs the data-sync id). Cookies stay on the PVC only; never in git or CI.
-- When YouTube changes something: bump `youtubei.js` / `googlevideo` /
-  `bgutils-js` in `ytx/package.json`, run `npm run check`, redeploy. Symptoms:
-  `502 youtube_upstream` on browse, `409 unplayable` or a failed `mux2` job on
-  play, `sabr stream protection status=2` in the ytx log (PO token no longer
-  accepted → playback stops after about a minute).
-- The player treats `/remux/<job>/playlist.m3u8` as a growing source and
-  polls it until 200, the same as torrent HLS; SponsorBlock spans ride in
-  `PlayerContext.skipSegments` and are skipped from the 1 s stats tick.
-- Live streams are reported `playable: false, reason: "live"`: SABR delivered
-  no bytes for them in tests, so the TV shows "not supported yet" instead of a
-  hanging player.
+- **The media stream needs the TV app's own PO token.** The SABR server
+  flips `StreamProtectionStatus` to 2 and cuts every stream after ~12 MB
+  (~70 s of 1080p) unless the request carries a token it accepts for *that*
+  client. Reconstructed from `tv-player-ias.js` (`ytx/src/attest.js`):
+  `GET youtube.com/tv` with the OAuth bearer returns the signed-in TV app's
+  `ytcfg` (`LIVING_ROOM_PO_TOKEN_ID`, `LIVING_ROOM_EACR_TOKEN`, `DATASYNC_ID`,
+  `tvAppInfo`); every InnerTube request must carry
+  `tvAppInfo.livingRoomPoTokenId`; the BotGuard challenge comes from
+  `/att/get` (with `eacrToken`), the WAA request key is the TV player's
+  (`Z1elNkAKLpSR3oPOUMSN`), and the session token is bound to
+  `LIVING_ROOM_PO_TOKEN_ID`. It goes into `/player`
+  (`serviceIntegrityDimensions.poToken`, with a `cpn`) and into the SABR
+  request. Result: status 1, full tracks at ~1 MB/s. Everything else was
+  measured and refused: web key / page challenge / video-id, visitor or
+  datasync bindings (status 2), the old TV build's plain URLs (403 after
+  ~10 MB), anonymous web clients from the VPS ("Sign in to confirm you're not
+  a bot", also through the residential proxy), chained streams, the
+  player-attestation `atr` ping. The signed-in TV client is not bot-checked
+  from the VPS, and history, resume and age-restricted videos come with the
+  account — no cookies, nothing per user beyond the device-code sign-in.
+- If playback starts dying after ~70 s again: the ytx log shows `sabr stream
+  protection status=2`; the sidecar then drops its cached TV config and token
+  (`attest.js invalidate`). If it persists, YouTube changed the recipe — start
+  from `tv-player-ias.js` (`html5_web_po_request_key`, `livingRoomPoTokenId`,
+  `HF()`), not from the web player.
 - **Resume and far seeks** start the SABR pull at the requested second:
   `SabrStream` has no seek API, so `ytx/src/stream.js` restores it with a
   phantom segment of that length (the first request is built as if no format
@@ -115,6 +72,6 @@ duration_text, meta[], thumbnail, progress_pct, live}`.
   `st/et/cmt` on every report. YouTube derives the tile's percent from the
   reported watch time, so the TV reports every ~20 s. Exact seconds for the
   same TV live in `localStorage` (`promin:yt:resume`); the account's percent
-  is the cross-device fallback. No age-restricted videos (media is anonymous).
+  is the cross-device fallback.
 - Not done yet: live streams, a per-profile cap on live tracks, the Mini
   App / bot surfaces.
