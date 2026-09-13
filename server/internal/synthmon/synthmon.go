@@ -258,9 +258,9 @@ type sentinel string
 func (s sentinel) Error() string { return string(s) }
 
 const (
-	errNoTitles  = sentinel("search returned no titles")
-	errNoSources = sentinel("no online sources listed")
-	errNoStreams = sentinel("no source resolved to a stream")
-	errEmptyBody = sentinel("stream body empty")
+	errNoTitles   = sentinel("search returned no titles")
+	errNoSources  = sentinel("no online sources listed")
+	errNoStreams  = sentinel("no source resolved to a stream")
+	errEmptyBody  = sentinel("stream body empty")
 	errNoUpstream = sentinel("stream url has no fetchable upstream")
 )
