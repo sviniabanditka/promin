@@ -15,6 +15,7 @@ not notice. Background and the tests that led here: `docs/proposals/youtube.md`.
 | handlers | `server/internal/httpapi/handlers_yt.go` | `/api/v1/yt/*` (session required) |
 | remux kind `mux2` | `server/internal/remux` | Two elementary inputs (video URL + audio URL) copy-muxed to the usual HLS EVENT playlist |
 | deploy | `k8s/ytx.yaml` | Deployment + ClusterIP + PVC + NetworkPolicy (promin pods only) |
+| self-check | `GET /v1/check` on the sidecar, called hourly by `server/internal/synthmon` | the first linked account plays a known video past the unattested cut; `promin_synthetic_ok{check="youtube"}` → alert `ProminYouTubeBroken` |
 | TV screens | `web/src/screens/yt/` | Rail item "YouTube" (hidden while `youtube: false`), sidebar + shelves, video page, search; controller modes `yt_side` / `yt_content` / `yt_actions` / `yt_related` |
 
 Config: `PROMIN_YTX_URL` (e.g. `http://ytx:8091`). Empty → the section is off:

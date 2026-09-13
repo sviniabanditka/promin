@@ -8,6 +8,7 @@
 //   GET    /v1/accounts/:id/browse/:page     home|subscriptions|history|playlists|library|trending|liked|watch_later|UC…|VL…  ?cont=
 //   GET    /v1/accounts/:id/search?q=&cont=
 //   GET    /v1/accounts/:id/video/:vid       details + related
+//   GET    /v1/check                      synthetic playback on the first linked account (monitoring)
 //   GET    /v1/accounts/:id/stream/:vid/probe                         200 or 409 unplayable (media reachable?)
 //   GET    /v1/accounts/:id/stream/:vid/:track?quality=1080p&start=SEC   video|audio track, chunked media
 //   POST   /v1/accounts/:id/watch/:vid {position_sec, duration_sec}      history + resume point pings
@@ -48,6 +49,7 @@ async function route(req, res) {
   const url = new URL(req.url, 'http://ytx');
   const seg = url.pathname.split('/').filter(Boolean);
   if (req.method === 'GET' && url.pathname === '/healthz') return json(res, 200, { ok: true, accounts: Object.keys(accounts.store).length });
+  if (req.method === 'GET' && url.pathname === '/v1/check') return json(res, 200, await selfCheck());
   if (seg[0] !== 'v1' || seg[1] !== 'accounts' || !seg[2] || !ID.test(seg[2])) throw new HttpError(404, 'not_found', 'no such route');
   const id = seg[2];
   const rest = seg.slice(3);
@@ -79,6 +81,46 @@ async function route(req, res) {
     throw e;
   }
   throw new HttpError(404, 'not_found', 'no such route');
+}
+
+// Synthetic playback for the monitor (promin synthmon, hourly): the first
+// linked account probes a known video and pulls its 720p track past the
+// ~12 MB where an unattested SABR stream is cut. Reports the
+// StreamProtectionStatus seen (1 attested, 2/3 the token was refused).
+const CHECK_VIDEO = process.env.YTX_CHECK_VIDEO || 'dQw4w9WgXcQ';
+const CHECK_BYTES = 14 * 1024 * 1024;
+const CHECK_MAX_MS = 60_000;
+async function selfCheck() {
+  const ids = Object.keys(accounts.store);
+  if (!ids.length) return { ok: false, probe: false, reason: 'no linked account' };
+  const id = ids[0];
+  const t0 = Date.now();
+  let sps = 0;
+  let bytes = 0;
+  try {
+    const yt = await accounts.session(id);
+    await probe(yt, CHECK_VIDEO);
+    const t = await openTrack(yt, CHECK_VIDEO, 'video', '720p', log);
+    t.stream.on('streamProtectionStatusUpdate', (s) => { sps = s.status || 0; });
+    const reader = t.readable.getReader();
+    try {
+      while (bytes < CHECK_BYTES && Date.now() - t0 < CHECK_MAX_MS) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        bytes += value.length;
+      }
+    } finally {
+      t.abort();
+    }
+    const ok = bytes >= CHECK_BYTES - 1024 * 1024 && sps !== 2 && sps !== 3;
+    const r = { ok, probe: true, account: id, bytes, ms: Date.now() - t0, sps, reason: ok ? '' : `sps=${sps} bytes=${bytes}` };
+    log.info('self-check', r);
+    return r;
+  } catch (e) {
+    const r = { ok: false, probe: false, account: id, bytes, ms: Date.now() - t0, sps, reason: String(e?.message || e).slice(0, 200) };
+    log.warn('self-check failed', r);
+    return r;
+  }
 }
 
 function readJson(req) {

@@ -101,7 +101,37 @@ var (
 	buildInfo = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "promin_build_info", Help: "Always 1; the version label carries the build version.",
 	}, []string{"version"})
+
+	// Hourly synthetic user (internal/synthmon): check = sources|youtube.
+	syntheticOK = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "promin_synthetic_ok", Help: "Last synthetic check: 1 passed, 0 failed.",
+	}, []string{"check"})
+	syntheticStage = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "promin_synthetic_stage", Help: "Last stage the synthetic check reached (synthmon Stage* constants).",
+	}, []string{"check"})
+	syntheticDuration = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "promin_synthetic_duration_seconds", Help: "Wall time of the last synthetic check.",
+	}, []string{"check"})
+	syntheticBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "promin_synthetic_bytes", Help: "Media bytes the last synthetic check received.",
+	}, []string{"check"})
+	syntheticLastRun = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "promin_synthetic_last_run_timestamp_seconds", Help: "When the synthetic check last ran (staleness alert).",
+	}, []string{"check"})
 )
+
+// SetSynthetic publishes one synthetic check's outcome.
+func SetSynthetic(check string, ok bool, stage int, d time.Duration, bytes int64) {
+	v := 0.0
+	if ok {
+		v = 1
+	}
+	syntheticOK.WithLabelValues(check).Set(v)
+	syntheticStage.WithLabelValues(check).Set(float64(stage))
+	syntheticDuration.WithLabelValues(check).Set(d.Seconds())
+	syntheticBytes.WithLabelValues(check).Set(float64(bytes))
+	syntheticLastRun.WithLabelValues(check).SetToCurrentTime()
+}
 
 // SetProxyUp publishes the outcome and duration of one proxy probe.
 func SetProxyUp(ok bool, d time.Duration) {

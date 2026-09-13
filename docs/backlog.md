@@ -79,8 +79,6 @@ Reliability and operations:
 14. **On-the-fly HEVC/HDR → H.264/SDR** for old panels — the 4K torrent path
     is what most often "does not play".
 15. **Remux live-job ceiling per profile** — the last audit item.
-16. **Synthetic user monitor** — hourly headless run: login, search, resolve
-    one source, first bytes of the stream; alert to the same Telegram.
 17. **Dependabot** for actions and Go modules.
 
 See also `docs/proposals/youtube.md`.

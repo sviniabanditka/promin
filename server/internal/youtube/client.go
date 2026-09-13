@@ -201,6 +201,26 @@ func (c *Client) TrackURL(userID int64, videoID, track, quality string, startSec
 	return u
 }
 
+// CheckResult is the sidecar's self-test (GET /v1/check): the first linked
+// account plays a known video for a few seconds; SPS is the SABR
+// StreamProtectionStatus it saw (1 = attested, 2/3 = the stream will be cut).
+type CheckResult struct {
+	OK      bool   `json:"ok"`
+	Probe   bool   `json:"probe"`
+	Account string `json:"account"`
+	Bytes   int64  `json:"bytes"`
+	MS      int64  `json:"ms"`
+	SPS     int    `json:"sps"`
+	Reason  string `json:"reason"`
+}
+
+// Check runs the sidecar's synthetic playback (synthmon calls it hourly).
+func (c *Client) Check(ctx context.Context) (CheckResult, error) {
+	var r CheckResult
+	err := c.do(ctx, http.MethodGet, "/v1/check", nil, &r)
+	return r, err
+}
+
 // Probe asks the sidecar whether media for the video can be fetched right
 // now (anonymous web player + PO token) — the answer ffmpeg would otherwise
 // discover mid-job. Returns the sidecar's *Error (409 unplayable with the

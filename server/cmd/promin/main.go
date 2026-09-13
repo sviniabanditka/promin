@@ -27,6 +27,7 @@ import (
 	"github.com/sviniabanditka/promin/server/internal/store"
 	"github.com/sviniabanditka/promin/server/internal/subtitles"
 	"github.com/sviniabanditka/promin/server/internal/sync"
+	"github.com/sviniabanditka/promin/server/internal/synthmon"
 	"github.com/sviniabanditka/promin/server/internal/telegram"
 	"github.com/sviniabanditka/promin/server/internal/torrent"
 	"github.com/sviniabanditka/promin/server/internal/weather"
@@ -232,6 +233,11 @@ func main() {
 	// promin_proxy_* gauges. No proxy configured → nil monitor, Run is a no-op.
 	go proxymon.New(cfg.NativeProxyURL, cfg.StableProxyToken, logger).Run(ctx)
 
+	// Hourly synthetic user: search → source → first bytes, and YouTube
+	// playback through the sidecar; promin_synthetic_* gauges + alerts.
+	ytClient := youtube.New(cfg.YTXURL)
+	go synthmon.New(catalogSvc, sourcesSvc, ytClient, logger).Run(ctx)
+
 	// Prometheus on its own listener: never on the public mux (the ingress
 	// would expose it). PROMIN_METRICS_ADDR="" turns it off.
 	if cfg.MetricsAddr != "" {
@@ -255,7 +261,7 @@ func main() {
 		logger.Info("sessions: legacy tokens hashed", "count", n)
 	}
 	httpapi.SetRelayBlockedIPs(cfg.RelayBlockIPs)
-	handler := httpapi.NewServer(version, logger, cfg.DataDir, catalogSvc, sourcesSvc, remuxQueue, torrentMgr, authSvc, syncSvc, cfg.HTTPAddr, logBuf, cfg.LogsPassword, weatherSvc, cfg.WeatherPlace, cfg.H1Host, cfg.MainHost, tgBot, subsClient, youtube.New(cfg.YTXURL))
+	handler := httpapi.NewServer(version, logger, cfg.DataDir, catalogSvc, sourcesSvc, remuxQueue, torrentMgr, authSvc, syncSvc, cfg.HTTPAddr, logBuf, cfg.LogsPassword, weatherSvc, cfg.WeatherPlace, cfg.H1Host, cfg.MainHost, tgBot, subsClient, ytClient)
 	srv := &http.Server{
 		Addr:    cfg.HTTPAddr,
 		Handler: handler,
