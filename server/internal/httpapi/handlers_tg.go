@@ -118,6 +118,9 @@ type tgSendRequest struct {
 		Episode   int    `json:"episode"`
 		Resume    bool   `json:"resume"`
 	} `json:"open"`
+	OpenYT *struct {
+		VideoID string `json:"video_id"`
+	} `json:"open_yt"`
 	Remote *struct {
 		Action string  `json:"action"`
 		Value  float64 `json:"value"`
@@ -126,13 +129,24 @@ type tgSendRequest struct {
 	} `json:"remote"`
 }
 
-// send: POST /api/v1/tg/send {device_id, open|remote} → 204. Publishes
-// open_title or remote to the user's sockets; only the named device acts.
+// send: POST /api/v1/tg/send {device_id, open|remote|open_yt} → 204. Publishes
+// open_title, remote or open_yt to the user's sockets; only the named device acts.
 func (h *tgAppHandlers) send(w http.ResponseWriter, r *http.Request) {
 	info, _ := authFrom(r)
 	var req tgSendRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.DeviceID == "" || (req.Open == nil) == (req.Remote == nil) {
-		writeBadRequest(w, "потрібні device_id та рівно одне з open | remote")
+	err := json.NewDecoder(r.Body).Decode(&req)
+	kinds := 0
+	for _, set := range []bool{req.Open != nil, req.Remote != nil, req.OpenYT != nil} {
+		if set {
+			kinds++
+		}
+	}
+	if err != nil || req.DeviceID == "" || kinds != 1 {
+		writeBadRequest(w, "потрібні device_id та рівно одне з open | remote | open_yt")
+		return
+	}
+	if req.OpenYT != nil && !ytVideoID.MatchString(req.OpenYT.VideoID) {
+		writeBadRequest(w, "open_yt: невірний video_id")
 		return
 	}
 	if req.Open != nil && (req.Open.TMDBID <= 0 || (req.Open.MediaType != "movie" && req.Open.MediaType != "tv") || req.Open.Season < 0 || req.Open.Episode < 0) {
@@ -166,6 +180,11 @@ func (h *tgAppHandlers) send(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Remote != nil {
 		hub.Publish(info.User.ID, sync.EventRemote, telegram.RemotePayload{DeviceID: req.DeviceID, Action: req.Remote.Action, Value: req.Remote.Value, Key: req.Remote.Key, Str: req.Remote.Str})
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if req.OpenYT != nil {
+		hub.Publish(info.User.ID, sync.EventOpenYouTube, telegram.OpenYouTubePayload{VideoID: req.OpenYT.VideoID, DeviceID: req.DeviceID})
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}

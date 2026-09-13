@@ -221,11 +221,16 @@ func main() {
 
 	weatherSvc := weather.NewService(sources.NewStoreCache(db.TMDBCache), logger)
 
+	// YouTube sidecar client (nil-safe when PROMIN_YTX_URL is empty): the API,
+	// the bot's YouTube search and the synthetic monitor share it.
+	ytClient := youtube.New(cfg.YTXURL)
+
 	// Telegram companion bot: long polling, only when the token is set.
 	var tgBot *telegram.Bot
 	if cfg.TelegramBotToken != "" {
 		tgBot = telegram.New(telegram.NewClient(cfg.TelegramAPIBaseURL, cfg.TelegramBotToken), db.Telegram, catalogSvc, syncSvc, logger)
 		tgBot.SetSessions(db.Sessions) // unlink revokes the phone's Mini App sessions
+		tgBot.SetYouTube(ytClient)
 		go tgBot.Run(ctx)
 	}
 
@@ -235,7 +240,6 @@ func main() {
 
 	// Hourly synthetic user: search → source → first bytes, and YouTube
 	// playback through the sidecar; promin_synthetic_* gauges + alerts.
-	ytClient := youtube.New(cfg.YTXURL)
 	go synthmon.New(catalogSvc, sourcesSvc, ytClient, logger).Run(ctx)
 
 	// Prometheus on its own listener: never on the public mux (the ingress

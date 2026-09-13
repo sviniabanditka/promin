@@ -15,6 +15,7 @@ export interface LiveState extends PlayerState {
 
 export interface State {
   phase: Phase;
+  youtube: boolean; // the server has the YouTube section (from /ping)
   error: string | null;
   user: api.AuthUser | null;
   lang: Lang;
@@ -36,6 +37,7 @@ const DEVICE_KEY = 'promin_tg_device';
 
 let state: State = {
   phase: 'boot',
+  youtube: false,
   error: null,
   user: null,
   lang: 'en',
@@ -158,6 +160,14 @@ export function setLang(lang: Lang): void {
   api.setApiLang(lang);
   document.documentElement.lang = lang;
   setState({ lang });
+}
+
+// Whether to show the YouTube tab: a server-level flag, read once.
+export function loadPing(): void {
+  api
+    .getPing()
+    .then((p) => setState({ youtube: !!p.youtube }))
+    .catch(() => {});
 }
 
 export async function loadBootstrap(): Promise<void> {
@@ -316,6 +326,14 @@ export async function sendOpen(open: OpenCmd): Promise<boolean> {
   const ok = await sendTo((device_id) => ({ device_id, open }), dev ? t('title.sent', { name: dev.name }) : undefined);
   // The TV now shows the title page; the rest (source, episode, play) is
   // D-pad work, so offer it right here instead of making the user find the remote.
+  if (ok) setState({ padOpen: true });
+  return ok;
+}
+
+// Open a YouTube video page on the TV (the section's video screen).
+export async function sendOpenYt(videoId: string): Promise<boolean> {
+  const dev = targetDevice(state);
+  const ok = await sendTo((device_id) => ({ device_id, open_yt: { video_id: videoId } }), dev ? t('title.sent', { name: dev.name }) : undefined);
   if (ok) setState({ padOpen: true });
   return ok;
 }

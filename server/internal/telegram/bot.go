@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"html"
 	"log/slog"
@@ -13,6 +14,7 @@ import (
 	"github.com/sviniabanditka/promin/server/internal/catalog"
 	"github.com/sviniabanditka/promin/server/internal/store"
 	promsync "github.com/sviniabanditka/promin/server/internal/sync"
+	"github.com/sviniabanditka/promin/server/internal/youtube"
 )
 
 const (
@@ -29,12 +31,13 @@ var sixDigits = regexp.MustCompile(`^\d{6}$`)
 
 // action is a "send to device" request waiting for a device choice.
 type action struct {
-	kind      string // open | remote
+	kind      string // open | open_yt | remote
 	tmdbID    int
 	mediaType string
 	title     string
 	resume    bool
 	remote    string // rc key
+	videoID   string // open_yt
 }
 
 // chatState is a chat's per-message listings, its pending device action and
@@ -49,7 +52,12 @@ type chatState struct {
 	linkFails  int       // wrong link codes from this chat
 	linkLocked time.Time // no link attempts accepted before this
 	unlinkedAt time.Time // last "not linked" reply — one per unlinkedReplyEvery
+	ytNextAt   time.Time // "YouTube" menu pressed: the next plain text is a YouTube search
 }
+
+const ytPageSize = 8
+
+var ytVideoID = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
 
 const (
 	linkMaxFails       = 5
@@ -68,6 +76,13 @@ type OpenTitlePayload struct {
 	Episode   int    `json:"episode,omitempty"`
 }
 
+// OpenYouTubePayload is EventOpenYouTube: open a YouTube video page on one TV.
+type OpenYouTubePayload struct {
+	VideoID  string `json:"video_id"`
+	DeviceID string `json:"device_id"`
+	Title    string `json:"title"`
+}
+
 // Bot is the long-polling Telegram companion. Nil-safe getters let httpapi
 // hold a nil *Bot when the token is unset.
 type Bot struct {
@@ -80,6 +95,7 @@ type Bot struct {
 	log     *slog.Logger
 
 	sessions *store.SessionsRepo // optional; see revokePhones
+	yt       *youtube.Client     // optional: YouTube search / open on TV (nil → section off)
 
 	mu       sync.Mutex
 	username string
@@ -139,6 +155,13 @@ func (b *Bot) revokePhones(userID int64) {
 
 // SetSessions wires the session store used to revoke Mini App sessions on unlink.
 func (b *Bot) SetSessions(s *store.SessionsRepo) { b.sessions = s }
+
+// SetYouTube enables the YouTube search ("/yt <query>", the menu button).
+func (b *Bot) SetYouTube(c *youtube.Client) {
+	if c != nil && c.Enabled() {
+		b.yt = c
+	}
+}
 
 // Run polls getUpdates until ctx is cancelled. Errors back off (1 s → 60 s).
 func (b *Bot) Run(ctx context.Context) {
@@ -273,6 +296,12 @@ func (b *Bot) handleMessage(ctx context.Context, m *Message) {
 		b.reply(ctx, chatID, tr(lang, "help"), mainMenu(lang))
 	case "/unlink":
 		b.reply(ctx, chatID, tr(lang, "unlink.confirm"), unlinkConfirm(lang))
+	case "/yt":
+		if arg == "" {
+			b.ytPrompt(ctx, chatID, lang)
+			return
+		}
+		b.ytSearch(ctx, chatID, userID, lang, arg)
 	default:
 		if text == "" || strings.HasPrefix(text, "/") {
 			b.reply(ctx, chatID, tr(lang, "help"), mainMenu(lang))
@@ -302,9 +331,86 @@ func (b *Bot) menu(ctx context.Context, chatID, userID int64, lang, text string)
 		b.reply(ctx, chatID, tr(lang, "remote.header"), remoteKeyboard(lang))
 	case "settings":
 		b.reply(ctx, chatID, tr(lang, "settings.header"), settingsKeyboard(lang))
+	case "youtube":
+		b.ytPrompt(ctx, chatID, lang)
 	default:
+		b.mu.Lock()
+		st := b.state(chatID)
+		ytNext := time.Since(st.ytNextAt) < 5*time.Minute
+		st.ytNextAt = time.Time{}
+		b.mu.Unlock()
+		if ytNext {
+			b.ytSearch(ctx, chatID, userID, lang, text)
+			return
+		}
 		b.search(ctx, chatID, userID, lang, text)
 	}
+}
+
+// ytPrompt: the "YouTube" menu button — the next message is a YouTube query.
+func (b *Bot) ytPrompt(ctx context.Context, chatID int64, lang string) {
+	if b.yt == nil {
+		b.reply(ctx, chatID, tr(lang, "yt.off"), nil)
+		return
+	}
+	b.mu.Lock()
+	b.state(chatID).ytNextAt = time.Now()
+	b.mu.Unlock()
+	b.reply(ctx, chatID, tr(lang, "yt.prompt"), nil)
+}
+
+// ytItem is what the sidecar's search shelves carry (docs/youtube.md Item).
+type ytItem struct {
+	Kind         string `json:"kind"`
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	DurationText string `json:"duration_text"`
+	Channel      struct {
+		Name string `json:"name"`
+	} `json:"channel"`
+}
+
+// ytSearch lists up to ytPageSize videos with one "open on TV" button each.
+func (b *Bot) ytSearch(ctx context.Context, chatID, userID int64, lang, q string) {
+	if b.yt == nil {
+		b.reply(ctx, chatID, tr(lang, "yt.off"), nil)
+		return
+	}
+	raw, err := b.yt.Search(ctx, userID, q, "", lang)
+	if err != nil {
+		var ye *youtube.Error
+		if errors.As(err, &ye) && ye.Code == "not_linked" {
+			b.reply(ctx, chatID, tr(lang, "yt.notlinked"), nil)
+			return
+		}
+		b.fail(ctx, chatID, lang, "youtube search", err)
+		return
+	}
+	var feed struct {
+		Shelves []struct {
+			Items []ytItem `json:"items"`
+		} `json:"shelves"`
+	}
+	_ = json.Unmarshal(raw, &feed)
+	var videos []ytItem
+	for _, sh := range feed.Shelves {
+		for _, it := range sh.Items {
+			if it.Kind == "video" && ytVideoID.MatchString(it.ID) && len(videos) < ytPageSize {
+				videos = append(videos, it)
+			}
+		}
+	}
+	if len(videos) == 0 {
+		b.reply(ctx, chatID, tr(lang, "yt.empty"), nil)
+		return
+	}
+	text, kb := renderYouTube(lang, q, videos)
+	id, err := b.api.SendMessage(ctx, chatID, text, kb)
+	if err != nil {
+		b.log.Warn("telegram: send failed", "error", err)
+		return
+	}
+	b.remember(chatID, id, &listing{kind: "yt", q: q, yt: videos})
 }
 
 func (b *Bot) link(ctx context.Context, chatID int64, from *User, code, lang string) {
@@ -566,6 +672,17 @@ func (b *Bot) handleCallback(ctx context.Context, cq *CallbackQuery) {
 		}
 		b.dispatch(ctx, cq, userID, lang, act)
 
+	case "yt":
+		act := &action{kind: "open_yt", videoID: cb.Arg}
+		if l := b.listingOf(chatID, msgID); l != nil {
+			for _, v := range l.yt {
+				if v.ID == cb.Arg {
+					act.title = v.Title
+				}
+			}
+		}
+		b.dispatch(ctx, cq, userID, lang, act)
+
 	case "rc":
 		if _, ok := remotePayload("", cb.Arg); !ok {
 			answer(tr(lang, "err.button"))
@@ -722,6 +839,11 @@ func (b *Bot) publish(userID int64, dev promsync.DeviceInfo, act *action) {
 		p, _ := remotePayload(dev.ID, act.remote)
 		b.hub.Publish(userID, promsync.EventRemote, p)
 		b.log.Info("telegram: remote", "user_id", userID, "action", p.Action, "device", dev.Name)
+		return
+	}
+	if act.kind == "open_yt" {
+		b.hub.Publish(userID, promsync.EventOpenYouTube, OpenYouTubePayload{VideoID: act.videoID, DeviceID: dev.ID, Title: act.title})
+		b.log.Info("telegram: open youtube", "user_id", userID, "video_id", act.videoID, "device", dev.Name)
 		return
 	}
 	b.hub.Publish(userID, promsync.EventOpenTitle, OpenTitlePayload{TMDBID: act.tmdbID, MediaType: act.mediaType, DeviceID: dev.ID, Title: act.title, Resume: act.resume})

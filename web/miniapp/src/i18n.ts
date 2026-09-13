@@ -20,6 +20,7 @@ type Entry = [uk: string, ru: string, en: string];
 const D: Record<string, Entry> = {
   'tab.home': ['Головна', 'Главная', 'Home'],
   'tab.search': ['Пошук', 'Поиск', 'Search'],
+  'tab.youtube': ['YouTube', 'YouTube', 'YouTube'],
   'tab.remote': ['Пульт', 'Пульт', 'Remote'],
   'tab.library': ['Бібліотека', 'Библиотека', 'Library'],
   'tab.settings': ['Налаштування', 'Настройки', 'Settings'],
@@ -45,6 +46,14 @@ const D: Record<string, Entry> = {
   'home.empty': ['Каталог порожній', 'Каталог пуст', 'Nothing here yet'],
 
   'search.empty': ['Нічого не знайдено', 'Ничего не найдено', 'Nothing found'],
+  'yt.continue': ['Продовжити', 'Продолжить', 'Continue'],
+  'yt.subs': ['Підписки', 'Подписки', 'Subscriptions'],
+  'yt.search': ['Пошук', 'Поиск', 'Search'],
+  'yt.search_placeholder': ['Шукати на YouTube', 'Искать на YouTube', 'Search YouTube'],
+  'yt.search_hint': ['Введіть запит', 'Введите запрос', 'Type a query'],
+  'yt.empty': ['Тут поки порожньо', 'Здесь пока пусто', 'Nothing here yet'],
+  'yt.not_linked': ['YouTube не підключено', 'YouTube не подключён', 'YouTube is not connected'],
+  'yt.not_linked_hint': ['На ТВ: YouTube → Акаунт → Увійти через Google', 'На ТВ: YouTube → Аккаунт → Войти через Google', 'On the TV: YouTube → Account → Sign in with Google'],
   'search.hint': ['Введіть назву фільму або серіалу', 'Введите название фильма или сериала', 'Type a movie or show title'],
   'search.recent': ['Недавні запити', 'Недавние запросы', 'Recent searches'],
   'search.clear_recent': ['Очистити', 'Очистить', 'Clear'],

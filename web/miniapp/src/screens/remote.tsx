@@ -5,6 +5,7 @@ import { navigate, titlePath } from '../router';
 import { livePos, sendOpen, sendRemote, sendRemoteStr, targetDevice, toast, useStore, type LiveState } from '../store';
 import { haptic } from '../tg';
 import { Empty, MediaRow, Sheet, useNow } from '../ui';
+import { IconBack30, IconFwd30, IconMute, IconNext, IconPause, IconPlay, IconPrev } from '../icons';
 
 const SLEEP = [15, 30, 45, 60, 90];
 
@@ -222,23 +223,19 @@ export function Remote() {
 
       <div class="pad">
         <button class="key" onClick={() => sendRemote('prev')} aria-label="previous">
-          ⏮
+          <IconPrev />
         </button>
         <button class="key" onClick={() => sendRemote('seek', -30)} aria-label="back 30 s">
-          <span class="key-stack">
-            ⏪<small>30</small>
-          </span>
+          <IconBack30 />
         </button>
         <button class="key key-main" onClick={() => sendRemote('toggle_play')} aria-label="play/pause">
-          {st.paused ? '▶' : '⏸'}
+          {st.paused ? <IconPlay /> : <IconPause />}
         </button>
         <button class="key" onClick={() => sendRemote('seek', 30)} aria-label="forward 30 s">
-          <span class="key-stack">
-            ⏩<small>30</small>
-          </span>
+          <IconFwd30 />
         </button>
         <button class="key" onClick={() => sendRemote('next')} aria-label="next">
-          ⏭
+          <IconNext />
         </button>
       </div>
 
@@ -246,7 +243,7 @@ export function Remote() {
 
       <div class="pad pad-aux">
         <button class={'key' + (st.muted ? ' on' : '')} onClick={() => sendRemote('mute')} aria-label="mute">
-          🔇
+          <IconMute on={!!st.muted} />
         </button>
         <button class="key" onClick={() => sendRemote('night')} aria-label="night mode">
           🌙

@@ -261,6 +261,7 @@ export interface OpenCmd {
 }
 export type SendBody = { device_id: string } & (
   | { open: OpenCmd }
+  | { open_yt: { video_id: string } }
   | { remote: { action: RemoteAction; value?: number } }
   | { remote: { action: RemoteStrAction; str: string } }
   | { remote: { action: 'set_local'; key: LocalKey; str: 'true' | 'false' } }
@@ -274,6 +275,27 @@ export function img(path: string | null | undefined, size: string): string {
 }
 
 // ---- endpoints ---------------------------------------------------------------
+
+// ---- YouTube (docs/youtube.md; the account is linked on the TV) ----
+export interface YtItem {
+  kind: 'video' | 'channel' | 'playlist';
+  id: string;
+  title: string;
+  channel?: { id?: string | null; name?: string };
+  duration_sec?: number;
+  duration_text?: string;
+  meta?: string[];
+  thumbnail?: string;
+  progress_pct: number;
+  live?: boolean;
+}
+export interface YtFeed {
+  shelves: { title: string; items: YtItem[]; cont: string | null }[];
+  cont: string | null;
+}
+export const ytBrowse = (page: string) => get<YtFeed>('/yt/browse/' + encodeURIComponent(page), { lang });
+export const ytSearch = (q: string) => get<YtFeed>('/yt/search', { q, lang });
+export const getPing = () => get<{ youtube?: boolean }>('/ping');
 
 export const tgAuth = (init_data: string) => post<{ token: string; user: AuthUser }>('/tg/auth', { init_data });
 export const getDevices = () => get<{ devices: Device[] }>('/tg/devices');

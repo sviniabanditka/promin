@@ -7,14 +7,15 @@ import { Home } from './screens/home';
 import { Library } from './screens/library';
 import { DPad, Remote } from './screens/remote';
 import { Search } from './screens/search';
+import { YouTube } from './screens/youtube';
 import { Settings } from './screens/settings';
 import { Title } from './screens/title';
-import { chooseDevice, closePad, getState, loadBootstrap, loadHiddenIds, refreshDevices, setLang, setState, targetDevice, useStore, visibleDevices } from './store';
+import { chooseDevice, closePad, getState, loadBootstrap, loadHiddenIds, refreshDevices, setLang, setState, targetDevice, useStore, visibleDevices, loadPing } from './store';
 import { applyTheme, haptic, inTelegram, tg } from './tg';
 import { Empty, Sheet } from './ui';
 import { startWs, stopWs } from './ws';
 
-const TAB_ICON: Record<Screen, string> = { home: '🏠', search: '🔍', remote: '🎛', library: '📚', settings: '⚙️', title: '' };
+const TAB_ICON: Record<Screen, string> = { home: '🏠', search: '🔍', youtube: '▶️', remote: '🎛', library: '📚', settings: '⚙️', title: '' };
 
 // ---- boot ---------------------------------------------------------------------
 
@@ -34,6 +35,7 @@ async function boot(): Promise<void> {
     }
     setState({ phase: 'ready' });
     await Promise.all([refreshDevices(), loadHiddenIds(), loadBootstrap()]);
+    loadPing();
     startWs();
   } catch (e) {
     const err = e instanceof api.ApiError ? e : null;
@@ -147,6 +149,9 @@ function App() {
       screen = id ? <Title key={type + id} type={type} id={id} /> : <Empty icon="😕" title={t('title.not_found')} />;
       break;
     }
+    case 'youtube':
+      screen = <YouTube query={route.query} />;
+      break;
     case 'remote':
       screen = <Remote />;
       break;
@@ -172,7 +177,7 @@ function App() {
         {screen}
       </main>
       <nav class="tabs">
-        {TABS.map((tab) => (
+        {TABS.filter((tab) => tab !== 'youtube' || s.youtube).map((tab) => (
           <button
             key={tab}
             class={'tab' + (route.screen === tab ? ' on' : '')}

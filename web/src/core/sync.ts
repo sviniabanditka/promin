@@ -313,6 +313,11 @@ export function setOpenTitleHandler(fn: OpenTitleFn): void {
   openTitleHandler = fn;
 }
 let remoteHandler: ((action: string, value: number, key: string, str: string) => void) | null = null;
+let openYtHandler: ((videoId: string, title: string) => void) | null = null;
+export function setOpenYtHandler(fn: (videoId: string, title: string) => void): void {
+  openYtHandler = fn;
+}
+
 export function setRemoteEventHandler(fn: (action: string, value: number, key: string, str: string) => void): void {
   remoteHandler = fn;
 }
@@ -377,6 +382,12 @@ function applyEvent(ev: SyncEvent): void {
         p.season != null ? Number(p.season) : null,
         p.episode != null ? Number(p.episode) : null
       );
+    }
+  } else if (ev.type === 'open_yt') {
+    // Bot / Mini App → "open on TV" for a YouTube video: same device gate.
+    const tok = getToken() || '';
+    if (openYtHandler && p.device_id && tok.slice(0, 12) === String(p.device_id)) {
+      openYtHandler(String(p.video_id || ''), String(p.title || ''));
     }
   } else if (ev.type === 'remote') {
     const tok = getToken() || '';

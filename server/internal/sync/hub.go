@@ -36,6 +36,9 @@ const (
 	// Payload {tmdb_id, media_type, device_id, title}; every socket of the
 	// user receives it and only the device whose id matches acts.
 	EventOpenTitle = "open_title"
+	// EventOpenYouTube asks ONE device to open a YouTube video page (bot /
+	// Mini App → TV). Payload {video_id, device_id, title}.
+	EventOpenYouTube = "open_yt"
 	// EventRemote is a playback command for ONE device (Telegram remote).
 	// Payload {device_id, action, value}: action toggle_play|seek|seek_to|
 	// prev|next|mute|night|sleep; value is seconds for seek (±30) and

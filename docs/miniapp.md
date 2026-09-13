@@ -195,3 +195,11 @@ Theme from `Telegram.WebApp.themeParams` (CSS variables), `BackButton` for
 navigation, `MainButton` for the primary action on Title, haptic feedback on
 remote presses. Language: `Telegram.WebApp.initDataUnsafe.user.language_code`
 until the profile settings load, then the synced `lang`.
+
+## YouTube tab
+
+Shown when `/ping` reports `youtube: true`. Three segments — continue watching
+(history tiles with 3–95 % progress), new from subscriptions, search — each row
+sends `open_yt {video_id}` to the chosen TV, which opens the section's video page
+(resume button, qualities). Not-linked accounts get a hint to sign in on the TV.
+The remote's transport keys are inline SVG (`src/icons.tsx`), not emoji.

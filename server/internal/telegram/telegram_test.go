@@ -41,7 +41,7 @@ func TestI18nParity(t *testing.T) {
 func TestMainMenuMatching(t *testing.T) {
 	for _, l := range langs {
 		kb := mainMenu(l)
-		if len(kb.Keyboard) != 3 || !kb.ResizeKeyboard {
+		if len(kb.Keyboard) != (len(menuActions)+1)/2 || !kb.ResizeKeyboard {
 			t.Fatalf("%s: keyboard %+v", l, kb)
 		}
 		var i int
@@ -57,7 +57,7 @@ func TestMainMenuMatching(t *testing.T) {
 	if menuAction("Interstellar") != "" || menuAction("") != "" {
 		t.Fatal("plain text must not match the menu")
 	}
-	if len(botCommands("en")) != 4 {
+	if len(botCommands("en")) != 5 {
 		t.Fatal("bot commands")
 	}
 }

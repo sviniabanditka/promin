@@ -74,5 +74,8 @@ routes answer `503 youtube_disabled`.
   reported watch time, so the TV reports every ~20 s. Exact seconds for the
   same TV live in `localStorage` (`promin:yt:resume`); the account's percent
   is the cross-device fallback.
-- Not done yet: live streams, a per-profile cap on live tracks, the Mini
-  App / bot surfaces.
+- **Phone surfaces.** Mini App tab "YouTube" (continue / subscriptions /
+  search, a row opens the video page on the TV through `POST /tg/send
+  {open_yt}` → `open_yt` sync event); bot: `/yt <query>` or the "▶ YouTube"
+  menu button → eight results with "▶ n" buttons → the usual device picker.
+- Not done yet: live streams, a per-profile cap on live tracks.

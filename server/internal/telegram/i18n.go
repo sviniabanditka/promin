@@ -18,6 +18,13 @@ var texts = map[string]map[string]string{
 		"menu.watch":     "🔥 Що подивитись",
 		"menu.remote":    "🎛 Пульт",
 		"menu.settings":  "⚙ Налаштування",
+		"menu.youtube":   "▶ YouTube",
+		"cmd.yt":         "пошук на YouTube",
+		"yt.prompt":      "Напиши, що знайти на YouTube 🔎",
+		"yt.header":      "<b>YouTube:</b> %s",
+		"yt.empty":       "На YouTube нічого не знайдено",
+		"yt.notlinked":   "YouTube не підключено. На ТВ: YouTube → Акаунт → Увійти через Google",
+		"yt.off":         "YouTube у цій збірці вимкнено",
 
 		"cmd.start":  "Почати / прив'язати чат",
 		"cmd.help":   "Підказка",
@@ -75,6 +82,13 @@ var texts = map[string]map[string]string{
 		"menu.watch":     "🔥 Что посмотреть",
 		"menu.remote":    "🎛 Пульт",
 		"menu.settings":  "⚙ Настройки",
+		"menu.youtube":   "▶ YouTube",
+		"cmd.yt":         "поиск на YouTube",
+		"yt.prompt":      "Напиши, что найти на YouTube 🔎",
+		"yt.header":      "<b>YouTube:</b> %s",
+		"yt.empty":       "На YouTube ничего не найдено",
+		"yt.notlinked":   "YouTube не подключён. На ТВ: YouTube → Аккаунт → Войти через Google",
+		"yt.off":         "YouTube в этой сборке выключен",
 
 		"cmd.start":  "Начать / привязать чат",
 		"cmd.help":   "Подсказка",
@@ -132,6 +146,13 @@ var texts = map[string]map[string]string{
 		"menu.watch":     "🔥 What to watch",
 		"menu.remote":    "🎛 Remote",
 		"menu.settings":  "⚙ Settings",
+		"menu.youtube":   "▶ YouTube",
+		"cmd.yt":         "search YouTube",
+		"yt.prompt":      "Type what to find on YouTube 🔎",
+		"yt.header":      "<b>YouTube:</b> %s",
+		"yt.empty":       "Nothing found on YouTube",
+		"yt.notlinked":   "YouTube is not connected. On the TV: YouTube → Account → Sign in with Google",
+		"yt.off":         "YouTube is switched off in this build",
 
 		"cmd.start":  "Start / link this chat",
 		"cmd.help":   "Help",
@@ -211,16 +232,17 @@ func normLang(code string) string {
 }
 
 // menuActions are the main-menu keys in display order (two per row).
-var menuActions = []string{"search", "continue", "bookmarks", "watch", "remote", "settings"}
+var menuActions = []string{"search", "continue", "bookmarks", "watch", "youtube", "remote", "settings"}
 
 // mainMenu is the persistent reply keyboard in lang.
 func mainMenu(lang string) *ReplyKeyboardMarkup {
 	kb := &ReplyKeyboardMarkup{ResizeKeyboard: true}
 	for i := 0; i < len(menuActions); i += 2 {
-		kb.Keyboard = append(kb.Keyboard, []KeyboardButton{
-			{Text: tr(lang, "menu."+menuActions[i])},
-			{Text: tr(lang, "menu."+menuActions[i+1])},
-		})
+		row := []KeyboardButton{{Text: tr(lang, "menu."+menuActions[i])}}
+		if i+1 < len(menuActions) {
+			row = append(row, KeyboardButton{Text: tr(lang, "menu."+menuActions[i+1])})
+		}
+		kb.Keyboard = append(kb.Keyboard, row)
 	}
 	return kb
 }
@@ -242,6 +264,7 @@ func menuAction(text string) string {
 func botCommands(lang string) []BotCommand {
 	return []BotCommand{
 		{Command: "start", Description: tr(lang, "cmd.start")},
+		{Command: "yt", Description: tr(lang, "cmd.yt")},
 		{Command: "help", Description: tr(lang, "cmd.help")},
 		{Command: "menu", Description: tr(lang, "cmd.menu")},
 		{Command: "unlink", Description: tr(lang, "cmd.unlink")},

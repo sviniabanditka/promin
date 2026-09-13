@@ -10,7 +10,7 @@ import { initI18n, t } from './core/i18n';
 import { toast } from './ui/toast';
 import { mountHome } from './screens/home';
 import { mountPinEntry } from './screens/pin';
-import { openTitle, openRoute } from './screens/nav';
+import { openTitle, openRoute, openYt, openYtVideo } from './screens/nav';
 import { Direction } from './core/nav';
 import { setFeatures } from './core/features';
 import { dispatchRemote, RemoteAction } from './core/player/remote';
@@ -177,6 +177,14 @@ function boot(): void {
     router.replaceRoot(mountHome, '/');
     openTitle(type, tmdbID, resume, season, episode);
     toast({ kind: 'info', icon: '✈', title: t('telegram.opened'), text: title });
+  });
+  // "Open on TV" for a YouTube video: the section's home under the video page,
+  // so Back lands somewhere sensible.
+  sync.setOpenYtHandler(function (videoId, title) {
+    if (!isLogged() || !/^[A-Za-z0-9_-]{11}$/.test(videoId)) return;
+    openYt('home');
+    openYtVideo(videoId);
+    toast({ kind: 'info', icon: '✈', title: t('telegram.opened'), text: title || 'YouTube' });
   });
   // Remote-control presses from the bot: the player consumes playback actions;
   // night mode is global and works from any screen.

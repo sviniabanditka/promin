@@ -49,7 +49,7 @@ func (c callback) String() string {
 		return fmt.Sprintf("bm:%d:%s:%d", c.TMDBID, c.MediaType, c.Page)
 	case "page":
 		return fmt.Sprintf("page:%d", c.Page)
-	case "dev", "home", "rc", "lang", "unlink":
+	case "dev", "home", "rc", "lang", "unlink", "yt":
 		return c.Kind + ":" + c.Arg
 	}
 	return ""
@@ -72,7 +72,7 @@ func parseCallback(data string) (callback, error) {
 	case len(p) == 2 && p[0] == "page":
 		c.Kind = "page"
 		c.Page, err = strconv.Atoi(p[1])
-	case len(p) == 2 && p[1] != "" && (p[0] == "dev" || p[0] == "home" || p[0] == "rc" || p[0] == "lang" || p[0] == "unlink"):
+	case len(p) == 2 && p[1] != "" && (p[0] == "dev" || p[0] == "home" || p[0] == "rc" || p[0] == "lang" || p[0] == "unlink" || p[0] == "yt"):
 		c.Kind, c.Arg = p[0], p[1]
 	default:
 		return callback{}, errBadCallback
@@ -93,6 +93,7 @@ type listing struct {
 	tcs        []store.Timecode // continue: parallel to items
 	tmdbPages  int              // search: TMDB pages fetched so far
 	totalPages int              // search: TMDB total pages
+	yt         []ytItem         // yt: YouTube search results (one page)
 }
 
 // hasMore reports whether a further, not yet fetched TMDB page exists.
@@ -332,4 +333,33 @@ func shorten(s string, n int) string {
 	}
 	r := []rune(s)
 	return strings.TrimSpace(string(r[:n-1])) + "…"
+}
+
+// renderYouTube is the YouTube search reply: a numbered list and one
+// "▶ n" button per video (callback yt:<video id>), four per row.
+func renderYouTube(lang, q string, videos []ytItem) (string, *InlineKeyboardMarkup) {
+	var sb strings.Builder
+	sb.WriteString(tr(lang, "yt.header", html.EscapeString(shorten(q, 40))))
+	kb := &InlineKeyboardMarkup{}
+	var row []InlineKeyboardButton
+	for i, v := range videos {
+		sb.WriteString("\n")
+		sb.WriteString(strconv.Itoa(i + 1))
+		sb.WriteString(". ")
+		sb.WriteString(html.EscapeString(shorten(v.Title, 70)))
+		if v.Channel.Name != "" || v.DurationText != "" {
+			sb.WriteString(" — <i>")
+			sb.WriteString(html.EscapeString(strings.TrimSpace(v.Channel.Name + " " + v.DurationText)))
+			sb.WriteString("</i>")
+		}
+		row = append(row, InlineKeyboardButton{Text: "▶ " + strconv.Itoa(i+1), CallbackData: callback{Kind: "yt", Arg: v.ID}.String()})
+		if len(row) == 4 {
+			kb.InlineKeyboard = append(kb.InlineKeyboard, row)
+			row = nil
+		}
+	}
+	if len(row) > 0 {
+		kb.InlineKeyboard = append(kb.InlineKeyboard, row)
+	}
+	return sb.String(), kb
 }
