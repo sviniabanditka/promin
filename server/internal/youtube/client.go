@@ -149,31 +149,43 @@ func (c *Client) Unlink(ctx context.Context, userID int64) error {
 // Feed is the sidecar's normalised browse/search shape, passed through as-is.
 type Feed = json.RawMessage
 
-func (c *Client) Browse(ctx context.Context, userID int64, page, cont string) (Feed, error) {
+// hl is the profile's UI language (uk/ru/en): YouTube localises shelf titles,
+// dates and counts; the sidecar keeps one session per language.
+func (c *Client) Browse(ctx context.Context, userID int64, page, cont, hl string) (Feed, error) {
 	q := url.Values{}
 	if cont != "" {
 		q.Set("cont", cont)
+	}
+	if hl != "" {
+		q.Set("hl", hl)
 	}
 	var f Feed
 	err := c.do(ctx, http.MethodGet, "/v1/accounts/"+account(userID)+"/browse/"+url.PathEscape(page), q, &f)
 	return f, err
 }
 
-func (c *Client) Search(ctx context.Context, userID int64, query, cont string) (Feed, error) {
+func (c *Client) Search(ctx context.Context, userID int64, query, cont, hl string) (Feed, error) {
 	q := url.Values{}
 	if cont != "" {
 		q.Set("cont", cont)
 	} else {
 		q.Set("q", query)
 	}
+	if hl != "" {
+		q.Set("hl", hl)
+	}
 	var f Feed
 	err := c.do(ctx, http.MethodGet, "/v1/accounts/"+account(userID)+"/search", q, &f)
 	return f, err
 }
 
-func (c *Client) Video(ctx context.Context, userID int64, videoID string) (Feed, error) {
+func (c *Client) Video(ctx context.Context, userID int64, videoID, hl string) (Feed, error) {
+	q := url.Values{}
+	if hl != "" {
+		q.Set("hl", hl)
+	}
 	var f Feed
-	err := c.do(ctx, http.MethodGet, "/v1/accounts/"+account(userID)+"/video/"+url.PathEscape(videoID), nil, &f)
+	err := c.do(ctx, http.MethodGet, "/v1/accounts/"+account(userID)+"/video/"+url.PathEscape(videoID), q, &f)
 	return f, err
 }
 

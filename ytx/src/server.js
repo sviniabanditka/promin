@@ -59,12 +59,12 @@ async function route(req, res) {
   if (rest[0] === 'login' && req.method === 'POST') return json(res, 200, await accounts.startLogin(id));
   if (rest[0] === 'watch' && rest[1] && req.method === 'POST') {
     const body = await readJson(req);
-    const yt = await accounts.session(id);
+    const yt = await accounts.session(id, url.searchParams.get('hl') || '');
     return json(res, 200, await watch(yt, id, rest[1], Number(body.position_sec) || 0, Number(body.duration_sec) || 0, log));
   }
 
   if (req.method !== 'GET') throw new HttpError(405, 'method', 'GET only');
-  const yt = await accounts.session(id);
+  const yt = await accounts.session(id, url.searchParams.get('hl') || '');
   const cont = url.searchParams.get('cont') || undefined;
 
   try {

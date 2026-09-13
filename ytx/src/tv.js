@@ -63,7 +63,7 @@ function fromTile(t) {
     if (o.thumbnailOverlayTimeStatusRenderer) {
       const s = text(o.thumbnailOverlayTimeStatusRenderer.text);
       if (o.thumbnailOverlayTimeStatusRenderer.style === 'LIVE' || /live/i.test(s)) item.live = true;
-      else { item.duration_text = s; item.duration_sec = parseDuration(s); }
+      else { item.duration_text = s.replace(/,/g, ''); item.duration_sec = parseDuration(item.duration_text); }
     }
     if (o.thumbnailOverlayResumePlaybackRenderer) item.progress_pct = o.thumbnailOverlayResumePlaybackRenderer.percentDurationWatched || 0;
   }
@@ -99,7 +99,7 @@ function fromLockup(l) {
     for (const b of o.thumbnailBottomOverlayViewModel?.badges || []) {
       const s = b.thumbnailBadgeViewModel?.text || '';
       if (b.thumbnailBadgeViewModel?.badgeStyle === 'THUMBNAIL_OVERLAY_BADGE_STYLE_LIVE') item.live = true;
-      else if (/^\d+(:\d+)+$/.test(s)) { item.duration_text = s; item.duration_sec = parseDuration(s); }
+      else if (/^[\d,]+(:\d+)+$/.test(s)) { item.duration_text = s.replace(/,/g, ''); item.duration_sec = parseDuration(item.duration_text); }
     }
     const pb = o.thumbnailOverlayProgressBarViewModel || o.thumbnailBottomOverlayViewModel?.progressBar?.thumbnailOverlayProgressBarViewModel;
     if (pb?.startPercent != null) item.progress_pct = pb.startPercent;
@@ -173,9 +173,20 @@ async function raw(yt, endpoint, payload) {
 
 export async function browse(yt, page, cont) {
   if (cont) return normalize(await raw(yt, '/browse', { continuation: cont }));
-  const browseId = PAGES[page] || page; // a channel id (UC…) or playlist (VL…) passes straight through
+  let browseId = PAGES[page] || page; // a channel id (UC…) or playlist passes straight through
   if (!/^[A-Za-z0-9_-]{2,64}$/.test(browseId)) throw new HttpError(400, 'bad_page', 'unknown page');
-  return normalize(await raw(yt, '/browse', { browseId }));
+  // Playlist ids (PL…, LL, WL, RD…, OL…) are browsed as VL<id>.
+  if (!/^(UC|FE|VL)/.test(browseId)) browseId = 'VL' + browseId;
+  const json = await raw(yt, '/browse', { browseId });
+  const feed = normalize(json);
+  // A playlist / channel page header names the page; the TV layout puts it in
+  // some *HeaderRenderer, and the first (unnamed) shelf is the page's list.
+  if (feed.shelves.length && !feed.shelves[0].title) {
+    let title = '';
+    walk(json, (k, v) => { if (!title && (k === 'entityMetadataRenderer' || /HeaderRenderer$/.test(k)) && v?.title) title = text(v.title); });
+    if (title) feed.shelves[0].title = title;
+  }
+  return feed;
 }
 
 export async function search(yt, q, cont) {
@@ -245,6 +256,20 @@ async function historyProgress(yt, videoId) {
   return 0;
 }
 
+// The TV watch page lists "up next" as many pivots of three; one grid reads
+// better than a dozen three-tile shelves. Titled shelves keep their own row.
+function mergeRelated(shelves) {
+  const out = [];
+  const seen = new Set();
+  let merged = null;
+  for (const s of shelves) {
+    if (s.title) { out.push(s); continue; }
+    if (!merged) { merged = { title: '', items: [], cont: null }; out.unshift(merged); }
+    for (const it of s.items) if (!seen.has(it.id)) { seen.add(it.id); merged.items.push(it); }
+  }
+  return out;
+}
+
 export async function video(yt, videoId) {
   if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) throw new HttpError(400, 'bad_id', 'video id');
   const [pr, next, resumePct] = await Promise.all([player(yt, videoId), raw(yt, '/next', { videoId }), historyProgress(yt, videoId)]);
@@ -273,6 +298,6 @@ export async function video(yt, videoId) {
     playable: ps.status === 'OK' && !d?.is_live,
     reason: d?.is_live ? 'live' : ps.status === 'OK' ? null : (ps.reason || ps.status || 'unavailable'),
     qualities,
-    related: normalize(next).shelves,
+    related: mergeRelated(normalize(next).shelves),
   };
 }

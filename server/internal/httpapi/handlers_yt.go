@@ -93,7 +93,7 @@ func (h *ytHandlers) browse(w http.ResponseWriter, r *http.Request) {
 		writeBadRequest(w, "невірний page")
 		return
 	}
-	f, err := h.yt.Browse(r.Context(), info.User.ID, page, r.URL.Query().Get("cont"))
+	f, err := h.yt.Browse(r.Context(), info.User.ID, page, r.URL.Query().Get("cont"), ytLang(r))
 	if err != nil {
 		h.writeYTError(w, err)
 		return
@@ -114,7 +114,7 @@ func (h *ytHandlers) search(w http.ResponseWriter, r *http.Request) {
 		writeBadRequest(w, "q занадто довгий")
 		return
 	}
-	f, err := h.yt.Search(r.Context(), info.User.ID, q, cont)
+	f, err := h.yt.Search(r.Context(), info.User.ID, q, cont, ytLang(r))
 	if err != nil {
 		h.writeYTError(w, err)
 		return
@@ -130,7 +130,7 @@ func (h *ytHandlers) video(w http.ResponseWriter, r *http.Request) {
 		writeBadRequest(w, "невірний id")
 		return
 	}
-	f, err := h.yt.Video(r.Context(), info.User.ID, id)
+	f, err := h.yt.Video(r.Context(), info.User.ID, id, ytLang(r))
 	if err != nil {
 		h.writeYTError(w, err)
 		return
@@ -158,7 +158,7 @@ func (h *ytHandlers) play(w http.ResponseWriter, r *http.Request) {
 	}
 	// Fail fast on an unlinked profile or an unplayable video instead of letting
 	// ffmpeg discover it: the video call also warms the sidecar's player cache.
-	if _, err := h.yt.Video(r.Context(), info.User.ID, id); err != nil {
+	if _, err := h.yt.Video(r.Context(), info.User.ID, id, ytLang(r)); err != nil {
 		h.writeYTError(w, err)
 		return
 	}
@@ -217,6 +217,16 @@ func (h *ytHandlers) watch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ytLang is the profile's UI language the TV client stamps on every request
+// (`lang=uk|ru|en`), forwarded to the sidecar as YouTube's hl.
+func ytLang(r *http.Request) string {
+	switch l := r.URL.Query().Get("lang"); l {
+	case "uk", "ru", "en":
+		return l
+	}
+	return ""
 }
 
 // segments: GET /api/v1/yt/segments/{id}?cats=a,b → SponsorBlock spans.

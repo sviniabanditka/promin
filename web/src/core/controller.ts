@@ -165,10 +165,18 @@ function autoScrollTo(target: HTMLElement): void {
         // Align to the enclosing block for a home/title lane (.items-line) or the
         // title screen's info block (.full-start-new) so its title/poster stays
         // put; other vertical lists (episodes/sources) align to the focused row.
+        // A YouTube shelf is a multi-row grid under its title: align to the
+        // shelf only while the focus is in its first row (title stays
+        // visible); deeper rows align to the card like any grid.
+        const firstRowOfShelf =
+          child &&
+          child.classList &&
+          child.classList.contains('yt-shelf') &&
+          target.getBoundingClientRect().top - child.getBoundingClientRect().top < target.offsetHeight;
         if (
           child &&
           child.classList &&
-          (child.classList.contains('items-line') || child.classList.contains('full-start-new'))
+          (child.classList.contains('items-line') || child.classList.contains('full-start-new') || firstRowOfShelf)
         ) {
           sc.update(child);
         } else {

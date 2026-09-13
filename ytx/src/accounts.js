@@ -61,10 +61,13 @@ export class Accounts {
     };
   }
 
-  async newClient() {
+  // `hl`: the profile's UI language (Promin's uk/ru/en) → YouTube's shelf
+  // titles, dates and "views" come back in it. A session is rebuilt when the
+  // language changes.
+  async newClient(hl) {
     // The TV app's Cobalt user agent: the attestation flow (attest.js) is
     // judged as that app, so the session should look like it everywhere.
-    return Innertube.create({ client_type: ClientType.TV, cache: new UniversalCache(false), generate_session_locally: true, user_agent: TV_UA });
+    return Innertube.create({ client_type: ClientType.TV, cache: new UniversalCache(false), generate_session_locally: true, user_agent: TV_UA, ...(hl ? { lang: hl } : {}) });
   }
 
   // Start (or return the running) device-code flow for a profile.
@@ -113,12 +116,14 @@ export class Accounts {
   }
 
   // Signed-in client for a profile; 404 when the profile has no account.
-  async session(id) {
+  async session(id, hl) {
+    hl = /^[a-z]{2}$/.test(hl || '') ? hl : '';
     const cached = this.sessions.get(id);
-    if (cached) return cached;
+    if (cached && (!hl || cached.__hl === hl)) return cached;
     const acc = this.store[id];
     if (!acc) throw new HttpError(404, 'not_linked', 'this profile has no YouTube account');
-    const yt = await this.newClient();
+    const yt = await this.newClient(hl);
+    yt.__hl = hl;
     this.attach(id, yt);
     try {
       await yt.session.signIn(acc.credentials);
