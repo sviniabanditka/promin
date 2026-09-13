@@ -3313,14 +3313,15 @@ body.reduce-motion .toast__progress::after {
 
 .devices-screen { position: relative; width: 100%; height: 100%; overflow: hidden; background: var(--bg); }
 
-.devices-header { padding: 3.2rem 4rem 0; }
+/* Below the fixed .head (7.2rem): the title used to sit on the logo. */
+.devices-header { padding: 8.4rem 4rem 0; }
 .devices-header__title { font-size: 3.2rem; font-weight: bold; color: #ffffff; }
 
 .devices-wrap {
   position: fixed;
   left: 0;
   right: 0;
-  top: 8.4rem;
+  top: 13.6rem;
   bottom: 0;
   padding: 1.6rem 4rem 3.2rem;
   overflow: hidden;

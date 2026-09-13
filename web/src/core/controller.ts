@@ -148,39 +148,85 @@ function focus(target: HTMLElement): void {
 // has a live Scroll instance, bring the element into view. This makes vertical
 // (title/sources) and horizontal (lanes) scroll follow the focus everywhere,
 // so screens don't each have to remember scroll.update in every hover:focus.
+// A section heading: a short non-focusable block whose class says "title",
+// "head" or "section" (settings-section, yt-shelf__title, items-line__title,
+// pl-name__title…) or an h1–h3. Cards' own titles live inside a .selector and
+// are excluded.
+const FOCUS_EDGE_MARGIN = 12; // keep in step with core/scroll.ts
+
+function isHeading(el: Element | null): el is HTMLElement {
+  if (!el || !(el as HTMLElement).classList) return false;
+  const h = el as HTMLElement;
+  if (h.classList.contains('selector') || h.querySelector('.selector')) return false;
+  if (/^H[1-3]$/.test(h.tagName)) return true;
+  if (!/(__title|-title|__head|section|heading)(\s|$|--)/.test(h.className)) return false;
+  return h.offsetHeight > 0 && h.offsetHeight < 120;
+}
+
+// The heading whose section the focused element belongs to, if aligning to it
+// makes sense: the last heading inside its section block that precedes it
+// (yt-shelf, library section), or the heading element just before a flat row
+// (settings-section before settings-rows). Returned when the element is in
+// the first row under that heading, or when the whole section (heading to
+// its last row) fits in the viewport `avail` px tall — then the section is
+// shown as a unit; deeper rows of a section taller than the screen align to
+// themselves like any grid.
+function headingAbove(target: HTMLElement, block: HTMLElement, avail: number): HTMLElement | null {
+  const tr = target.getBoundingClientRect();
+  let heading: HTMLElement | null = null;
+  if (block !== target) {
+    const all = block.querySelectorAll('[class*="__title"], [class*="-title"], [class*="__head"], [class*="section"], h1, h2, h3');
+    for (let i = 0; i < all.length; i++) {
+      const h = all[i];
+      if (!isHeading(h) || h.contains(target)) continue;
+      if (h.compareDocumentPosition(target) & Node.DOCUMENT_POSITION_FOLLOWING) heading = h;
+    }
+  }
+  if (!heading) {
+    // Flat list: walk back over the rows of this section to its heading.
+    let prev: Element | null = block.previousElementSibling;
+    while (prev && !isHeading(prev)) prev = prev.previousElementSibling;
+    if (isHeading(prev)) heading = prev;
+  }
+  if (!heading) return null;
+  const hr = heading.getBoundingClientRect();
+  if (tr.top - hr.bottom < Math.max(tr.height, 40)) return heading;
+  // Section extent: the block itself, or — for a flat list — the run of
+  // siblings after the heading up to the next heading.
+  let bottom = block.getBoundingClientRect().bottom;
+  if (!block.contains(heading)) {
+    let el: Element | null = heading.nextElementSibling;
+    while (el && !isHeading(el)) {
+      bottom = Math.max(bottom, el.getBoundingClientRect().bottom);
+      el = el.nextElementSibling;
+    }
+  }
+  return bottom - hr.top <= avail ? heading : null;
+}
+
+// Scroll the enclosing Scroll(s) so the focused element is visible — and so
+// the heading of the row it sits under is visible too: if the vertical scroll
+// aligned to the element itself, that heading would slide up under the fixed
+// .head. Aligns to the enclosing block (home lane .items-line, the title
+// screen's .full-start-new, a YouTube shelf, a library section) when the
+// element is in the block's first row, to the heading element itself for flat
+// lists (settings), otherwise to the element.
 function autoScrollTo(target: HTMLElement): void {
   let node: HTMLElement | null = target;
   while (node) {
     if (node.classList && node.classList.contains('scroll__body')) {
       const sc = Scroll.forBody(node);
       if (sc) {
-        // For a home lane the focusable card sits below its lane title. If the
-        // vertical scroll aligned to the card, the title would slide up under
-        // the fixed .head. Instead align to the enclosing .items-line (title +
-        // strip) so the current lane's title always stays visible below .head.
-        // Other vertical lists (title/sources) have no .items-line wrapper, so
-        // they keep aligning to the focused element itself — unchanged.
         let child: HTMLElement | null = target;
         while (child && child.parentElement !== node) child = child.parentElement;
-        // Align to the enclosing block for a home/title lane (.items-line) or the
-        // title screen's info block (.full-start-new) so its title/poster stays
-        // put; other vertical lists (episodes/sources) align to the focused row.
-        // A YouTube shelf is a multi-row grid under its title: align to the
-        // shelf only while the focus is in its first row (title stays
-        // visible); deeper rows align to the card like any grid.
-        const firstRowOfShelf =
-          child &&
-          child.classList &&
-          child.classList.contains('yt-shelf') &&
-          target.getBoundingClientRect().top - child.getBoundingClientRect().top < target.offsetHeight;
-        if (
-          child &&
-          child.classList &&
-          (child.classList.contains('items-line') || child.classList.contains('full-start-new') || firstRowOfShelf)
-        ) {
+        if (child && child.classList && (child.classList.contains('items-line') || child.classList.contains('full-start-new'))) {
           sc.update(child);
         } else {
-          sc.update(target);
+          const avail = sc.render().clientHeight - 2 * FOCUS_EDGE_MARGIN;
+          const heading = child ? headingAbove(target, child, avail) : null;
+          if (heading && child && child.contains(heading)) sc.update(child);
+          else if (heading) sc.update(heading);
+          else sc.update(target);
         }
       }
     }
