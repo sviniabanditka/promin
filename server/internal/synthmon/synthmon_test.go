@@ -2,6 +2,7 @@ package synthmon
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -48,5 +49,18 @@ func TestPickTitle(t *testing.T) {
 	}
 	if pickTitle(nil) != nil {
 		t.Fatal("nil for no items")
+	}
+}
+
+func TestUpstreamOf(t *testing.T) {
+	enc := base64.RawURLEncoding.EncodeToString([]byte("https://cdn.example/v.m3u8"))
+	if got := upstreamOf("/relay?u=" + enc); got != "https://cdn.example/v.m3u8" {
+		t.Fatalf("relay: %q", got)
+	}
+	if got := upstreamOf("/remux?u=" + enc + "&kind=copy_hls&audio=0"); got != "https://cdn.example/v.m3u8" {
+		t.Fatalf("remux: %q", got)
+	}
+	if upstreamOf("/stream/abc/0?t=x") != "" || upstreamOf("https://direct.example/a.mp4") != "https://direct.example/a.mp4" {
+		t.Fatal("bare path must be empty, absolute URL unchanged")
 	}
 }

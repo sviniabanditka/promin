@@ -11,6 +11,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/sviniabanditka/promin/server/internal/catalog"
@@ -136,7 +138,7 @@ func (m *Monitor) checkSources(ctx context.Context) {
 				continue
 			}
 			stage = StageResolve
-			n, err := firstBytes(ctx, m.http, resolved.Streams[0].URL)
+			n, err := firstBytes(ctx, m.http, upstreamOf(resolved.Streams[0].URL))
 			if err != nil {
 				lastErr = err
 				continue
@@ -200,6 +202,9 @@ func pickTitle(items []catalog.Title) *catalog.Title {
 // (browser UA, a Range) and returns how many bytes arrived. A playlist counts:
 // its body is the proof the upstream serves this title.
 func firstBytes(ctx context.Context, c *http.Client, rawURL string) (int64, error) {
+	if rawURL == "" {
+		return 0, errNoUpstream
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return 0, err
@@ -221,6 +226,29 @@ func firstBytes(ctx context.Context, c *http.Client, rawURL string) (int64, erro
 	return n, nil
 }
 
+// upstreamOf turns what the TV would play — a /relay?u= or /remux?u= wrapper
+// around the provider's URL — back into that URL. Anything else that is a
+// bare path (a torrent /stream) has no upstream to fetch: empty.
+func upstreamOf(u string) string {
+	switch {
+	case strings.HasPrefix(u, "/relay?"):
+		if raw, err := sources.DecodeRelayURL(u); err == nil {
+			return raw
+		}
+		return ""
+	case strings.HasPrefix(u, "/remux?"):
+		if q, err := url.ParseQuery(strings.TrimPrefix(u, "/remux?")); err == nil {
+			if raw, err := sources.DecodeRelayParam(q.Get("u")); err == nil {
+				return raw
+			}
+		}
+		return ""
+	case strings.HasPrefix(u, "/"):
+		return ""
+	}
+	return u
+}
+
 type statusError struct{ code int }
 
 func (e *statusError) Error() string { return "upstream status " + http.StatusText(e.code) }
@@ -234,4 +262,5 @@ const (
 	errNoSources = sentinel("no online sources listed")
 	errNoStreams = sentinel("no source resolved to a stream")
 	errEmptyBody = sentinel("stream body empty")
+	errNoUpstream = sentinel("stream url has no fetchable upstream")
 )
