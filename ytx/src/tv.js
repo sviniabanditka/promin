@@ -8,7 +8,9 @@
 //            duration_sec, duration_text, meta: [..], thumbnail, progress_pct, live }
 // Ads (`adSlotRenderer`) are dropped.
 
+import { randomBytes } from 'node:crypto';
 import { YTNodes, Parser } from 'youtubei.js';
+import { sessionPot } from './attest.js';
 import { text, walk, parseDuration, largestThumb, HttpError } from './util.js';
 
 const PAGES = {
@@ -195,7 +197,10 @@ export async function player(yt, videoId, reload) {
   const hit = !reload && byVid.get(videoId);
   if (hit && hit.at + PLAYER_TTL_MS > Date.now()) return hit.pr;
   const ep = new YTNodes.NavigationEndpoint({ watchEndpoint: { videoId } });
+  // cpn (client playback nonce) and the session PO token, as the TV app sends
+  // them; the token is what lets the SABR stream past ~12 MB (attest.js).
   const args = {
+    cpn: randomBytes(12).toString('base64url').slice(0, 16),
     playbackContext: {
       adPlaybackContext: { pyv: true },
       contentPlaybackContext: { vis: 0, splay: false, lactMilliseconds: '-1', signatureTimestamp: yt.session.player?.signature_timestamp },
@@ -204,6 +209,12 @@ export async function player(yt, videoId, reload) {
     racyCheckOk: true,
     parse: false,
   };
+  try {
+    args.serviceIntegrityDimensions = { poToken: await sessionPot(yt) };
+  } catch (e) {
+    // No token: the request still works, the stream will be cut after ~1 min.
+    console.error(JSON.stringify({ level: 'warn', msg: 'session pot unavailable', error: String(e).slice(0, 200) }));
+  }
   if (reload) args.playbackContext.reloadPlaybackContext = reload;
   let raw;
   try {

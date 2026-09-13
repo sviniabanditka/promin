@@ -11,6 +11,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { Innertube, ClientType, UniversalCache, Platform } from 'youtubei.js';
 import { HttpError } from './util.js';
+import { TV_UA } from './attest.js';
 
 // The player's decipher code runs as real JS (Node), not youtubei.js's bundled
 // interpreter, which is slower and lags behind player changes.
@@ -61,7 +62,9 @@ export class Accounts {
   }
 
   async newClient() {
-    return Innertube.create({ client_type: ClientType.TV, cache: new UniversalCache(false), generate_session_locally: true });
+    // The TV app's Cobalt user agent: the attestation flow (attest.js) is
+    // judged as that app, so the session should look like it everywhere.
+    return Innertube.create({ client_type: ClientType.TV, cache: new UniversalCache(false), generate_session_locally: true, user_agent: TV_UA });
   }
 
   // Start (or return the running) device-code flow for a profile.

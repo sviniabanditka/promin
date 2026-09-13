@@ -20,6 +20,7 @@ import { Accounts } from './accounts.js';
 import { browse, search, video } from './tv.js';
 import { openTrack, probe } from './stream.js';
 import { watch } from './watch.js';
+import { setLogger as setAttestLogger } from './attest.js';
 import { HttpError } from './util.js';
 
 const ADDR = process.env.YTX_ADDR || ':8091';
@@ -30,6 +31,7 @@ const log = {
   warn: (m, f = {}) => console.warn(JSON.stringify({ level: 'warn', msg: m, ...f, t: new Date().toISOString() })),
   error: (m, f = {}) => console.error(JSON.stringify({ level: 'error', msg: m, ...f, t: new Date().toISOString() })),
 };
+setAttestLogger(log);
 
 const accounts = new Accounts(DATA, log);
 await accounts.load();
@@ -69,8 +71,8 @@ async function route(req, res) {
     if (rest[0] === 'browse' && rest[1]) return json(res, 200, await browse(yt, rest[1], cont));
     if (rest[0] === 'search') return json(res, 200, await search(yt, url.searchParams.get('q') || '', cont));
     if (rest[0] === 'video' && rest[1]) return json(res, 200, await video(yt, rest[1]));
-    if (rest[0] === 'stream' && rest[1] && rest[2] === 'probe') return json(res, 200, await probe(rest[1], log));
-    if (rest[0] === 'stream' && rest[1] && (rest[2] === 'video' || rest[2] === 'audio')) return await streamTrack(req, res, rest[1], rest[2], url.searchParams.get('quality') || '1080p', Number(url.searchParams.get('start')) || 0);
+    if (rest[0] === 'stream' && rest[1] && rest[2] === 'probe') return json(res, 200, await probe(yt, rest[1]));
+    if (rest[0] === 'stream' && rest[1] && (rest[2] === 'video' || rest[2] === 'audio')) return await streamTrack(req, res, yt, rest[1], rest[2], url.searchParams.get('quality') || '1080p', Number(url.searchParams.get('start')) || 0);
   } catch (e) {
     // A rejected token: drop the cached session so the next call re-signs in.
     if (e instanceof HttpError && e.code === 'youtube_auth') accounts.reset(id);
@@ -88,10 +90,9 @@ function readJson(req) {
   });
 }
 
-async function streamTrack(req, res, vid, track, quality, startSec) {
+async function streamTrack(req, res, yt, vid, track, quality, startSec) {
   if (!/^[A-Za-z0-9_-]{11}$/.test(vid)) throw new HttpError(400, 'bad_id', 'video id');
-  // Anonymous web playback (stream.js); the profile only has to be linked.
-  const t = await openTrack(vid, track, quality, log, startSec);
+  const t = await openTrack(yt, vid, track, quality, log, startSec);
   const mime = (t.format.mimeType || '').split(';')[0] || (track === 'audio' ? 'audio/mp4' : 'video/mp4');
   res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'no-store', 'X-Ytx-Itag': String(t.format.itag || ''), 'X-Ytx-Quality': t.format.qualityLabel || '' });
   let bytes = 0;
