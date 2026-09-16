@@ -440,6 +440,31 @@ func (h *adminHandlers) tvSetEpg(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"epg_id": key})
 }
 
+// tvSetTitle: PATCH /admin/tv/channels/{cid} {title} — our display name, "" resets.
+func (h *adminHandlers) tvSetTitle(w http.ResponseWriter, r *http.Request) {
+	if !h.gate(w, r) || !h.tvOn(w) {
+		return
+	}
+	cid := r.PathValue("cid")
+	var req struct {
+		Title string `json:"title"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || !tvChannelID.MatchString(cid) {
+		writeBadRequest(w, "невірне тіло")
+		return
+	}
+	title := strings.TrimSpace(req.Title)
+	if len([]rune(title)) > 60 {
+		writeBadRequest(w, "назва до 60 символів")
+		return
+	}
+	if err := h.tv.Repo().SetTitle(cid, title); err != nil {
+		writeInternal(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *adminHandlers) tvClearEpg(w http.ResponseWriter, r *http.Request) {
 	if !h.gate(w, r) || !h.tvOn(w) {
 		return

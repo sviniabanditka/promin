@@ -118,6 +118,9 @@ func (r *TVRepo) Replace(channels []TVChannel, streams []TVStream) error {
 			return err
 		}
 	}
+	if _, err := tx.Exec(`UPDATE tv_channels SET title = COALESCE((SELECT t.title FROM tv_channel_titles t WHERE t.channel_id = tv_channels.id), '')`); err != nil {
+		return err
+	}
 	stStmt, err := tx.Prepare(`INSERT OR IGNORE INTO tv_streams(channel_id, url, quality, user_agent, referrer, alive, cors, fails, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
@@ -189,14 +192,14 @@ func (r *TVRepo) Counts(countries []string) (byCountry map[string]int, byCategor
 
 // TVFilter narrows Channels.
 type TVFilter struct {
-	Country  string // "" = all configured
+	Country   string   // "" = all configured
 	Countries []string // the profile's allowed countries; nil = no restriction
-	Category string // "" = all
-	Query    string // substring of the name, case-insensitive
-	UserID   int64  // for the favourite flag / favourites-only
-	FavOnly  bool
-	Recent   bool // order by the user's last watched, only watched
-	Limit    int
+	Category  string   // "" = all
+	Query     string   // substring of the name, case-insensitive
+	UserID    int64    // for the favourite flag / favourites-only
+	FavOnly   bool
+	Recent    bool // order by the user's last watched, only watched
+	Limit     int
 }
 
 // Channels lists channels that have an alive stream, with the best quality
@@ -204,7 +207,7 @@ type TVFilter struct {
 func (r *TVRepo) Channels(f TVFilter) ([]TVChannel, error) {
 	var sb strings.Builder
 	args := []any{f.UserID}
-	sb.WriteString(`SELECT c.id, c.name, c.country, c.categories, c.logo, c.website, c.network,
+	sb.WriteString(`SELECT c.id, CASE WHEN c.title != '' THEN c.title ELSE c.name END AS name, c.country, c.categories, c.logo, c.website, c.network,
 		(SELECT COUNT(*) FROM tv_streams s WHERE s.channel_id = c.id AND s.alive = 1) AS alive,
 		COALESCE((SELECT s.quality FROM tv_streams s WHERE s.channel_id = c.id AND s.alive = 1
 			ORDER BY CASE s.quality WHEN '2160p' THEN 0 WHEN '1080p' THEN 1 WHEN '720p' THEN 2 WHEN '576p' THEN 3 WHEN '480p' THEN 4 WHEN '' THEN 5 ELSE 6 END LIMIT 1), '') AS quality,
@@ -229,8 +232,8 @@ func (r *TVRepo) Channels(f TVFilter) ([]TVChannel, error) {
 		args = append(args, `%"`+f.Category+`"%`)
 	}
 	if q := strings.TrimSpace(f.Query); q != "" {
-		sb.WriteString(` AND lower(c.name) LIKE ?`)
-		args = append(args, "%"+strings.ToLower(q)+"%")
+		sb.WriteString(` AND (lower(c.name) LIKE ? OR lower(c.title) LIKE ?)`)
+		args = append(args, "%"+strings.ToLower(q)+"%", "%"+strings.ToLower(q)+"%")
 	}
 	if f.FavOnly {
 		sb.WriteString(` AND fav = 1`)
@@ -238,7 +241,7 @@ func (r *TVRepo) Channels(f TVFilter) ([]TVChannel, error) {
 	if f.Recent {
 		sb.WriteString(` AND watched IS NOT NULL ORDER BY watched DESC`)
 	} else {
-		sb.WriteString(` ORDER BY fav DESC, c.name COLLATE NOCASE`)
+		sb.WriteString(` ORDER BY fav DESC, name COLLATE NOCASE`)
 	}
 	if f.Limit > 0 {
 		sb.WriteString(` LIMIT ?`)
@@ -289,7 +292,7 @@ func (r *TVRepo) channelsByIDs(ids []string) ([]TVChannel, error) {
 	for _, id := range ids {
 		var c TVChannel
 		var cats string
-		err := r.db.QueryRow(`SELECT id, name, country, categories, logo, website, network FROM tv_channels WHERE id = ?`, id).
+		err := r.db.QueryRow(`SELECT id, CASE WHEN title != '' THEN title ELSE name END, country, categories, logo, website, network FROM tv_channels WHERE id = ?`, id).
 			Scan(&c.ID, &c.Name, &c.Country, &cats, &c.Logo, &c.Website, &c.Network)
 		if err == sql.ErrNoRows {
 			continue
@@ -389,7 +392,7 @@ func b2i(b bool) int {
 
 // ChannelNames lists every channel's spellings for the EPG matcher.
 func (r *TVRepo) ChannelNames() ([]TVChannelName, error) {
-	rows, err := r.db.Query(`SELECT id, name, country, alt_names FROM tv_channels`)
+	rows, err := r.db.Query(`SELECT id, name, country, alt_names, title FROM tv_channels`)
 	if err != nil {
 		return nil, err
 	}
@@ -397,11 +400,14 @@ func (r *TVRepo) ChannelNames() ([]TVChannelName, error) {
 	var out []TVChannelName
 	for rows.Next() {
 		var n TVChannelName
-		var alt string
-		if err := rows.Scan(&n.ID, &n.Name, &n.Country, &alt); err != nil {
+		var alt, title string
+		if err := rows.Scan(&n.ID, &n.Name, &n.Country, &alt, &title); err != nil {
 			return nil, err
 		}
 		_ = json.Unmarshal([]byte(alt), &n.AltNames)
+		if title != "" {
+			n.AltNames = append(n.AltNames, title)
+		}
 		out = append(out, n)
 	}
 	return out, rows.Err()
@@ -678,10 +684,11 @@ func (r *TVRepo) SearchEPGChannels(q string, limit int) ([]EPGChannel, error) {
 
 // AdminChannel is a catalogue row with its guide mapping, for the admin panel.
 type AdminChannel struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Country  string `json:"country"`
-	Alive    int    `json:"alive"`
+	ID       string   `json:"id"`
+	Name     string   `json:"name"`
+	Title    string   `json:"title"` // our own display name, "" = catalogue name
+	Country  string   `json:"country"`
+	Alive    int      `json:"alive"`
 	EPGID    string   `json:"epg_id"`   // "<source>:<xmltv id>", "" = no guide
 	EPGName  string   `json:"epg_name"` // the feed channel's first display name
 	Override string   `json:"override"` // "<source>:<xmltv id>", "none" (pinned to no guide) or ""
@@ -691,14 +698,14 @@ type AdminChannel struct {
 func (r *TVRepo) AdminChannels(q, country string, noEPG bool, limit int) ([]AdminChannel, error) {
 	var sb strings.Builder
 	var args []any
-	sb.WriteString(`SELECT c.id, c.name, c.country, c.epg_id, c.alt_names,
+	sb.WriteString(`SELECT c.id, c.name, c.title, c.country, c.epg_id, c.alt_names,
 		(SELECT COUNT(*) FROM tv_streams s WHERE s.channel_id = c.id AND s.alive = 1) AS alive,
 		COALESCE(o.source, ''), COALESCE(o.xmltv_id, ''), o.channel_id IS NOT NULL,
 		COALESCE((SELECT e.names FROM tv_epg_channels e WHERE e.source || ':' || e.xmltv_id = c.epg_id), '')
 		FROM tv_channels c LEFT JOIN tv_epg_overrides o ON o.channel_id = c.id WHERE 1 = 1`)
 	if q = strings.ToLower(strings.TrimSpace(q)); q != "" {
-		sb.WriteString(` AND (lower(c.name) LIKE ? OR lower(c.id) LIKE ? OR lower(c.alt_names) LIKE ?)`)
-		args = append(args, "%"+q+"%", "%"+q+"%", "%"+q+"%")
+		sb.WriteString(` AND (lower(c.name) LIKE ? OR lower(c.id) LIKE ? OR lower(c.alt_names) LIKE ? OR lower(c.title) LIKE ?)`)
+		args = append(args, "%"+q+"%", "%"+q+"%", "%"+q+"%", "%"+q+"%")
 	}
 	if country != "" {
 		sb.WriteString(` AND c.country = ?`)
@@ -719,7 +726,7 @@ func (r *TVRepo) AdminChannels(q, country string, noEPG bool, limit int) ([]Admi
 		var c AdminChannel
 		var src, xid, alt, names string
 		var has bool
-		if err := rows.Scan(&c.ID, &c.Name, &c.Country, &c.EPGID, &alt, &c.Alive, &src, &xid, &has, &names); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.Title, &c.Country, &c.EPGID, &alt, &c.Alive, &src, &xid, &has, &names); err != nil {
 			return nil, err
 		}
 		_ = json.Unmarshal([]byte(alt), &c.AltNames)
@@ -778,4 +785,24 @@ func (r *TVRepo) Stats() (TVStats, error) {
 		*dst = v
 	}
 	return st, nil
+}
+
+// SetTitle stores our display name for a channel ("" = back to the catalogue name).
+func (r *TVRepo) SetTitle(channelID, title string) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if title == "" {
+		if _, err := tx.Exec(`DELETE FROM tv_channel_titles WHERE channel_id = ?`, channelID); err != nil {
+			return err
+		}
+	} else if _, err := tx.Exec(`INSERT OR REPLACE INTO tv_channel_titles(channel_id, title) VALUES (?, ?)`, channelID, title); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE tv_channels SET title = ? WHERE id = ?`, title, channelID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

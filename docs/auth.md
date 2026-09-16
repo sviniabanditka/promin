@@ -126,7 +126,8 @@ the TV ES5 bundle). Its JS probes `GET /admin/profiles`: 401 → login form,
   counts and sync times), `POST /admin/tv/resync {kind: catalogue|check|epg}`
   (background, one at a time per kind), the manual EPG mapping —
   `GET /admin/tv/channels?q=&country=&noepg=1`, `GET /admin/tv/epg/search?q=`
-  (feed channels by display name), `PUT /admin/tv/channels/{id}/epg
+  (feed channels by display name), `PATCH /admin/tv/channels/{id}
+  {title}` (our display name, "" resets), `PUT /admin/tv/channels/{id}/epg
   {source, xmltv_id}` (`xmltv_id: ""` = pinned to no guide) and `DELETE` (back
   to name matching). The guide is stored per feed channel, so a mapping
   applies immediately — no re-download.

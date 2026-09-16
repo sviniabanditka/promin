@@ -112,7 +112,9 @@ const adminHTML = `<!doctype html>
       </div>
       <div class="card hidden" id="mapCard">
         <div class="top"><b id="mapTitle"></b><button class="btn sec sm" id="mapClose">✕</button></div>
-        <label>Зараз</label><div id="mapNow"></div>
+        <label>Назва в Promin (порожньо = як у каталозі)</label>
+        <div style="display:flex;gap:8px"><input id="titleQ" placeholder="Своя назва каналу"><button class="btn sec sm" id="titleSave" style="flex-shrink:0">Зберегти</button></div>
+        <label style="margin-top:12px">Зараз</label><div id="mapNow"></div>
         <label style="margin-top:12px">Програма з телепрограми (вибрати зі списку)</label>
         <input id="epgQ" placeholder="Почніть вводити назву каналу…">
         <div class="list" id="epgList" style="margin-top:8px"></div>
@@ -296,7 +298,8 @@ async function loadChannels(){
   $('#chList').innerHTML = items.map(ch => {
     const src = ch.epg_id ? ch.epg_id.split(':')[0] : '';
     const b = ch.override==='none' ? '<span class="badge off">без програми (вручну)</span>' : ch.epg_id ? '<span class="badge '+(ch.override?'warn':'on')+'">'+(ch.override?'вручну: ':'')+esc(ch.epg_name||ch.epg_id)+' <span style="opacity:.7">· '+esc(src)+'</span></span>' : '<span class="badge off">програму не знайдено</span>';
-    return '<div class="row tap" data-ch="'+esc(ch.id)+'" data-name="'+esc(ch.name)+'" data-alt="'+esc((ch.alt_names||[])[0]||'')+'" data-country="'+esc(ch.country)+'"><div class="who"><b style="font-size:15px">'+esc(ch.name)+' <span class="muted">'+esc(ch.country)+(ch.alive?'':' · без потоку')+'</span></b><div class="badges">'+b+'</div></div><div class="muted">›</div></div>';
+    const shown = ch.title || ch.name;
+    return '<div class="row tap" data-ch="'+esc(ch.id)+'" data-name="'+esc(ch.name)+'" data-title="'+esc(ch.title||'')+'" data-alt="'+esc((ch.alt_names||[])[0]||'')+'" data-country="'+esc(ch.country)+'"><div class="who"><b style="font-size:15px">'+esc(shown)+' <span class="muted">'+(ch.title?esc(ch.name)+' · ':'')+esc(ch.country)+(ch.alive?'':' · без потоку')+'</span></b><div class="badges">'+b+'</div></div><div class="muted">›</div></div>';
   }).join('') || '<div class="muted">нічого не знайдено</div>';
 }
 $('#chQ').addEventListener('input', debounce(loadChannels));
@@ -306,7 +309,8 @@ $('#chList').addEventListener('click', e => {
   const t = e.target.closest('[data-ch]'); if (!t) return;
   mapCh = { id: t.dataset.ch, name: t.dataset.name };
   $('#mapCard').classList.remove('hidden');
-  $('#mapTitle').textContent = mapCh.name + ' (' + mapCh.id + ')';
+  $('#mapTitle').textContent = (t.dataset.title || mapCh.name) + ' (' + mapCh.id + ')';
+  $('#titleQ').value = t.dataset.title || '';
   $('#mapNow').innerHTML = t.querySelector('.badges').innerHTML;
   // Native spelling (iptv-org alt_names) finds feed channels far more often than the English catalogue name.
   $('#epgQ').value = (t.dataset.alt || mapCh.name.replace(/\b(HD|TV|Ukraine|Ukraina|International)\b/gi,'')).trim();
@@ -328,6 +332,11 @@ $('#epgList').addEventListener('click', async e => {
 });
 $('#mapNone').onclick = async () => { if (!mapCh) return; const r = await api('PUT', '/admin/tv/channels/'+encodeURIComponent(mapCh.id)+'/epg', { source: '', xmltv_id: '' }); if (r.ok) { $('#mapNow').innerHTML = '<span class="badge off">без програми (вручну)</span>'; loadChannels(); } };
 $('#mapAuto').onclick = async () => { if (!mapCh) return; const r = await api('DELETE', '/admin/tv/channels/'+encodeURIComponent(mapCh.id)+'/epg'); if (r.ok) { $('#mapNow').innerHTML = r.data && r.data.epg_id ? '<span class="badge on">авто: '+esc(r.data.epg_id)+'</span>' : '<span class="badge off">авто: програму не знайдено</span>'; loadChannels(); } };
+$('#titleSave').onclick = async () => {
+  if (!mapCh) return;
+  const r = await api('PATCH', '/admin/tv/channels/'+encodeURIComponent(mapCh.id), { title: $('#titleQ').value.trim() });
+  if (r.ok) { $('#titleSave').textContent = '✓'; setTimeout(() => { $('#titleSave').textContent = 'Зберегти'; }, 1500); loadChannels(); } else alert('Помилка');
+};
 $('#mapClose').onclick = () => { $('#mapCard').classList.add('hidden'); mapCh = null; };
 
 refresh();

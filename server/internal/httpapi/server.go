@@ -159,6 +159,7 @@ func NewServer(
 	mux.HandleFunc("POST /admin/tv/resync", adminH.tvResync)
 	mux.HandleFunc("GET /admin/tv/channels", adminH.tvChannels)
 	mux.HandleFunc("GET /admin/tv/epg/search", adminH.tvEpgSearch)
+	mux.HandleFunc("PATCH /admin/tv/channels/{cid}", adminH.tvSetTitle)
 	mux.HandleFunc("PUT /admin/tv/channels/{cid}/epg", adminH.tvSetEpg)
 	mux.HandleFunc("DELETE /admin/tv/channels/{cid}/epg", adminH.tvClearEpg)
 

@@ -13,8 +13,9 @@ sidebar, tiles, nothing shared with films except the player and the relay.
 | store | `server/internal/store/tv_repo.go`, migrations `0011_tv.sql`, `0012_tv_cors.sql`, `0013_tv_epg.sql` | `tv_channels` (+`alt_names`, `epg_id`), `tv_streams` (alive/fails/cors verdicts), `tv_favorites`, `tv_recent`, `tv_meta`, `tv_programs` |
 | handlers | `server/internal/httpapi/handlers_tv.go` | `/api/v1/tv/*` (session required) |
 | relay | `httpapi/relay.go` | `ua=` / `ref=` query params: a stream's fixed User-Agent / Referer, re-attached to every URL the manifest rewrite produces |
-| TV screen | `web/src/screens/tv/index.ts` | rail item "TV" (when `/ping` has `tv: true`), sidebar (favourites, recent, all channels, countries, top categories), channel grid with lazy logos, long-press OK = favourite |
-| player | `PlayerContext.live` + `PlayerContext.tv`, `web/src/core/player/tvguide.ts` | live: no timecodes / resume. `tv`: the transport becomes a TV set — ▲/▼ zap through the list, digits pick a channel number, OK opens the guide overlay (channels with now/progress on the left, the focused channel's programme on the right, OK on a programme unfolds its description), an info bar (number, name, now/next) after every switch; ◀/▶ reveal the ordinary button row |
+| TV screen | `web/src/screens/tv/index.ts` | rail item "TV" (when `/ping` has `tv: true`). Three columns: sections (favourites, recent, all, countries, top categories) → the focused section's channels (logo, number, name, what is on now with progress; browsing a section previews it after 350 ms) → the focused channel's full programme (day separators, current entry highlighted, focused entry's description on top). OK on a channel or on any programme row opens the live player; long-press OK = favourite |
+| guide widgets | `web/src/screens/tv/guide.ts` | `ChannelList` and `ProgramPane`, shared by the screen and the player overlay; lazy logos; a 60 s now/next cache |
+| live player | `web/src/core/player/live.ts` | its own player, not the film one: full-screen picture, no timeline. OK pauses / resumes **at the live edge**, ▲/▼ zap through the list the channel came from, digits pick a channel number, ◀ opens the guide overlay (channels + programme), ▶ opens settings (night mode, sleep timer, picture fit/fill, quality and audio when hls.js offers a choice), Back exits. Info bar (number, name, LIVE/PAUSED, now/next with progress, clock, key hints) after every action, auto-hides in 5 s. hls.js with live-tuned buffers, network retries then media recovery, failure → `POST …/fail` + toast. Reports state to the Mini App remote and answers its play/pause/next/prev/sleep/mute/volume |
 
 Config: `PROMIN_TV_COUNTRIES` — iptv-org country codes to carry, default
 `UA,RU,UK,US` (note: the United Kingdom is `UK` there). Empty → the section is
@@ -83,6 +84,11 @@ also right away when the table is empty). Inserts are committed in chunks of
 5k so no other writer waits past `busy_timeout`. `tv_epg_channels` keeps each
 feed's channel list (id + display names). Our channels point at a key via
 `tv_channels.epg_id` ("" = no guide); `Programs`/`NowNext` join through it.
+
+A channel may carry our own display name (`tv_channel_titles`, admin panel):
+kept in its own table, copied onto `tv_channels.title` after every catalogue
+rebuild and shown everywhere instead of the catalogue name; the catalogue name
+stays for matching (the custom title is one more spelling the matcher tries).
 
 Mapping (`RematchEPG`, no download — from the stored channel lists): an admin
 override (`tv_epg_overrides`, `docs/auth.md` §5) wins, pinning a channel to a
