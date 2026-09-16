@@ -943,6 +943,7 @@ export function deleteDevice(tokenId: string, force?: boolean): Promise<void> {
 // maybe { status }). The settings screen shows the version and tolerates a
 // missing field / failed request. (Assumption.)
 export interface PingResponse {
+  tv?: boolean;
   version?: string;
   status?: string;
   youtube?: boolean; // the YouTube sidecar is configured → show the rail item
@@ -1141,6 +1142,51 @@ export function ytSearch(q: string, cont?: string | null): Promise<YtFeed> {
 export function getYtVideo(id: string): Promise<YtVideo> {
   return get<YtVideo>('/yt/video/' + encodeURIComponent(id), undefined, 40000);
 }
+// ---- Live TV (docs/tv.md) ----
+export interface TvCountry {
+  code: string;
+  name: string;
+  flag: string;
+  channels: number;
+}
+export interface TvCategory {
+  id: string;
+  name: string;
+  channels: number;
+}
+export interface TvChannel {
+  id: string;
+  name: string;
+  country: string;
+  categories: string[];
+  logo: string;
+  quality: string;
+  streams: number;
+  favorite: boolean;
+}
+export interface TvPlay {
+  url: string;
+  direct: boolean;
+  quality: string;
+  streams: number;
+}
+export function getTvMeta(): Promise<{ countries: TvCountry[]; categories: TvCategory[] }> {
+  return get<{ countries: TvCountry[]; categories: TvCategory[] }>('/tv/meta');
+}
+export function getTvChannels(params: QueryParams): Promise<{ items: TvChannel[] }> {
+  return get<{ items: TvChannel[] }>('/tv/channels', params);
+}
+export function tvPlay(id: string): Promise<TvPlay> {
+  return get<TvPlay>('/tv/channels/' + encodeURIComponent(id) + '/play', undefined, 15000);
+}
+export function tvFail(id: string): Promise<void> {
+  return post<void>('/tv/channels/' + encodeURIComponent(id) + '/fail');
+}
+export function tvFavorite(id: string, on: boolean): Promise<void> {
+  const path = '/tv/favorites/' + encodeURIComponent(id);
+  return on ? put<void>(path) : del<void>(path);
+}
+
 export function ytSegments(id: string): Promise<{ segments: YtSegment[] }> {
   return get<{ segments: YtSegment[] }>('/yt/segments/' + encodeURIComponent(id));
 }

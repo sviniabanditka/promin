@@ -30,6 +30,7 @@ import (
 	"github.com/sviniabanditka/promin/server/internal/synthmon"
 	"github.com/sviniabanditka/promin/server/internal/telegram"
 	"github.com/sviniabanditka/promin/server/internal/torrent"
+	"github.com/sviniabanditka/promin/server/internal/tv"
 	"github.com/sviniabanditka/promin/server/internal/weather"
 	"github.com/sviniabanditka/promin/server/internal/youtube"
 )
@@ -242,6 +243,11 @@ func main() {
 	// playback through the sidecar; promin_synthetic_* gauges + alerts.
 	go synthmon.New(catalogSvc, sourcesSvc, ytClient, logger).Run(ctx)
 
+	// Live TV: the iptv-org catalogue for the configured countries, synced
+	// daily, streams checked nightly (docs/tv.md).
+	tvSvc := tv.New(db.TV, cfg.TVCountries, httpapi.RelayURL, logger)
+	go tvSvc.Run(ctx)
+
 	// Prometheus on its own listener: never on the public mux (the ingress
 	// would expose it). PROMIN_METRICS_ADDR="" turns it off.
 	if cfg.MetricsAddr != "" {
@@ -265,7 +271,7 @@ func main() {
 		logger.Info("sessions: legacy tokens hashed", "count", n)
 	}
 	httpapi.SetRelayBlockedIPs(cfg.RelayBlockIPs)
-	handler := httpapi.NewServer(version, logger, cfg.DataDir, catalogSvc, sourcesSvc, remuxQueue, torrentMgr, authSvc, syncSvc, cfg.HTTPAddr, logBuf, cfg.LogsPassword, weatherSvc, cfg.WeatherPlace, cfg.H1Host, cfg.MainHost, tgBot, subsClient, ytClient)
+	handler := httpapi.NewServer(version, logger, cfg.DataDir, catalogSvc, sourcesSvc, remuxQueue, torrentMgr, authSvc, syncSvc, cfg.HTTPAddr, logBuf, cfg.LogsPassword, weatherSvc, cfg.WeatherPlace, cfg.H1Host, cfg.MainHost, tgBot, subsClient, ytClient, tvSvc)
 	srv := &http.Server{
 		Addr:    cfg.HTTPAddr,
 		Handler: handler,

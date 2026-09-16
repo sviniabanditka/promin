@@ -7,6 +7,7 @@ const KEY = 'promin:features';
 
 interface Features {
   youtube?: boolean;
+  tv?: boolean;
 }
 
 let cached: Features | null = null;
@@ -32,4 +33,8 @@ export function setFeatures(f: Features): void {
 
 export function youtubeEnabled(): boolean {
   return !!load().youtube;
+}
+
+export function tvEnabled(): boolean {
+  return !!load().tv;
 }

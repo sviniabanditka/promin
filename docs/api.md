@@ -254,3 +254,7 @@ Sync events added: `player_state` (`PlayerState` + `device_id`, or `{device_id, 
 ## YouTube section (`/api/v1/yt/*`)
 
 Bearer routes proxied to the `ytx` sidecar: `GET /account`, `POST /account/login`, `DELETE /account`, `GET /browse/{page}`, `GET /search`, `GET /video/{id}`, `GET /play/{id}` (creates a `mux2` remux job), `GET /segments/{id}` (SponsorBlock). Shapes and errors in `docs/youtube.md`. `GET /api/v1/ping` carries `youtube: true|false`.
+
+## Live TV
+
+See `docs/tv.md` — `GET /api/v1/tv/meta`, `GET /api/v1/tv/channels`, `GET /api/v1/tv/channels/{id}/play`, `POST /api/v1/tv/channels/{id}/fail`, `PUT|DELETE /api/v1/tv/favorites/{id}` (bearer), `GET /img/tv/{id}` (logo, public, cached).

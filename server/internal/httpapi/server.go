@@ -24,6 +24,7 @@ import (
 	"github.com/sviniabanditka/promin/server/internal/sync"
 	"github.com/sviniabanditka/promin/server/internal/telegram"
 	torrentpkg "github.com/sviniabanditka/promin/server/internal/torrent"
+	"github.com/sviniabanditka/promin/server/internal/tv"
 	"github.com/sviniabanditka/promin/server/internal/weather"
 	"github.com/sviniabanditka/promin/server/internal/youtube"
 )
@@ -53,7 +54,8 @@ func NewServer(
 	mainHost string,
 	tgBot *telegram.Bot, // nil when PROMIN_TELEGRAM_BOT_TOKEN is unset
 	subsClient *subtitles.Client, // nil/disabled when PROMIN_OPENSUBTITLES_API_KEY is unset
-	ytClient *youtube.Client, // nil when PROMIN_YTX_URL is unset — the YouTube section is off
+	ytClient *youtube.Client, // nil when PROMIN_YTX_URL is unset — the YouTube section is off,
+	tvSvc *tv.Service,
 ) http.Handler {
 	mux := http.NewServeMux()
 
@@ -70,7 +72,7 @@ func NewServer(
 	selfBaseURL := "http://127.0.0.1" + port
 
 	mux.HandleFunc("GET /healthz", handleHealthz)
-	mux.HandleFunc("GET /api/v1/ping", handlePing(version, h1Host, mainHost, ytClient.Enabled()))
+	mux.HandleFunc("GET /api/v1/ping", handlePing(version, h1Host, mainHost, ytClient.Enabled(), tvSvc != nil && tvSvc.Enabled()))
 	// Client diagnostics (Налаштування → «Режим діагностики»): key codes, viewport,
 	// JS errors from a TV that has no devtools — straight into the server log.
 	// No auth gate: the report that matters most comes from a device that cannot
@@ -224,6 +226,16 @@ func NewServer(
 	mux.HandleFunc("GET /api/v1/yt/segments/{id}", requireAuth(authSvc, ytH.segments))
 	mux.HandleFunc("POST /api/v1/yt/watch/{id}", requireAuth(authSvc, ytH.watch))
 
+	// Live TV (docs/tv.md).
+	tvH := &tvHandlers{svc: tvSvc, dataDir: dataDir, logoHTTP: &http.Client{Timeout: 15 * time.Second}}
+	mux.HandleFunc("GET /img/tv/{id}", tvH.logo)
+	mux.HandleFunc("GET /api/v1/tv/meta", requireAuth(authSvc, tvH.meta))
+	mux.HandleFunc("GET /api/v1/tv/channels", requireAuth(authSvc, tvH.channels))
+	mux.HandleFunc("GET /api/v1/tv/channels/{id}/play", requireAuth(authSvc, tvH.play))
+	mux.HandleFunc("POST /api/v1/tv/channels/{id}/fail", requireAuth(authSvc, tvH.report))
+	mux.HandleFunc("PUT /api/v1/tv/favorites/{id}", requireAuth(authSvc, tvH.favorite(true)))
+	mux.HandleFunc("DELETE /api/v1/tv/favorites/{id}", requireAuth(authSvc, tvH.favorite(false)))
+
 	tgApp := &tgAppHandlers{bot: tgBot, auth: authSvc, sync: syncSvc, cat: catalogSvc}
 	mux.HandleFunc("POST /api/v1/tg/auth", tgApp.login) // open pre-gate: initData is the credential
 	mux.HandleFunc("GET /api/v1/tg/devices", requireAuth(authSvc, tgApp.devices))
@@ -342,12 +354,13 @@ func handleDiag(logger *slog.Logger) http.HandlerFunc {
 	}
 }
 
-func handlePing(version, h1Host, mainHost string, youtubeOn bool) http.HandlerFunc {
+func handlePing(version, h1Host, mainHost string, youtubeOn, tvOn bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"pong":      true,
 			"version":   version,
 			"youtube":   youtubeOn, // the TV shows the YouTube rail item only when the sidecar is configured
+			"tv":        tvOn,      // live-TV rail item (docs/tv.md)
 			"h1_host":   h1Host,
 			"main_host": mainHost,
 		})

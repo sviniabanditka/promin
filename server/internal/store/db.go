@@ -27,6 +27,7 @@ type DB struct {
 	TorrentCache *TorrentCacheRepo
 	Telegram     *TelegramRepo
 	Queue        *QueueRepo
+	TV           *TVRepo
 }
 
 // Open opens (creating if necessary) the SQLite database at path, applies
@@ -84,6 +85,7 @@ func Open(path string) (*DB, error) {
 		TorrentCache: &TorrentCacheRepo{db: sqlDB},
 		Telegram:     &TelegramRepo{db: sqlDB},
 		Queue:        &QueueRepo{db: sqlDB},
+		TV:           &TVRepo{db: sqlDB},
 	}, nil
 }
 

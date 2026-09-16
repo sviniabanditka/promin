@@ -83,6 +83,11 @@ Reliability and operations:
 
 See also `docs/proposals/youtube.md`.
 
+## Live TV (docs/tv.md)
+- EPG from the iptv-org/epg grabber for the configured countries ("now / next").
+- Provider M3U / Xtream import with catchup.
+- Mini App / bot: switch the TV to a channel; channel numbers on the remote.
+
 ## Ideas (not planned)
 
 - Personal media library: keep downloaded torrents on the VPS, seed, prefetch

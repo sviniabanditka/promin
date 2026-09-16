@@ -117,6 +117,11 @@ type Config struct {
 	// disables the YouTube section entirely (routes answer 503, the TV hides
 	// the rail item).
 	YTXURL string
+	// TVCountries: ISO codes of the iptv-org countries the live-TV section
+	// carries (PROMIN_TV_COUNTRIES, default "UA,RU,UK,US" — iptv-org codes, the
+	// UK is "UK"); empty turns the
+	// section off. docs/tv.md.
+	TVCountries []string
 	// StableProxyToken: read-only API token of the proxy vendor, used only to
 	// publish the traffic package as metrics. Secret key stableproxy-token.
 	StableProxyToken    string
@@ -188,6 +193,7 @@ func Load() Config {
 		NativeProxyURL:         getenv("PROMIN_NATIVE_PROXY_URL", ""),
 		RelayBlockIPs:          getenvList("PROMIN_RELAY_BLOCK_IPS", ""),
 		YTXURL:                 strings.TrimRight(getenv("PROMIN_YTX_URL", ""), "/"),
+		TVCountries:            splitCSV(getenv("PROMIN_TV_COUNTRIES", "UA,RU,UK,US")),
 		StableProxyToken:       getenv("PROMIN_STABLEPROXY_TOKEN", ""),
 		OpenSubtitlesAPIKey:    getenv("PROMIN_OPENSUBTITLES_API_KEY", ""),
 		OpenSubtitlesUser:      getenv("PROMIN_OPENSUBTITLES_USER", ""),
@@ -265,6 +271,17 @@ func splitList(v string) []string {
 	var out []string
 	for _, p := range strings.Split(v, ",") {
 		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// splitCSV splits "a, b,c" into upper-case trimmed items; "" → nil.
+func splitCSV(v string) []string {
+	var out []string
+	for _, p := range strings.Split(v, ",") {
+		if p = strings.ToUpper(strings.TrimSpace(p)); p != "" {
 			out = append(out, p)
 		}
 	}

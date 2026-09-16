@@ -21,6 +21,7 @@ import { mountPerson } from './person';
 import { mountYouTube, YtPage } from './yt/index';
 import { mountYtVideo } from './yt/video';
 import { mountYtSearch } from './yt/search';
+import { mountTv, TvSection } from './tv/index';
 import { isLogged } from '../core/auth';
 
 export type MenuKey =
@@ -29,6 +30,7 @@ export type MenuKey =
   | 'search'
   | 'library'
   | 'youtube'
+  | 'tv'
   | 'settings';
 
 // The service is closed by default: the only way in is a PIN. "Login" now means
@@ -50,6 +52,9 @@ export function openMenu(key: MenuKey): void {
     else router.replaceRoot(mountPinEntry);
   } else if (key === 'youtube') {
     if (isLogged()) openYt('home');
+    else router.replaceRoot(mountPinEntry);
+  } else if (key === 'tv') {
+    if (isLogged()) openTv('fav');
     else router.replaceRoot(mountPinEntry);
   } else if (key === 'settings') {
     router.replaceRoot(mountSettings, '/settings');
@@ -124,6 +129,14 @@ export function openTitle(type: 'movie' | 'tv', id: number, resume?: boolean, se
 
 // A section page (home / subscriptions / history / …) is the section's root.
 export type YtPageName = YtPage;
+
+// Live TV section root: favourites / recent / a country / a category.
+export function openTv(section: TvSection, id?: string): void {
+  const path = section === 'country' ? '/tv/c/' + encodeURIComponent(id || '') : section === 'category' ? '/tv/g/' + encodeURIComponent(id || '') : '/tv/' + section;
+  router.replaceRoot(function (c) {
+    return mountTv(c, { section: section, id: id });
+  }, path);
+}
 
 export function openYt(page: YtPage): void {
   router.replaceRoot(function (container: HTMLElement) {
@@ -236,6 +249,14 @@ export function openRoute(raw: string): void {
       if (!(id > 0)) break;
       router.replaceRoot(mountHome, '/');
       openTitle(type, id, false, intOrNull(q.s), intOrNull(q.e));
+      return;
+    }
+    case 'tv': {
+      const sub = seg[1] || 'fav';
+      if (sub === 'c' && seg[2]) openTv('country', arg2(seg));
+      else if (sub === 'g' && seg[2]) openTv('category', arg2(seg));
+      else if (sub === 'recent') openTv('recent');
+      else openTv('fav');
       return;
     }
     case 'yt': {

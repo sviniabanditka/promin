@@ -96,6 +96,8 @@ export interface PlayerContext {
   // torrent path never sees the X-Remux-Duration header. Overridden if that
   // header does arrive (online path).
   durationHint?: number;
+  // Live TV: no timecodes, no resume; prev/next zap channels (docs/tv.md).
+  live?: boolean;
   // Autoplay the next episode (tv). The player calls this on ended; sources
   // resolves the next episode's streams and calls done(media, meta) — or
   // done(null) when there is no next episode.
@@ -325,7 +327,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   const skipEl = el('div', 'player__skip hide', '\u25B2 ' + t('player.btn_next'));
   root.appendChild(skipEl);
   function paintSkip(cur: number, dur: number): void {
-    const show = !!ctx.onNext && dur > 0 && isFinite(dur) && cur > 0 && dur - cur <= SKIP_WINDOW_S && !nextBox && !errorBox;
+    const show = !!ctx.onNext && !ctx.live && dur > 0 && isFinite(dur) && cur > 0 && dur - cur <= SKIP_WINDOW_S && !nextBox && !errorBox;
     skipEl.classList.toggle('hide', !show);
   }
   function skipVisible(): boolean {
@@ -2631,6 +2633,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   let clockTimer = 0;
   let statsTimer = 0;
   function emitProgress(): void {
+    if (ctx.live) return; // a live channel has no position worth saving
     const pos = absTime();
     if (pos <= 0) return; // don't persist a 0 position over a real saved timecode
     // A growing remux without a known total would save the playlist's CURRENT

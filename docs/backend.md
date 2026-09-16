@@ -27,6 +27,7 @@ then the torrent client is closed. No `WriteTimeout` is set on the server —
 | `logbuf` | `slog.Handler` wrapper: ring buffer of the last 5000 records + live subscribers for `/logs` | `logbuf.go` |
 | `proxymon` | Watches the residential proxy: a liveness fetch through it plus the vendor's traffic package, both as `promin_proxy_*` gauges | `proxymon.go` |
 | `synthmon` | Hourly synthetic user: TMDB search → online source → resolve → first bytes, and YouTube playback via the sidecar's `/v1/check`; `promin_synthetic_*` gauges, alerts `ProminSourcesBroken` / `ProminYouTubeBroken` / `ProminSyntheticStale` | `synthmon.go` |
+| `tv` | Live TV: iptv-org catalogue sync (daily), stream liveness sweep, channel queries, direct-vs-relay play decision (docs/tv.md) | `service.go` |
 
 Dependency direction: `httpapi` → services (`auth`, `sync`, `catalog`,
 `sources`, `torrent`, `remux`, `weather`) → `store`. Services never import

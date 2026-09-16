@@ -68,3 +68,8 @@ export const ICON_YOUTUBE =
   '<svg viewBox="0 0 39 38" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2.5" y="7.5" width="34" height="23" rx="6.5" stroke="currentColor" stroke-width="3"/><path d="M16 13.5v11l9.5-5.5L16 13.5Z" fill="currentColor"/></svg>';
 export const ICON_YOUTUBE_FILL =
   '<svg viewBox="0 0 39 38" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M9 6h21a8 8 0 0 1 8 8v10a8 8 0 0 1-8 8H9a8 8 0 0 1-8-8V14a8 8 0 0 1 8-8Zm7 7.5v11l9.5-5.5L16 13.5Z" fill-rule="evenodd"/></svg>';
+
+export const ICON_TV =
+  '<svg viewBox="0 0 39 38" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3.5" y="9.5" width="32" height="21" rx="4.5" stroke="currentColor" stroke-width="3"/><path d="M12 4l7.5 5.5L27 4" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 35h13" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>';
+export const ICON_TV_FILL =
+  '<svg viewBox="0 0 39 38" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M8 8h23a6 6 0 0 1 6 6v12a6 6 0 0 1-6 6H8a6 6 0 0 1-6-6V14a6 6 0 0 1 6-6Z"/><path d="M12 4l7.5 5.5L27 4" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M13 35h13" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>';

@@ -25,3 +25,4 @@ Conventions: English, present tense, code referenced by path. A document
 describes behaviour; the reason behind a non-obvious choice goes next to it in
 one or two sentences, not in a separate decision log.
 - [youtube.md](youtube.md) — the YouTube section: ytx sidecar, TV sign-in, SABR tracks, `mux2` remux, SponsorBlock
+| [tv.md](tv.md) | Live TV: the iptv-org catalogue for a few countries, liveness sweep, direct-or-relay playback, the TV screen |

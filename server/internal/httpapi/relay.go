@@ -182,6 +182,16 @@ func relayHandler(logger *slog.Logger) http.HandlerFunc {
 		if !strings.Contains(ua, "Mozilla/") {
 			ua = relayBrowserUA
 		}
+		// Live-TV streams may need a fixed User-Agent / Referer (iptv-org
+		// carries them per stream); they ride along as ua= / ref= and are
+		// re-attached to every segment URL the manifest rewrite produces.
+		extra := relayExtra(r.URL.Query())
+		if v := r.URL.Query().Get("ua"); v != "" && len(v) <= 300 {
+			ua = v
+		}
+		if v := r.URL.Query().Get("ref"); v != "" && len(v) <= 500 {
+			req.Header.Set("Referer", v)
+		}
 		req.Header.Set("User-Agent", ua)
 
 		resp, err := relayClient.Do(req)
@@ -218,7 +228,7 @@ func relayHandler(logger *slog.Logger) http.HandlerFunc {
 			// requireAuthMedia) and only ever appended to our own /relay wrapper
 			// — never forwarded to the foreign upstream (a fresh request without
 			// it is built above).
-			relayManifest(w, resp, final, tokenFromRequest(r, true), logger)
+			relayManifest(w, resp, final, tokenFromRequest(r, true), extra, logger)
 			return
 		}
 		metrics.RelayRequests.WithLabelValues(relayKind(final.Path)).Inc()
@@ -269,7 +279,7 @@ func copyHeader(dst, src http.Header, keys ...string) {
 // docs/streaming.md ("Как читаем исходный m3u8 и строим
 // свой" — here it's 1:1 passthrough with URL rewriting, not the
 // demux->mux remux pipeline, which is a separate Phase 2b feature).
-func relayManifest(w http.ResponseWriter, resp *http.Response, base *url.URL, token string, logger *slog.Logger) {
+func relayManifest(w http.ResponseWriter, resp *http.Response, base *url.URL, token, extra string, logger *slog.Logger) {
 	body, err := io.ReadAll(io.LimitReader(resp.Body, manifestReadLimit))
 	if err != nil {
 		metrics.RelayUpstreamErrors.Inc()
@@ -278,7 +288,7 @@ func relayManifest(w http.ResponseWriter, resp *http.Response, base *url.URL, to
 		return
 	}
 
-	rewritten := rewriteManifest(body, base, token)
+	rewritten := rewriteManifest(body, base, token+extra)
 
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -326,6 +336,33 @@ func relayResolve(ref string, base *url.URL, token string) string {
 		return ref
 	}
 	// wrapped is always "/relay?u=..." (our own origin), so the token is safe
-	// here and never reaches the foreign upstream.
-	return withMediaToken(sources.EncodeRelayURL(resolved.String()), token)
+	// here and never reaches the foreign upstream. `token` may carry the
+	// relay's own ua=/ref= extras after a "&" (see relayExtra).
+	tok, extra, _ := strings.Cut(token, "&")
+	return withMediaToken(sources.EncodeRelayURL(resolved.String()), tok) + extra
+}
+
+// relayExtra re-encodes the ua/ref query params so rewritten manifest URLs
+// keep them ("" when absent). Returned with a leading "&".
+func relayExtra(q url.Values) string {
+	var sb strings.Builder
+	for _, k := range []string{"ua", "ref"} {
+		if v := q.Get(k); v != "" {
+			sb.WriteString("&" + k + "=" + url.QueryEscape(v))
+		}
+	}
+	return sb.String()
+}
+
+// RelayURL is the /relay path for an upstream stream URL with optional
+// User-Agent / Referer the upstream insists on (live TV).
+func RelayURL(rawURL, ua, ref string) string {
+	out := sources.EncodeRelayURL(rawURL)
+	if ua != "" {
+		out += "&ua=" + url.QueryEscape(ua)
+	}
+	if ref != "" {
+		out += "&ref=" + url.QueryEscape(ref)
+	}
+	return out
 }

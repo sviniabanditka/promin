@@ -230,7 +230,7 @@ function startUpdateWatch(): void {
   const poll = function () {
     getPing().then(
       function (p) {
-        setFeatures({ youtube: !!(p && p.youtube) });
+        setFeatures({ youtube: !!(p && p.youtube), tv: !!(p && p.tv) });
         const v = p && p.version ? p.version : '';
         if (!v) return;
         if (!known) {
