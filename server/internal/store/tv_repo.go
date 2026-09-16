@@ -407,32 +407,92 @@ func (r *TVRepo) ChannelNames() ([]TVChannelName, error) {
 	return out, rows.Err()
 }
 
-// ReplaceEPG swaps the whole guide and records which feed channel each of
-// ours was matched to ("" for the rest).
-func (r *TVRepo) ReplaceEPG(progs []TVProgram, epgIDs map[string]string) error {
+// EPGWriter streams one feed's programmes into tv_epg_programs inside a
+// transaction (a feed is hundreds of thousands of rows — never all in memory).
+type EPGWriter struct {
+	db *sql.DB
+	tx *sql.Tx
+	st *sql.Stmt
+	n  int
+}
+
+// BeginEPG drops the source's old rows and returns a writer for the new ones.
+func (r *TVRepo) BeginEPG(source string) (*EPGWriter, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(`DELETE FROM tv_epg_programs WHERE key LIKE ?`, source+":%"); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	st, err := tx.Prepare(`INSERT OR REPLACE INTO tv_epg_programs(key, start, stop, title, descr) VALUES (?, ?, ?, ?, ?)`)
+	if err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	return &EPGWriter{db: r.db, tx: tx, st: st}, nil
+}
+
+// epgChunk rows per transaction: a feed is ~20 s of inserts, and one long
+// write transaction would hold the SQLite lock past busy_timeout for every
+// other writer (an admin click got SQLITE_BUSY). Readers may briefly see a
+// half-replaced feed twice a day; that beats blocked writes.
+const epgChunk = 5000
+
+func (w *EPGWriter) Add(key string, p TVProgram) error {
+	if w.n > 0 && w.n%epgChunk == 0 {
+		w.st.Close()
+		if err := w.tx.Commit(); err != nil {
+			return err
+		}
+		tx, err := w.db.Begin()
+		if err != nil {
+			return err
+		}
+		st, err := tx.Prepare(`INSERT OR REPLACE INTO tv_epg_programs(key, start, stop, title, descr) VALUES (?, ?, ?, ?, ?)`)
+		if err != nil {
+			tx.Rollback()
+			return err
+		}
+		w.tx, w.st = tx, st
+	}
+	_, err := w.st.Exec(key, p.Start, p.Stop, p.Title, p.Desc)
+	if err == nil {
+		w.n++
+	}
+	return err
+}
+
+func (w *EPGWriter) Count() int { return w.n }
+
+func (w *EPGWriter) Commit() error {
+	w.st.Close()
+	return w.tx.Commit()
+}
+
+func (w *EPGWriter) Rollback() {
+	w.st.Close()
+	_ = w.tx.Rollback()
+}
+
+// EPGID of one channel ("" = no guide / unknown channel).
+func (r *TVRepo) EPGID(channelID string) string {
+	var key string
+	_ = r.db.QueryRow(`SELECT epg_id FROM tv_channels WHERE id = ?`, channelID).Scan(&key)
+	return key
+}
+
+// SetEPGIDs points our channels at feed channels ("" = no guide). Channels
+// not in the map are left alone.
+func (r *TVRepo) SetEPGIDs(ids map[string]string) error {
 	tx, err := r.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`DELETE FROM tv_programs`); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(`UPDATE tv_channels SET epg_id = ''`); err != nil {
-		return err
-	}
-	st, err := tx.Prepare(`INSERT OR REPLACE INTO tv_programs(channel_id, start, stop, title, descr) VALUES (?, ?, ?, ?, ?)`)
-	if err != nil {
-		return err
-	}
-	defer st.Close()
-	for _, p := range progs {
-		if _, err := st.Exec(p.ChannelID, p.Start, p.Stop, p.Title, p.Desc); err != nil {
-			return err
-		}
-	}
-	for id, x := range epgIDs {
-		if _, err := tx.Exec(`UPDATE tv_channels SET epg_id = ? WHERE id = ?`, x, id); err != nil {
+	for id, key := range ids {
+		if _, err := tx.Exec(`UPDATE tv_channels SET epg_id = ? WHERE id = ?`, key, id); err != nil {
 			return err
 		}
 	}
@@ -441,16 +501,16 @@ func (r *TVRepo) ReplaceEPG(progs []TVProgram, epgIDs map[string]string) error {
 
 // Programs lists a channel's guide overlapping [from, to).
 func (r *TVRepo) Programs(channelID string, from, to int64) ([]TVProgram, error) {
-	rows, err := r.db.Query(`SELECT channel_id, start, stop, title, descr FROM tv_programs
-		WHERE channel_id = ? AND stop > ? AND start < ? ORDER BY start`, channelID, from, to)
+	rows, err := r.db.Query(`SELECT p.start, p.stop, p.title, p.descr FROM tv_epg_programs p
+		WHERE p.key = (SELECT epg_id FROM tv_channels WHERE id = ?) AND p.stop > ? AND p.start < ? ORDER BY p.start`, channelID, from, to)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := []TVProgram{}
 	for rows.Next() {
-		var p TVProgram
-		if err := rows.Scan(&p.ChannelID, &p.Start, &p.Stop, &p.Title, &p.Desc); err != nil {
+		p := TVProgram{ChannelID: channelID}
+		if err := rows.Scan(&p.Start, &p.Stop, &p.Title, &p.Desc); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -470,7 +530,8 @@ func (r *TVRepo) NowNext(now int64) (map[string]*TVNowNext, error) {
 		out[id] = v
 		return v
 	}
-	rows, err := r.db.Query(`SELECT channel_id, start, stop, title FROM tv_programs WHERE start <= ? AND stop > ?`, now, now)
+	rows, err := r.db.Query(`SELECT c.id, p.start, p.stop, p.title FROM tv_channels c
+		JOIN tv_epg_programs p ON p.key = c.epg_id WHERE c.epg_id != '' AND p.start <= ? AND p.stop > ?`, now, now)
 	if err != nil {
 		return nil, err
 	}
@@ -483,8 +544,9 @@ func (r *TVRepo) NowNext(now int64) (map[string]*TVNowNext, error) {
 		get(p.ChannelID).Now = &p
 	}
 	rows.Close()
-	rows, err = r.db.Query(`SELECT p.channel_id, p.start, p.stop, p.title FROM tv_programs p
-		WHERE p.start > ? AND p.start = (SELECT MIN(q.start) FROM tv_programs q WHERE q.channel_id = p.channel_id AND q.start > ?)`, now, now)
+	rows, err = r.db.Query(`SELECT c.id, p.start, p.stop, p.title FROM tv_channels c
+		JOIN tv_epg_programs p ON p.key = c.epg_id
+		WHERE c.epg_id != '' AND p.start > ? AND p.start = (SELECT MIN(q.start) FROM tv_epg_programs q WHERE q.key = p.key AND q.start > ?)`, now, now)
 	if err != nil {
 		return nil, err
 	}
@@ -569,6 +631,26 @@ func (r *TVRepo) ReplaceEPGChannels(source string, list []EPGChannel) error {
 	return tx.Commit()
 }
 
+// EPGChannels lists one feed's channels (for re-matching without a download).
+func (r *TVRepo) EPGChannels(source string) ([]EPGChannel, error) {
+	rows, err := r.db.Query(`SELECT source, xmltv_id, names FROM tv_epg_channels WHERE source = ?`, source)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []EPGChannel{}
+	for rows.Next() {
+		var c EPGChannel
+		var names string
+		if err := rows.Scan(&c.Source, &c.XMLTVID, &names); err != nil {
+			return nil, err
+		}
+		c.Names = strings.Split(names, " | ")
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 // SearchEPGChannels: substring of any display name or the id, case-insensitive.
 func (r *TVRepo) SearchEPGChannels(q string, limit int) ([]EPGChannel, error) {
 	q = strings.ToLower(strings.TrimSpace(q))
@@ -600,16 +682,19 @@ type AdminChannel struct {
 	Name     string `json:"name"`
 	Country  string `json:"country"`
 	Alive    int    `json:"alive"`
-	EPGID    string `json:"epg_id"`   // "<source>:<xmltv id>" from the last sync, "" = no guide
-	Override string `json:"override"` // "<source>:<xmltv id>", "none" (pinned to no guide) or ""
+	EPGID    string   `json:"epg_id"`   // "<source>:<xmltv id>", "" = no guide
+	EPGName  string   `json:"epg_name"` // the feed channel's first display name
+	Override string   `json:"override"` // "<source>:<xmltv id>", "none" (pinned to no guide) or ""
+	AltNames []string `json:"alt_names"`
 }
 
 func (r *TVRepo) AdminChannels(q, country string, noEPG bool, limit int) ([]AdminChannel, error) {
 	var sb strings.Builder
 	var args []any
-	sb.WriteString(`SELECT c.id, c.name, c.country, c.epg_id,
+	sb.WriteString(`SELECT c.id, c.name, c.country, c.epg_id, c.alt_names,
 		(SELECT COUNT(*) FROM tv_streams s WHERE s.channel_id = c.id AND s.alive = 1) AS alive,
-		COALESCE(o.source, ''), COALESCE(o.xmltv_id, ''), o.channel_id IS NOT NULL
+		COALESCE(o.source, ''), COALESCE(o.xmltv_id, ''), o.channel_id IS NOT NULL,
+		COALESCE((SELECT e.names FROM tv_epg_channels e WHERE e.source || ':' || e.xmltv_id = c.epg_id), '')
 		FROM tv_channels c LEFT JOIN tv_epg_overrides o ON o.channel_id = c.id WHERE 1 = 1`)
 	if q = strings.ToLower(strings.TrimSpace(q)); q != "" {
 		sb.WriteString(` AND (lower(c.name) LIKE ? OR lower(c.id) LIKE ? OR lower(c.alt_names) LIKE ?)`)
@@ -632,10 +717,17 @@ func (r *TVRepo) AdminChannels(q, country string, noEPG bool, limit int) ([]Admi
 	out := []AdminChannel{}
 	for rows.Next() {
 		var c AdminChannel
-		var src, xid string
+		var src, xid, alt, names string
 		var has bool
-		if err := rows.Scan(&c.ID, &c.Name, &c.Country, &c.EPGID, &c.Alive, &src, &xid, &has); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.Country, &c.EPGID, &alt, &c.Alive, &src, &xid, &has, &names); err != nil {
 			return nil, err
+		}
+		_ = json.Unmarshal([]byte(alt), &c.AltNames)
+		if c.AltNames == nil {
+			c.AltNames = []string{}
+		}
+		if names != "" {
+			c.EPGName = strings.SplitN(names, " | ", 2)[0]
 		}
 		if has {
 			if xid == "" {
@@ -673,7 +765,7 @@ func (r *TVRepo) Stats() (TVStats, error) {
 	if err := q(`SELECT COUNT(*) FROM tv_streams`, &st.Streams); err != nil {
 		return st, err
 	}
-	if err := q(`SELECT COUNT(*) FROM tv_programs`, &st.Programmes); err != nil {
+	if err := q(`SELECT COUNT(*) FROM tv_epg_programs`, &st.Programmes); err != nil {
 		return st, err
 	}
 	if err := q(`SELECT COUNT(*) FROM tv_channels WHERE epg_id != ''`, &st.WithEPG); err != nil {

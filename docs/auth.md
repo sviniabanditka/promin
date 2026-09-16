@@ -128,7 +128,8 @@ the TV ES5 bundle). Its JS probes `GET /admin/profiles`: 401 → login form,
   `GET /admin/tv/channels?q=&country=&noepg=1`, `GET /admin/tv/epg/search?q=`
   (feed channels by display name), `PUT /admin/tv/channels/{id}/epg
   {source, xmltv_id}` (`xmltv_id: ""` = pinned to no guide) and `DELETE` (back
-  to name matching). Every mapping change starts an EPG rebuild.
+  to name matching). The guide is stored per feed channel, so a mapping
+  applies immediately — no re-download.
 - **Status**: the same `GET /admin/status` rendered as a card, link to `/logs`.
 
 ### Per-profile feature access

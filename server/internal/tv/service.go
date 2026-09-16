@@ -94,6 +94,7 @@ func (s *Service) Resync(kind string) bool {
 		switch kind {
 		case "catalogue":
 			if err = s.Sync(ctx); err == nil {
+				_, _ = s.RematchEPG()
 				s.Check(ctx)
 			}
 		case "check":
@@ -136,6 +137,7 @@ func (s *Service) Run(ctx context.Context) {
 			if err := s.Sync(ctx); err != nil {
 				s.log.Warn("tv: sync failed", "error", err)
 			} else {
+				_, _ = s.RematchEPG() // the catalogue was rebuilt: re-point channels at their guides
 				s.Check(ctx)
 			}
 		} else if s.checkStale() {

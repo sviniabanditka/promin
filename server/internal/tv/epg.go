@@ -14,11 +14,13 @@ import (
 	"github.com/sviniabanditka/promin/server/internal/store"
 )
 
-// Programme guide. There is no XMLTV feed keyed by iptv-org ids, so we take
-// public country feeds and match channels by name: the feed's display-names
-// against our name plus iptv-org's alt_names (native spellings), normalised
-// (lower-case, Cyrillic transliterated, "HD"/"канал"/… dropped). Unmatched
-// channels simply have no guide.
+// Programme guide (docs/tv.md). Public XMLTV feeds are stored WHOLE — every
+// channel of every feed we carry, for a short window — keyed by
+// "<source>:<xmltv id>"; our channels point at one such key
+// (tv_channels.epg_id). Matching is by name: the feed's display-names against
+// our name plus iptv-org's alt_names (native spellings), normalised
+// (lower-case, Cyrillic transliterated, "HD"/"канал"/… dropped). The admin
+// can pin any channel to any feed channel, which is a plain UPDATE.
 type epgSource struct {
 	Name      string
 	URL       string
@@ -41,65 +43,121 @@ const (
 func (s *Service) epgStale() bool {
 	var at int64
 	fmt.Sscan(s.repo.Meta("epg_at"), &at)
-	return time.Since(time.Unix(at, 0)) > epgEvery
+	if time.Since(time.Unix(at, 0)) > epgEvery {
+		return true
+	}
+	// A fresh epg_at with no rows (the table was just (re)created): fetch now.
+	st, err := s.repo.Stats()
+	return err == nil && st.Programmes == 0
 }
 
-// SyncEPG rebuilds tv_programs from every source whose countries we serve.
+func (s *Service) wantCountry(c string) bool {
+	for _, have := range s.countries {
+		if strings.EqualFold(have, c) {
+			return true
+		}
+	}
+	return false
+}
+
+// SyncEPG re-downloads every source whose countries we serve, stores its
+// channel list and programmes, then points our channels at feed channels
+// (admin overrides first, name matching for the rest).
 func (s *Service) SyncEPG(ctx context.Context) error {
-	names, err := s.repo.ChannelNames()
-	if err != nil {
-		return err
-	}
-	if len(names) == 0 {
-		return nil
-	}
-	want := map[string]bool{}
-	for _, c := range s.countries {
-		want[strings.ToUpper(c)] = true
-	}
 	t0 := time.Now()
 	window := timeWindow{from: t0.Add(-epgPast).Unix(), to: t0.Add(epgAhead).Unix()}
-	overrides, err := s.repo.EPGOverrides()
-	if err != nil {
-		return err
-	}
-	var all []store.TVProgram
-	epgIDs := map[string]string{}
+	var total, sources int
 	for _, src := range epgSources {
-		var mine []store.TVChannelName
-		for _, n := range names {
-			for _, c := range src.Countries {
-				if n.Country == c && want[c] {
-					mine = append(mine, n)
-				}
-			}
+		used := false
+		for _, c := range src.Countries {
+			used = used || s.wantCountry(c)
 		}
-		if len(mine) == 0 {
+		if !used {
 			continue
 		}
-		progs, matched, feed, err := s.grabEPG(ctx, src, mine, window, overrides)
+		n, err := s.grabEPG(ctx, src, window)
 		if err != nil {
 			s.log.Warn("tv: epg source failed", "source", src.Name, "error", err)
 			continue
 		}
-		if err := s.repo.ReplaceEPGChannels(src.Name, feed); err != nil {
-			s.log.Warn("tv: epg feed channels", "source", src.Name, "error", err)
-		}
-		for our, xid := range matched {
-			epgIDs[our] = src.Name + ":" + xid
-		}
-		all = append(all, progs...)
-		s.log.Info("tv: epg source", "source", src.Name, "channels", len(mine), "matched", len(matched), "programmes", len(progs))
+		total += n
+		sources++
+		s.log.Info("tv: epg source", "source", src.Name, "programmes", n)
 	}
-	if len(all) == 0 {
-		return fmt.Errorf("epg: nothing matched")
+	if sources == 0 {
+		return fmt.Errorf("epg: no source succeeded")
 	}
-	if err := s.repo.ReplaceEPG(all, epgIDs); err != nil {
+	matched, err := s.RematchEPG()
+	if err != nil {
 		return err
 	}
 	_ = s.repo.SetMeta("epg_at", fmt.Sprint(time.Now().Unix()))
-	s.log.Info("tv: epg synced", "programmes", len(all), "channels", len(epgIDs), "ms", time.Since(t0).Milliseconds())
+	s.log.Info("tv: epg synced", "programmes", total, "channels", matched, "ms", time.Since(t0).Milliseconds())
 	return nil
+}
+
+// RematchEPG recomputes epg_id for every channel from the stored feed channel
+// lists: an override wins; otherwise the best name match among the sources
+// of the channel's country. Returns how many channels have a guide.
+func (s *Service) RematchEPG() (int, error) {
+	names, err := s.repo.ChannelNames()
+	if err != nil {
+		return 0, err
+	}
+	overrides, err := s.repo.EPGOverrides()
+	if err != nil {
+		return 0, err
+	}
+	matchers := map[string]*matcher{} // source → matcher
+	for _, src := range epgSources {
+		list, err := s.repo.EPGChannels(src.Name)
+		if err != nil {
+			return 0, err
+		}
+		if len(list) == 0 {
+			continue
+		}
+		m := newMatcher()
+		for _, c := range list {
+			m.add(c.XMLTVID, c.Names)
+		}
+		matchers[src.Name] = m
+	}
+	ids := map[string]string{}
+	matched := 0
+	for _, n := range names {
+		key := ""
+		if ov, has := overrides[n.ID]; has {
+			if ov.XMLTVID != "" {
+				key = ov.Source + ":" + ov.XMLTVID
+			}
+		} else {
+			for _, src := range epgSources {
+				m := matchers[src.Name]
+				if m == nil || !containsFold(src.Countries, n.Country) {
+					continue
+				}
+				if xid, ok := m.find(n); ok {
+					key = src.Name + ":" + xid
+					break
+				}
+			}
+		}
+		if key != "" {
+			matched++
+		}
+		ids[n.ID] = key
+	}
+	return matched, s.repo.SetEPGIDs(ids)
+}
+
+func containsFold(list []string, v string) bool {
+	for _, x := range list {
+		if strings.EqualFold(x, v) {
+			return true
+		}
+	}
+	return false
 }
 
 type timeWindow struct{ from, to int64 }
@@ -117,45 +175,60 @@ type xmltvProgramme struct {
 	Desc    string   `xml:"desc"`
 }
 
-// grabEPG streams one XMLTV feed (gzip or plain) and returns the programmes
-// of the channels it could match, plus our-id → xmltv-id for those.
-func (s *Service) grabEPG(ctx context.Context, src epgSource, ours []store.TVChannelName, w timeWindow, overrides map[string]store.EPGOverride) ([]store.TVProgram, map[string]string, []store.EPGChannel, error) {
+// grabEPG streams one XMLTV feed (gzip or plain) into the store; returns the
+// number of programmes kept.
+func (s *Service) grabEPG(ctx context.Context, src epgSource, w timeWindow) (int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, src.URL, nil)
 	if err != nil {
-		return nil, nil, nil, err
+		return 0, err
 	}
 	req.Header.Set("User-Agent", "promin (+https://promin.club)")
 	client := &http.Client{Timeout: 15 * time.Minute}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, nil, nil, err
+		return 0, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, nil, nil, fmt.Errorf("status %d", resp.StatusCode)
+		return 0, fmt.Errorf("status %d", resp.StatusCode)
 	}
 	var body io.Reader = resp.Body
 	if strings.HasSuffix(src.URL, ".gz") || resp.Header.Get("Content-Type") == "application/x-gzip" {
 		gz, err := gzip.NewReader(resp.Body)
 		if err != nil {
-			return nil, nil, nil, err
+			return 0, err
 		}
 		defer gz.Close()
 		body = gz
 	}
-	return parseXMLTV(body, ours, w, src.Name, overrides)
+	wr, err := s.repo.BeginEPG(src.Name)
+	if err != nil {
+		return 0, err
+	}
+	feed, err := parseXMLTV(body, w, func(xid string, p store.TVProgram) error {
+		return wr.Add(src.Name+":"+xid, p)
+	})
+	if err != nil {
+		wr.Rollback()
+		return 0, err
+	}
+	if err := wr.Commit(); err != nil {
+		return 0, err
+	}
+	for i := range feed {
+		feed[i].Source = src.Name
+	}
+	if err := s.repo.ReplaceEPGChannels(src.Name, feed); err != nil {
+		return 0, err
+	}
+	return wr.Count(), nil
 }
 
-// parseXMLTV: <channel> elements come first in XMLTV, so the matcher is
-// complete by the first <programme>. An admin override (docs/tv.md) pins a
-// channel to a feed id of one source — or to no guide — and skips matching.
-func parseXMLTV(r io.Reader, ours []store.TVChannelName, w timeWindow, srcName string, overrides map[string]store.EPGOverride) ([]store.TVProgram, map[string]string, []store.EPGChannel, error) {
+// parseXMLTV streams a feed: the channel list is returned, every programme
+// inside the window is handed to emit (feed channel id + programme).
+func parseXMLTV(r io.Reader, w timeWindow, emit func(xid string, p store.TVProgram) error) ([]store.EPGChannel, error) {
 	dec := xml.NewDecoder(r)
 	dec.Strict = false
-	m := newMatcher()
-	var xmlToOurs map[string][]string // xmltv id → our ids
-	matched := map[string]string{}
-	var out []store.TVProgram
 	var feed []store.EPGChannel
 	for {
 		tok, err := dec.Token()
@@ -163,7 +236,7 @@ func parseXMLTV(r io.Reader, ours []store.TVChannelName, w timeWindow, srcName s
 			break
 		}
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, err
 		}
 		se, ok := tok.(xml.StartElement)
 		if !ok {
@@ -172,33 +245,21 @@ func parseXMLTV(r io.Reader, ours []store.TVChannelName, w timeWindow, srcName s
 		switch se.Name.Local {
 		case "channel":
 			var ch xmltvChannel
-			if err := dec.DecodeElement(&ch, &se); err == nil {
-				m.add(ch.ID, ch.Names)
-				feed = append(feed, store.EPGChannel{Source: srcName, XMLTVID: ch.ID, Names: ch.Names})
-			}
-		case "programme":
-			if xmlToOurs == nil {
-				xmlToOurs = map[string][]string{}
-				for _, o := range ours {
-					if ov, has := overrides[o.ID]; has {
-						if ov.Source == srcName && ov.XMLTVID != "" {
-							matched[o.ID] = ov.XMLTVID
-							xmlToOurs[ov.XMLTVID] = append(xmlToOurs[ov.XMLTVID], o.ID)
-						}
-						continue // pinned elsewhere or to "no guide"
-					}
-					if xid, ok := m.find(o); ok {
-						matched[o.ID] = xid
-						xmlToOurs[xid] = append(xmlToOurs[xid], o.ID)
+			if err := dec.DecodeElement(&ch, &se); err == nil && ch.ID != "" {
+				var names []string
+				for _, n := range ch.Names {
+					if n = strings.TrimSpace(n); n != "" {
+						names = append(names, n)
 					}
 				}
+				if len(names) == 0 {
+					names = []string{ch.ID}
+				}
+				feed = append(feed, store.EPGChannel{XMLTVID: ch.ID, Names: names})
 			}
+		case "programme":
 			var p xmltvProgramme
-			if err := dec.DecodeElement(&p, &se); err != nil {
-				continue
-			}
-			ids := xmlToOurs[p.Channel]
-			if len(ids) == 0 {
+			if err := dec.DecodeElement(&p, &se); err != nil || p.Channel == "" {
 				continue
 			}
 			start, stop := parseXMLTVTime(p.Start), parseXMLTVTime(p.Stop)
@@ -216,12 +277,12 @@ func parseXMLTV(r io.Reader, ours []store.TVChannelName, w timeWindow, srcName s
 			if rs := []rune(desc); len(rs) > epgDesc {
 				desc = string(rs[:epgDesc-1]) + "…"
 			}
-			for _, id := range ids {
-				out = append(out, store.TVProgram{ChannelID: id, Start: start, Stop: stop, Title: title, Desc: desc})
+			if err := emit(p.Channel, store.TVProgram{Start: start, Stop: stop, Title: title, Desc: desc}); err != nil {
+				return nil, err
 			}
 		}
 	}
-	return out, matched, feed, nil
+	return feed, nil
 }
 
 func parseXMLTVTime(s string) int64 {

@@ -76,15 +76,21 @@ the feed's "1+1 Україна", not the bare "1+1". Roughly two thirds of UA an
 channels get a guide; the US free-to-air long tail mostly has none, and that
 is shown as "no guide", not as an error.
 
-Manual mapping (admin panel, `docs/auth.md` §5): `tv_epg_overrides` pins a
-channel to `<source>:<xmltv id>` or to no guide; overrides win over matching
-and the channel is skipped in every other source. `tv_epg_channels` keeps each
-feed's channel list (id + display names) for the admin's search. Per-profile
-`tv_countries` narrows the section to a subset of the configured countries.
+Storage: the feeds are kept **whole** — `tv_epg_programs(key, start, stop,
+title, descr)` for every feed channel, `key = "<source>:<xmltv id>"`, window
+−12 h…+3 d (~475k rows, ~50 MB), re-downloaded every 12 h (`tv_meta.epg_at`;
+also right away when the table is empty). Inserts are committed in chunks of
+5k so no other writer waits past `busy_timeout`. `tv_epg_channels` keeps each
+feed's channel list (id + display names). Our channels point at a key via
+`tv_channels.epg_id` ("" = no guide); `Programs`/`NowNext` join through it.
 
-Storage: `tv_programs(channel_id, start, stop, title, descr)` for −12 h…+3 d,
-rebuilt wholesale every 12 h (`tv_meta.epg_at`); `tv_channels.epg_id`
-remembers `<source>:<xmltv id>` for debugging a wrong match. ~60k rows.
+Mapping (`RematchEPG`, no download — from the stored channel lists): an admin
+override (`tv_epg_overrides`, `docs/auth.md` §5) wins, pinning a channel to a
+feed channel or to no guide; otherwise the first name match among the sources
+of the channel's country. Recomputed after every catalogue sync (the sync
+rebuilds `tv_channels`). Setting an override is a plain UPDATE of `epg_id`, so
+the guide appears on the TV at once. Per-profile `tv_countries` narrows the
+section to a subset of the configured countries.
 
 ## API (bearer, `/api/v1/tv`)
 

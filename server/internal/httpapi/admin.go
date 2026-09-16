@@ -402,7 +402,7 @@ func (h *adminHandlers) tvEpgSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 // tvSetEpg: PUT /admin/tv/channels/{cid}/epg {source, xmltv_id} — xmltv_id ""
-// pins "no guide". The guide is rebuilt in the background right away.
+// pins "no guide". Applies immediately.
 func (h *adminHandlers) tvSetEpg(w http.ResponseWriter, r *http.Request) {
 	if !h.gate(w, r) || !h.tvOn(w) {
 		return
@@ -428,7 +428,16 @@ func (h *adminHandlers) tvSetEpg(w http.ResponseWriter, r *http.Request) {
 		writeInternal(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"resync": h.tv.Resync("epg")})
+	// The guide is stored per feed channel, so the mapping applies at once.
+	key := ""
+	if req.XMLTVID != "" {
+		key = req.Source + ":" + req.XMLTVID
+	}
+	if err := h.tv.Repo().SetEPGIDs(map[string]string{cid: key}); err != nil {
+		writeInternal(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"epg_id": key})
 }
 
 func (h *adminHandlers) tvClearEpg(w http.ResponseWriter, r *http.Request) {
@@ -444,7 +453,12 @@ func (h *adminHandlers) tvClearEpg(w http.ResponseWriter, r *http.Request) {
 		writeInternal(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"resync": h.tv.Resync("epg")})
+	// Back to name matching, recomputed from the stored feed channel lists.
+	if _, err := h.tv.RematchEPG(); err != nil {
+		writeInternal(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"epg_id": h.tv.Repo().EPGID(cid)})
 }
 
 func (h *adminHandlers) mapWriteErr(w http.ResponseWriter, err error) {

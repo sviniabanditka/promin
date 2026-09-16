@@ -101,8 +101,9 @@ const adminHTML = `<!doctype html>
         <div class="hint" id="tvHint"></div>
       </div>
       <div class="card">
-        <h2 style="margin-top:0">Прив'язка телепрограми</h2>
-        <input id="chQ" placeholder="Пошук каналу (назва або id)">
+        <h2 style="margin-top:0">Телепрограма каналів</h2>
+        <div class="hint" style="margin:0 0 10px">Наші канали і до якого каналу з телепрограми кожен прив'язаний. Натисніть канал, щоб вибрати іншу програму зі списку.</div>
+        <input id="chQ" placeholder="Знайти наш канал (назва або id)">
         <div class="grid2" style="margin-top:8px">
           <select id="chCountry"><option value="">Усі країни</option></select>
           <label class="sw" style="padding:0;border:none;justify-content:flex-start;gap:8px;color:var(--ink);font-size:15px"><input type="checkbox" id="chNoEpg"> без програми</label>
@@ -111,14 +112,15 @@ const adminHTML = `<!doctype html>
       </div>
       <div class="card hidden" id="mapCard">
         <div class="top"><b id="mapTitle"></b><button class="btn sec sm" id="mapClose">✕</button></div>
-        <div class="muted" id="mapNow"></div>
-        <input id="epgQ" placeholder="Назва каналу у фіді" style="margin-top:10px">
+        <label>Зараз</label><div id="mapNow"></div>
+        <label style="margin-top:12px">Програма з телепрограми (вибрати зі списку)</label>
+        <input id="epgQ" placeholder="Почніть вводити назву каналу…">
         <div class="list" id="epgList" style="margin-top:8px"></div>
         <div class="grid2" style="margin-top:10px">
           <button class="btn sec sm" id="mapNone">Без програми</button>
-          <button class="btn sec sm" id="mapAuto">Авто (скинути)</button>
+          <button class="btn sec sm" id="mapAuto">Авто (як програма знайде сама)</button>
         </div>
-        <div class="hint">Після вибору програма перебудується у фоні (~пів хвилини).</div>
+        <div class="hint">Вибір застосовується одразу: у списку каналів і в плеєрі на ТВ.</div>
       </div>
     </div>
 
@@ -292,8 +294,9 @@ async function loadChannels(){
   const r = await api('GET', '/admin/tv/channels?q='+encodeURIComponent(q)+'&country='+encodeURIComponent(c)+(no?'&noepg=1':''));
   const items = (r.data && r.data.items) || [];
   $('#chList').innerHTML = items.map(ch => {
-    const b = ch.override==='none' ? '<span class="badge off">без програми (вручну)</span>' : ch.override ? '<span class="badge warn">вручну: '+esc(ch.override)+'</span>' : ch.epg_id ? '<span class="badge on">'+esc(ch.epg_id)+'</span>' : '<span class="badge off">немає програми</span>';
-    return '<div class="row tap" data-ch="'+esc(ch.id)+'" data-name="'+esc(ch.name)+'" data-country="'+esc(ch.country)+'"><div class="who"><b style="font-size:15px">'+esc(ch.name)+' <span class="muted">'+esc(ch.country)+(ch.alive?'':' · без потоку')+'</span></b><div class="badges">'+b+'</div></div><div class="muted">›</div></div>';
+    const src = ch.epg_id ? ch.epg_id.split(':')[0] : '';
+    const b = ch.override==='none' ? '<span class="badge off">без програми (вручну)</span>' : ch.epg_id ? '<span class="badge '+(ch.override?'warn':'on')+'">'+(ch.override?'вручну: ':'')+esc(ch.epg_name||ch.epg_id)+' <span style="opacity:.7">· '+esc(src)+'</span></span>' : '<span class="badge off">програму не знайдено</span>';
+    return '<div class="row tap" data-ch="'+esc(ch.id)+'" data-name="'+esc(ch.name)+'" data-alt="'+esc((ch.alt_names||[])[0]||'')+'" data-country="'+esc(ch.country)+'"><div class="who"><b style="font-size:15px">'+esc(ch.name)+' <span class="muted">'+esc(ch.country)+(ch.alive?'':' · без потоку')+'</span></b><div class="badges">'+b+'</div></div><div class="muted">›</div></div>';
   }).join('') || '<div class="muted">нічого не знайдено</div>';
 }
 $('#chQ').addEventListener('input', debounce(loadChannels));
@@ -305,7 +308,8 @@ $('#chList').addEventListener('click', e => {
   $('#mapCard').classList.remove('hidden');
   $('#mapTitle').textContent = mapCh.name + ' (' + mapCh.id + ')';
   $('#mapNow').innerHTML = t.querySelector('.badges').innerHTML;
-  $('#epgQ').value = mapCh.name.replace(/\b(HD|TV|Ukraine|Ukraina|International)\b/gi,'').trim();
+  // Native spelling (iptv-org alt_names) finds feed channels far more often than the English catalogue name.
+  $('#epgQ').value = (t.dataset.alt || mapCh.name.replace(/\b(HD|TV|Ukraine|Ukraina|International)\b/gi,'')).trim();
   searchEpg();
   $('#mapCard').scrollIntoView({ behavior:'smooth' });
 });
@@ -314,16 +318,16 @@ async function searchEpg(){
   if (!q) { $('#epgList').innerHTML = ''; return; }
   const r = await api('GET', '/admin/tv/epg/search?q='+encodeURIComponent(q));
   const items = (r.data && r.data.items) || [];
-  $('#epgList').innerHTML = items.map(x => '<div class="row tap" data-src="'+esc(x.source)+'" data-xid="'+esc(x.xmltv_id)+'"><div class="who"><b style="font-size:15px">'+esc(x.names[0]||x.xmltv_id)+'</b><div class="muted">'+esc(x.source)+' · '+esc(x.xmltv_id)+(x.names.length>1?' · '+esc(x.names.slice(1).join(', ')):'')+'</div></div><div class="muted">вибрати</div></div>').join('') || '<div class="muted">у фідах такого немає — спробуйте іншу назву</div>';
+  $('#epgList').innerHTML = items.map(x => '<div class="row tap" data-src="'+esc(x.source)+'" data-xid="'+esc(x.xmltv_id)+'" data-label="'+esc(x.names[0]||x.xmltv_id)+'"><div class="who"><b style="font-size:15px">'+esc(x.names[0]||x.xmltv_id)+'</b><div class="muted">'+esc(x.source)+(x.names.length>1?' · '+esc(x.names.slice(1).join(', ')):'')+'</div></div><div class="muted">вибрати</div></div>').join('') || '<div class="muted">У телепрограмі такого каналу немає — спробуйте коротшу або іншу назву.</div>';
 }
 $('#epgQ').addEventListener('input', debounce(searchEpg));
 $('#epgList').addEventListener('click', async e => {
   const t = e.target.closest('[data-xid]'); if (!t || !mapCh) return;
   const r = await api('PUT', '/admin/tv/channels/'+encodeURIComponent(mapCh.id)+'/epg', { source: t.dataset.src, xmltv_id: t.dataset.xid });
-  if (r.ok) { $('#mapNow').innerHTML = '<span class="badge warn">вручну: '+esc(t.dataset.src+':'+t.dataset.xid)+'</span> — перебудова запущена'; loadChannels(); } else alert('Помилка');
+  if (r.ok) { $('#mapNow').innerHTML = '<span class="badge warn">вручну: '+esc(t.dataset.label)+' · '+esc(t.dataset.src)+'</span> ✓ застосовано'; loadChannels(); } else alert('Помилка');
 });
 $('#mapNone').onclick = async () => { if (!mapCh) return; const r = await api('PUT', '/admin/tv/channels/'+encodeURIComponent(mapCh.id)+'/epg', { source: '', xmltv_id: '' }); if (r.ok) { $('#mapNow').innerHTML = '<span class="badge off">без програми (вручну)</span>'; loadChannels(); } };
-$('#mapAuto').onclick = async () => { if (!mapCh) return; const r = await api('DELETE', '/admin/tv/channels/'+encodeURIComponent(mapCh.id)+'/epg'); if (r.ok) { $('#mapNow').innerHTML = '<span class="badge">авто — перебудова запущена</span>'; loadChannels(); } };
+$('#mapAuto').onclick = async () => { if (!mapCh) return; const r = await api('DELETE', '/admin/tv/channels/'+encodeURIComponent(mapCh.id)+'/epg'); if (r.ok) { $('#mapNow').innerHTML = r.data && r.data.epg_id ? '<span class="badge on">авто: '+esc(r.data.epg_id)+'</span>' : '<span class="badge off">авто: програму не знайдено</span>'; loadChannels(); } };
 $('#mapClose').onclick = () => { $('#mapCard').classList.add('hidden'); mapCh = null; };
 
 refresh();
