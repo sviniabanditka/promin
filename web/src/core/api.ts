@@ -1179,6 +1179,24 @@ export function getTvChannels(params: QueryParams): Promise<{ items: TvChannel[]
 export function tvPlay(id: string): Promise<TvPlay> {
   return get<TvPlay>('/tv/channels/' + encodeURIComponent(id) + '/play', undefined, 15000);
 }
+export interface TvProgram {
+  start: number; // unix seconds
+  stop: number;
+  title: string;
+  desc?: string;
+}
+export interface TvNowNext {
+  now?: TvProgram;
+  next?: TvProgram;
+}
+// A channel's guide, −12 h … +36 h.
+export function getTvEpg(id: string): Promise<{ items: TvProgram[] }> {
+  return get<{ items: TvProgram[] }>('/tv/channels/' + encodeURIComponent(id) + '/epg');
+}
+// Now / next for every channel that has a guide.
+export function getTvNow(): Promise<{ items: { [id: string]: TvNowNext }; at: number }> {
+  return get<{ items: { [id: string]: TvNowNext }; at: number }>('/tv/now');
+}
 export function tvFail(id: string): Promise<void> {
   return post<void>('/tv/channels/' + encodeURIComponent(id) + '/fail');
 }

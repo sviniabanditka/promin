@@ -4225,3 +4225,47 @@ body.night-mode #night-shade { display: block; }
 .tv-card__name { margin-top: 0.7rem; font-size: 1.5rem; line-height: 1.25; color: #fff; text-align: center; max-height: 3.8rem; overflow: hidden; }
 .tv-card.focus .tv-card__logo { box-shadow: inset 0 0 0 0.3rem var(--focus), 0 0 0 0.3rem var(--focus); transform: translateY(-0.3rem); background: rgba(255, 255, 255, 0.14); }
 .tv-card.is-loading .tv-card__logo { opacity: 0.6; }
+
+/* ---- live TV guide overlay in the player (core/player/tvguide.ts) ---- */
+.tvg { position: absolute; left: 0; top: 0; right: 0; bottom: 0; z-index: 30; display: flex; flex-direction: row; background: rgba(10, 12, 16, 0.78); }
+.tvg__list { flex: 0 0 44%; height: 100%; border-right: 0.1rem solid rgba(255, 255, 255, 0.08); }
+.tvg__list > .scroll { width: 100%; height: 100%; }
+.tvg__prog { flex: 1 1 auto; min-width: 0; height: 100%; display: flex; flex-direction: column; }
+.tvg__prog > .scroll { flex: 1 1 auto; min-height: 0; width: 100%; }
+.tvg__prog-head { flex: 0 0 auto; padding: 2.4rem 3.2rem 1.2rem; font-size: 2.2rem; font-weight: bold; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tvg-ch { display: flex; flex-direction: row; align-items: center; height: 7.2rem; padding: 0 2rem 0 1.6rem; color: var(--ink-2); border-radius: 0.8rem; margin: 0.2rem 1.2rem; }
+.tvg-ch.is-current { color: #fff; background: rgba(255, 255, 255, 0.06); }
+.tvg-ch.focus { background: var(--surface-2); color: var(--ink); box-shadow: inset 0 0 0 0.2rem var(--focus); }
+.tvg-ch__logo { flex: 0 0 auto; width: 6.4rem; height: 4.8rem; position: relative; border-radius: 0.6rem; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.tvg-ch__logo img { position: absolute; left: 8%; top: 10%; width: 84%; height: 80%; object-fit: contain; }
+.tvg-ch__initial { position: absolute; left: 0; top: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; font-size: 1.8rem; font-weight: bold; color: var(--ink-2); }
+.tvg-ch__num { flex: 0 0 auto; width: 4.4rem; margin-left: 1.2rem; font-size: 1.5rem; color: var(--muted); text-align: right; }
+.tvg-ch__text { flex: 1 1 auto; min-width: 0; margin-left: 1.6rem; }
+.tvg-ch__name { font-size: 1.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tvg-ch__now { font-size: 1.4rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.2rem; min-height: 1.7rem; }
+.tvg-ch.focus .tvg-ch__now, .tvg-ch.is-current .tvg-ch__now { color: var(--ink-2); }
+.tvg-ch__bar, .tvg-pr__bar, .tvg-info__bar { height: 0.3rem; margin-top: 0.5rem; border-radius: 0.2rem; background: rgba(255, 255, 255, 0.14); overflow: hidden; }
+.tvg-ch__fill, .tvg-pr__fill, .tvg-info__fill { height: 100%; width: 0; background: var(--accent); }
+.tvg-pr { display: flex; flex-direction: row; align-items: flex-start; padding: 1rem 2rem; margin: 0.2rem 2rem 0.2rem 1.2rem; border-radius: 0.8rem; color: var(--ink-2); }
+.tvg-pr.is-past { opacity: 0.45; }
+.tvg-pr.is-now { color: #fff; background: rgba(255, 255, 255, 0.06); }
+.tvg-pr.focus { background: var(--surface-2); color: var(--ink); box-shadow: inset 0 0 0 0.2rem var(--focus); opacity: 1; }
+.tvg-pr__time { flex: 0 0 auto; width: 6.4rem; font-size: 1.6rem; color: var(--muted); }
+.tvg-pr.is-now .tvg-pr__time, .tvg-pr.focus .tvg-pr__time { color: inherit; }
+.tvg-pr__text { flex: 1 1 auto; min-width: 0; }
+.tvg-pr__title { font-size: 1.7rem; line-height: 1.3; }
+.tvg-pr__desc { margin-top: 0.6rem; font-size: 1.4rem; line-height: 1.35; color: var(--muted); }
+.tvg-pr.focus .tvg-pr__desc { color: var(--ink-2); }
+.tvg-pr__day { padding: 1.6rem 3.2rem 0.6rem; font-size: 1.3rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.tvg-pr__empty { padding: 2rem 3.2rem; font-size: 1.6rem; color: var(--muted); }
+.tvg-info { position: absolute; left: 4rem; right: 4rem; bottom: 4.8rem; z-index: 25; display: flex; flex-direction: row; align-items: center; padding: 1.6rem 2.4rem; border-radius: 1.2rem; background: rgba(10, 12, 16, 0.82); color: #fff; }
+.tvg-info__logo { flex: 0 0 auto; width: 9.6rem; height: 7.2rem; position: relative; border-radius: 0.8rem; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.tvg-info__logo img { position: absolute; left: 8%; top: 10%; width: 84%; height: 80%; object-fit: contain; }
+.tvg-info__logo .tvg-ch__initial { font-size: 2.6rem; }
+.tvg-info__main { flex: 1 1 auto; min-width: 0; margin-left: 2.4rem; }
+.tvg-info__top { display: flex; flex-direction: row; align-items: baseline; }
+.tvg-info__num { flex: 0 0 auto; font-size: 2.8rem; font-weight: bold; color: var(--accent); margin-right: 1.6rem; }
+.tvg-info__name { font-size: 2.2rem; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tvg-info__now { margin-top: 0.4rem; font-size: 1.7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tvg-info__bar { max-width: 60%; }
+.tvg-info__next { margin-top: 0.6rem; font-size: 1.5rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

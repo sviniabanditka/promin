@@ -19,6 +19,30 @@ type TVChannel struct {
 	Quality    string   `json:"quality"` // best alive stream's quality
 	Streams    int      `json:"streams"` // alive streams
 	Favorite   bool     `json:"favorite"`
+	AltNames   []string `json:"-"` // iptv-org alt_names, for EPG matching only
+}
+
+// TVChannelName is what the EPG matcher needs.
+type TVChannelName struct {
+	ID       string
+	Name     string
+	Country  string
+	AltNames []string
+}
+
+// TVProgram is one guide entry (unix seconds).
+type TVProgram struct {
+	ChannelID string `json:"-"`
+	Start     int64  `json:"start"`
+	Stop      int64  `json:"stop"`
+	Title     string `json:"title"`
+	Desc      string `json:"desc,omitempty"`
+}
+
+// TVNowNext is the current and following programme of a channel.
+type TVNowNext struct {
+	Now  *TVProgram `json:"now,omitempty"`
+	Next *TVProgram `json:"next,omitempty"`
 }
 
 // TVStream is one playable URL of a channel.
@@ -78,14 +102,18 @@ func (r *TVRepo) Replace(channels []TVChannel, streams []TVStream) error {
 	if _, err := tx.Exec(`DELETE FROM tv_channels`); err != nil {
 		return err
 	}
-	chStmt, err := tx.Prepare(`INSERT INTO tv_channels(id, name, country, categories, logo, website, network, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+	chStmt, err := tx.Prepare(`INSERT INTO tv_channels(id, name, country, categories, logo, website, network, alt_names, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
 	defer chStmt.Close()
 	for _, c := range channels {
 		cats, _ := json.Marshal(c.Categories)
-		if _, err := chStmt.Exec(c.ID, c.Name, c.Country, string(cats), c.Logo, c.Website, c.Network, now); err != nil {
+		alt, _ := json.Marshal(c.AltNames)
+		if c.AltNames == nil {
+			alt = []byte("[]")
+		}
+		if _, err := chStmt.Exec(c.ID, c.Name, c.Country, string(cats), c.Logo, c.Website, c.Network, string(alt), now); err != nil {
 			return err
 		}
 	}
@@ -339,4 +367,118 @@ func b2i(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// ---- programme guide ------------------------------------------------------------
+
+// ChannelNames lists every channel's spellings for the EPG matcher.
+func (r *TVRepo) ChannelNames() ([]TVChannelName, error) {
+	rows, err := r.db.Query(`SELECT id, name, country, alt_names FROM tv_channels`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []TVChannelName
+	for rows.Next() {
+		var n TVChannelName
+		var alt string
+		if err := rows.Scan(&n.ID, &n.Name, &n.Country, &alt); err != nil {
+			return nil, err
+		}
+		_ = json.Unmarshal([]byte(alt), &n.AltNames)
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
+// ReplaceEPG swaps the whole guide and records which feed channel each of
+// ours was matched to ("" for the rest).
+func (r *TVRepo) ReplaceEPG(progs []TVProgram, epgIDs map[string]string) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM tv_programs`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE tv_channels SET epg_id = ''`); err != nil {
+		return err
+	}
+	st, err := tx.Prepare(`INSERT OR REPLACE INTO tv_programs(channel_id, start, stop, title, descr) VALUES (?, ?, ?, ?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	for _, p := range progs {
+		if _, err := st.Exec(p.ChannelID, p.Start, p.Stop, p.Title, p.Desc); err != nil {
+			return err
+		}
+	}
+	for id, x := range epgIDs {
+		if _, err := tx.Exec(`UPDATE tv_channels SET epg_id = ? WHERE id = ?`, x, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// Programs lists a channel's guide overlapping [from, to).
+func (r *TVRepo) Programs(channelID string, from, to int64) ([]TVProgram, error) {
+	rows, err := r.db.Query(`SELECT channel_id, start, stop, title, descr FROM tv_programs
+		WHERE channel_id = ? AND stop > ? AND start < ? ORDER BY start`, channelID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []TVProgram{}
+	for rows.Next() {
+		var p TVProgram
+		if err := rows.Scan(&p.ChannelID, &p.Start, &p.Stop, &p.Title, &p.Desc); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// NowNext returns, for every channel with a guide, what is on at `now` and
+// what follows (titles only — the overlay's channel list).
+func (r *TVRepo) NowNext(now int64) (map[string]*TVNowNext, error) {
+	out := map[string]*TVNowNext{}
+	get := func(id string) *TVNowNext {
+		if v, ok := out[id]; ok {
+			return v
+		}
+		v := &TVNowNext{}
+		out[id] = v
+		return v
+	}
+	rows, err := r.db.Query(`SELECT channel_id, start, stop, title FROM tv_programs WHERE start <= ? AND stop > ?`, now, now)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var p TVProgram
+		if err := rows.Scan(&p.ChannelID, &p.Start, &p.Stop, &p.Title); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		get(p.ChannelID).Now = &p
+	}
+	rows.Close()
+	rows, err = r.db.Query(`SELECT p.channel_id, p.start, p.stop, p.title FROM tv_programs p
+		WHERE p.start > ? AND p.start = (SELECT MIN(q.start) FROM tv_programs q WHERE q.channel_id = p.channel_id AND q.start > ?)`, now, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var p TVProgram
+		if err := rows.Scan(&p.ChannelID, &p.Start, &p.Stop, &p.Title); err != nil {
+			return nil, err
+		}
+		get(p.ChannelID).Next = &p
+	}
+	return out, rows.Err()
 }

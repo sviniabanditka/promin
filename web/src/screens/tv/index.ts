@@ -10,8 +10,9 @@ import { Scroll } from '../../core/scroll';
 import { t } from '../../core/i18n';
 import * as router from '../../core/router';
 import { ScreenInstance } from '../../core/activity';
-import { getTvMeta, getTvChannels, tvPlay, tvFail, tvFavorite, mediaUrl, TvChannel, TvCategory, TvCountry, ApiError } from '../../core/api';
+import { getTvMeta, getTvChannels, getTvEpg, getTvNow, tvPlay, tvFail, tvFavorite, mediaUrl, TvChannel, TvCategory, TvCountry, ApiError } from '../../core/api';
 import { openPlayer, PlayerMedia, EpisodeMeta } from '../../core/player/index';
+import { PlayerTv } from '../../core/player/tvguide';
 import { el, empty } from '../../ui/dom';
 import { Background } from '../../ui/background';
 import { buildMenu, Menu } from '../../ui/menu';
@@ -20,7 +21,7 @@ import { buildFooter } from '../../ui/shell';
 import { buildState } from '../../ui/state';
 import { toast } from '../../ui/toast';
 
-export type TvSection = 'fav' | 'recent' | 'country' | 'category';
+export type TvSection = 'fav' | 'recent' | 'all' | 'country' | 'category';
 
 export interface TvParams {
   section: TvSection;
@@ -39,26 +40,39 @@ function liveMedia(url: string, direct: boolean): PlayerMedia {
   return { type: 'hls', streams: [{ url: direct ? url : mediaUrl(url) }], subtitles: [], voices: [] };
 }
 
-export function buildTvCard(ch: TvChannel): HTMLElement {
+// Logos load lazily (data-logo → loadTvLogo): "all channels" is ~2k tiles and
+// the first paint must not fire 2k image requests at the logo proxy.
+export function loadTvLogo(card: HTMLElement): void {
+  const src = card.getAttribute('data-logo');
+  if (!src) return;
+  card.removeAttribute('data-logo');
+  const box = card.querySelector('.tv-card__logo') as HTMLElement | null;
+  if (!box) return;
+  const img = document.createElement('img');
+  img.alt = '';
+  img.onerror = function () {
+    img.onerror = null;
+    img.style.display = 'none';
+    box.appendChild(el('div', 'tv-card__initial', (card.getAttribute('data-name') || '?').slice(0, 2).toUpperCase()));
+  };
+  img.src = src;
+  box.insertBefore(img, box.firstChild);
+}
+
+export function buildTvCard(ch: TvChannel, lazy?: boolean): HTMLElement {
   const card = el('div', 'tv-card selector' + (ch.favorite ? ' is-fav' : ''));
   card.setAttribute('data-id', ch.id);
+  card.setAttribute('data-name', ch.name || '');
   const box = el('div', 'tv-card__logo');
+  card.appendChild(box);
   if (ch.logo) {
-    const img = document.createElement('img');
-    img.src = ch.logo;
-    img.alt = '';
-    img.onerror = function () {
-      img.onerror = null;
-      img.style.display = 'none';
-      box.appendChild(el('div', 'tv-card__initial', (ch.name || '?').slice(0, 2).toUpperCase()));
-    };
-    box.appendChild(img);
+    card.setAttribute('data-logo', ch.logo);
+    if (!lazy) loadTvLogo(card);
   } else {
     box.appendChild(el('div', 'tv-card__initial', (ch.name || '?').slice(0, 2).toUpperCase()));
   }
   if (ch.quality) box.appendChild(el('div', 'tv-card__badge', ch.quality));
   box.appendChild(el('div', 'tv-card__star', '★'));
-  card.appendChild(box);
   card.appendChild(el('div', 'tv-card__name', ch.name));
   return card;
 }
@@ -122,6 +136,7 @@ export function mountTv(container: HTMLElement, params: TvParams): ScreenInstanc
     };
     sideItem(t('tv.favorites'), params.section === 'fav', go('fav'));
     sideItem(t('tv.recent'), params.section === 'recent', go('recent'));
+    sideItem(t('tv.all'), params.section === 'all', go('all'));
     sideBody.appendChild(el('div', 'tv-side__heading', t('tv.countries')));
     for (let i = 0; i < countries.length; i++) {
       const c = countries[i];
@@ -213,6 +228,56 @@ export function mountTv(container: HTMLElement, params: TvParams): ScreenInstanc
   }
   let currentIndex = -1;
 
+  // The player's guide overlay: this list as channels 1..N, plus EPG hooks.
+  function playerTv(idx: number): PlayerTv {
+    const list: PlayerTv['channels'] = [];
+    for (let i = 0; i < channels.length; i++) {
+      const c = channels[i];
+      list.push({ id: c.id, name: c.name, logo: c.logo, quality: c.quality });
+    }
+    return {
+      channels: list,
+      index: idx,
+      play: function (i, done) {
+        const c = channels[i];
+        if (!c) {
+          done(null);
+          return;
+        }
+        tvPlay(c.id).then(
+          function (p) {
+            currentIndex = i;
+            done(liveMedia(p.url, p.direct), { title: c.name, subtitle: t('tv.live') + (p.quality ? ' · ' + p.quality : '') });
+          },
+          function () {
+            tvFail(c.id)['catch'](function () {});
+            done(null);
+          }
+        );
+      },
+      epg: function (id, done) {
+        getTvEpg(id).then(
+          function (r) {
+            done(r.items || []);
+          },
+          function () {
+            done([]);
+          }
+        );
+      },
+      nowNext: function (done) {
+        getTvNow().then(
+          function (r) {
+            done(r.items || {});
+          },
+          function () {
+            done({});
+          }
+        );
+      },
+    };
+  }
+
   function play(ch: TvChannel, idx: number, btn: HTMLElement): void {
     btn.classList.add('is-loading');
     tvPlay(ch.id).then(
@@ -226,6 +291,7 @@ export function mountTv(container: HTMLElement, params: TvParams): ScreenInstanc
           poster: null,
           media: liveMedia(p.url, p.direct),
           live: true,
+          tv: playerTv(idx),
           onNext: function (done) {
             zap(currentIndex, 1, done);
           },
@@ -286,11 +352,20 @@ export function mountTv(container: HTMLElement, params: TvParams): ScreenInstanc
       return;
     }
     const grid = el('div', 'tv-grid');
+    const cards: HTMLElement[] = [];
+    // Logos for the rows around the focus (5 per row): a window of ~8 rows.
+    function reveal(center: number): void {
+      const from = Math.max(0, center - 10);
+      const to = Math.min(list.length - 1, center + 30);
+      for (let i = from; i <= to; i++) loadTvLogo(cards[i]);
+    }
     for (let i = 0; i < list.length; i++) {
       (function (ch: TvChannel, idx: number) {
-        const card = buildTvCard(ch);
+        const card = buildTvCard(ch, true);
+        cards.push(card);
         on(card, 'hover:focus', function () {
           lastCard = card;
+          reveal(idx);
         });
         on(card, 'hover:enter', function () {
           play(ch, idx, card);
@@ -302,6 +377,7 @@ export function mountTv(container: HTMLElement, params: TvParams): ScreenInstanc
       })(list[i], i);
     }
     body.appendChild(grid);
+    reveal(0);
     scroll.reset();
     focusContentOrSide();
   }
@@ -311,7 +387,16 @@ export function mountTv(container: HTMLElement, params: TvParams): ScreenInstanc
     empty(body);
     lastCard = false;
     body.appendChild(buildState({ kind: 'loading' }));
-    const listReq = params.section === 'fav' ? getTvChannels({ fav: '1' }) : params.section === 'recent' ? getTvChannels({ recent: '1' }) : params.section === 'country' ? getTvChannels({ country: params.id || '' }) : getTvChannels({ category: params.id || '' });
+    const listReq =
+      params.section === 'fav'
+        ? getTvChannels({ fav: '1' })
+        : params.section === 'recent'
+          ? getTvChannels({ recent: '1' })
+          : params.section === 'all'
+            ? getTvChannels({})
+            : params.section === 'country'
+              ? getTvChannels({ country: params.id || '' })
+              : getTvChannels({ category: params.id || '' });
     getTvMeta().then(
       function (m) {
         if (destroyed || my !== seq) return;

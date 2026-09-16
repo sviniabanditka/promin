@@ -51,6 +51,7 @@ import { isResumable } from '../progress';
 import { report as diag } from '../diag';
 import { setRemoteHandler, RemoteAction } from './remote';
 import { ensureHls, HlsInstance, HlsCtor } from './hls';
+import { mountTvGuide, PlayerTv, TvGuide } from './tvguide';
 import { Stream, Subtitle, Voice, mediaUrl, postPlayerState, PlayerStateReport, searchSubtitles, subtitleFileUrl, SubtitleResult, buildHeaders } from '../api';
 
 export interface PlayerMedia {
@@ -98,6 +99,9 @@ export interface PlayerContext {
   durationHint?: number;
   // Live TV: no timecodes, no resume; prev/next zap channels (docs/tv.md).
   live?: boolean;
+  // Live TV (docs/tv.md): the channel list + guide hooks; turns the transport
+  // into a TV set (▲▼ zap, digits, OK = guide). Implies live.
+  tv?: PlayerTv;
   // Autoplay the next episode (tv). The player calls this on ended; sources
   // resolves the next episode's streams and calls done(media, meta) — or
   // done(null) when there is no next episode.
@@ -2616,9 +2620,17 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     return true;
   }
   function goNext(): boolean {
+    if (guide) {
+      guide.zap(1);
+      return true;
+    }
     return switchEpisode(ctx.onNext);
   }
   function goPrev(): boolean {
+    if (guide) {
+      guide.zap(-1);
+      return true;
+    }
     return switchEpisode(ctx.onPrev);
   }
 
@@ -3229,6 +3241,11 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     const m = Controller.enabled().name;
     if (m !== 'player' && m !== 'player_rewind' && m !== 'player_panel') return;
     const code = e.keyCode || (e as unknown as { which: number }).which;
+    if (guide && code >= 48 && code <= 57) {
+      e.preventDefault();
+      guide.digit(code - 48); // channel number, TV-set style
+      return;
+    }
     if (code >= 48 && code <= 57) {
       const dur = videoDuration();
       if (!dur || !isFinite(dur)) return;
@@ -3334,6 +3351,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     Controller.add(name, calls);
   }
 
+  let guide: TvGuide | null = null;
   addMode('player', {
     invisible: true,
     toggle: function () {
@@ -3341,12 +3359,27 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       if (!suppressReveal) showPanel();
     },
     left: function () {
+      if (guide) {
+        // A live channel has nothing to scrub; ◀▶ reveal the button row.
+        showPanel();
+        setMode('player_panel');
+        return;
+      }
       rewind(false);
     },
     right: function () {
+      if (guide) {
+        showPanel();
+        setMode('player_panel');
+        return;
+      }
       rewind(true);
     },
     up: function () {
+      if (guide) {
+        guide.zap(1);
+        return;
+      }
       // "▲ Next episode" is offered only while the panel is hidden — with the
       // panel open UP must keep meaning "to the timeline".
       if (skipVisible() && !panelVisible) {
@@ -3358,12 +3391,20 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       setMode('player_rewind');
     },
     down: function () {
+      if (guide) {
+        guide.zap(-1);
+        return;
+      }
       // Down is navigational, never an exit — drop into the button row (reveal
       // the panel first if hidden). Only Back exits the player.
       showPanel();
       setMode('player_panel');
     },
     enter: function () {
+      if (guide) {
+        guide.open();
+        return;
+      }
       togglePlay();
       showPanel();
     },
@@ -3453,6 +3494,23 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       setMode('player');
     },
   });
+
+  // ---- live TV (docs/tv.md) ----
+  // The guide owns the overlay and the info bar; switching streams reuses the
+  // episode machinery (position flush is a no-op for live).
+  function switchChannel(i: number): void {
+    const tv = ctx.tv;
+    if (!tv || !tv.channels[i]) return;
+    switchEpisode(function (done) {
+      tv.play(i, function (m, meta) {
+        if (m && guide) guide.switched(i);
+        done(m, meta);
+      });
+    });
+  }
+  if (ctx.tv) {
+    guide = mountTvGuide(root, ctx.tv, { switchTo: switchChannel, setMode: setMode });
+  }
 
   // ---- boot ----
   // Player state → server every 5 s and on play/pause/seek, so the Telegram
@@ -3642,10 +3700,11 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       video.removeEventListener('ended', onEnded);
       video.removeEventListener('error', onVideoError);
       teardownEngine();
+      if (guide) guide.destroy();
       empty(root);
       // Release the mode registrations: their closures held root/video/hls of a
       // destroyed player until the next one registered the same names.
-      const modes = ['player', 'player_rewind', 'player_panel', 'player_menu', 'player_error', 'player_next'];
+      const modes = ['player', 'player_rewind', 'player_panel', 'player_menu', 'player_error', 'player_next', 'player_tv', 'player_tv_prog'];
       for (let i = 0; i < modes.length; i++) Controller.remove(modes[i]);
     },
   };

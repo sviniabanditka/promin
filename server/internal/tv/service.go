@@ -103,6 +103,11 @@ func (s *Service) Run(ctx context.Context) {
 		} else if s.checkStale() {
 			s.Check(ctx)
 		}
+		if s.epgStale() {
+			if err := s.SyncEPG(ctx); err != nil {
+				s.log.Warn("tv: epg sync failed", "error", err)
+			}
+		}
 		select {
 		case <-ctx.Done():
 			return
@@ -135,6 +140,7 @@ type apiChannel struct {
 	Closed     *string  `json:"closed"`
 	ReplacedBy *string  `json:"replaced_by"`
 	Website    *string  `json:"website"`
+	AltNames   []string `json:"alt_names"`
 }
 
 type apiStream struct {
@@ -217,7 +223,7 @@ func (s *Service) Sync(ctx context.Context) error {
 		if !want[c.Country] || c.IsNSFW || c.Closed != nil || c.ReplacedBy != nil || blocked[c.ID] {
 			continue
 		}
-		ch := &store.TVChannel{ID: c.ID, Name: c.Name, Country: c.Country, Categories: c.Categories}
+		ch := &store.TVChannel{ID: c.ID, Name: c.Name, Country: c.Country, Categories: c.Categories, AltNames: c.AltNames}
 		if c.Website != nil {
 			ch.Website = *c.Website
 		}
@@ -509,3 +515,14 @@ type tvError string
 func (e tvError) Error() string { return string(e) }
 
 const ErrNoStream = tvError("tv: channel has no stream")
+
+// Guide: a channel's programmes from 12 h ago to 36 h ahead.
+func (s *Service) Guide(channelID string) ([]store.TVProgram, error) {
+	now := time.Now()
+	return s.repo.Programs(channelID, now.Add(-12*time.Hour).Unix(), now.Add(36*time.Hour).Unix())
+}
+
+// NowNext for every channel with a guide.
+func (s *Service) NowNext() (map[string]*store.TVNowNext, error) {
+	return s.repo.NowNext(time.Now().Unix())
+}

@@ -232,6 +232,8 @@ func NewServer(
 	mux.HandleFunc("GET /api/v1/tv/meta", requireAuth(authSvc, tvH.meta))
 	mux.HandleFunc("GET /api/v1/tv/channels", requireAuth(authSvc, tvH.channels))
 	mux.HandleFunc("GET /api/v1/tv/channels/{id}/play", requireAuth(authSvc, tvH.play))
+	mux.HandleFunc("GET /api/v1/tv/channels/{id}/epg", requireAuth(authSvc, tvH.epg))
+	mux.HandleFunc("GET /api/v1/tv/now", requireAuth(authSvc, tvH.now))
 	mux.HandleFunc("POST /api/v1/tv/channels/{id}/fail", requireAuth(authSvc, tvH.report))
 	mux.HandleFunc("PUT /api/v1/tv/favorites/{id}", requireAuth(authSvc, tvH.favorite(true)))
 	mux.HandleFunc("DELETE /api/v1/tv/favorites/{id}", requireAuth(authSvc, tvH.favorite(false)))

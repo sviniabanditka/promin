@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/sviniabanditka/promin/server/internal/store"
 	"github.com/sviniabanditka/promin/server/internal/tv"
@@ -131,6 +132,38 @@ func (h *tvHandlers) favorite(on bool) http.HandlerFunc {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+// epg: GET /api/v1/tv/channels/{id}/epg → {items:[{start,stop,title,desc}]} (−12 h … +36 h)
+func (h *tvHandlers) epg(w http.ResponseWriter, r *http.Request) {
+	if !h.enabled(w) {
+		return
+	}
+	id := r.PathValue("id")
+	if !tvChannelID.MatchString(id) {
+		writeBadRequest(w, "невірний id")
+		return
+	}
+	items, err := h.svc.Guide(id)
+	if err != nil {
+		writeInternal(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+// now: GET /api/v1/tv/now → {items:{<channel id>:{now:{...},next:{...}}}} for
+// every channel that has a guide (the overlay's channel list).
+func (h *tvHandlers) now(w http.ResponseWriter, r *http.Request) {
+	if !h.enabled(w) {
+		return
+	}
+	items, err := h.svc.NowNext()
+	if err != nil {
+		writeInternal(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "at": time.Now().Unix()})
 }
 
 var _ = strconv.Itoa

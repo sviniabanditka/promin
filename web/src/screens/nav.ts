@@ -256,6 +256,7 @@ export function openRoute(raw: string): void {
       if (sub === 'c' && seg[2]) openTv('country', arg2(seg));
       else if (sub === 'g' && seg[2]) openTv('category', arg2(seg));
       else if (sub === 'recent') openTv('recent');
+      else if (sub === 'all') openTv('all');
       else openTv('fav');
       return;
     }

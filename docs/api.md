@@ -257,4 +257,4 @@ Bearer routes proxied to the `ytx` sidecar: `GET /account`, `POST /account/login
 
 ## Live TV
 
-See `docs/tv.md` — `GET /api/v1/tv/meta`, `GET /api/v1/tv/channels`, `GET /api/v1/tv/channels/{id}/play`, `POST /api/v1/tv/channels/{id}/fail`, `PUT|DELETE /api/v1/tv/favorites/{id}` (bearer), `GET /img/tv/{id}` (logo, public, cached).
+See `docs/tv.md` — `GET /api/v1/tv/meta`, `GET /api/v1/tv/channels`, `GET /api/v1/tv/channels/{id}/play`, `GET /api/v1/tv/channels/{id}/epg`, `GET /api/v1/tv/now`, `POST /api/v1/tv/channels/{id}/fail`, `PUT|DELETE /api/v1/tv/favorites/{id}` (bearer), `GET /img/tv/{id}` (logo, public, cached).
