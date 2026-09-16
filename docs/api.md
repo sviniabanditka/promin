@@ -257,4 +257,6 @@ Bearer routes proxied to the `ytx` sidecar: `GET /account`, `POST /account/login
 
 ## Live TV
 
+Per-profile access: `GET /api/v1/auth/me` → `{id, login, is_admin, features:{online,torrents,youtube,tv,tv_countries}}`; a switched-off group answers `403 feature_disabled` (see `docs/auth.md` §5).
+
 See `docs/tv.md` — `GET /api/v1/tv/meta`, `GET /api/v1/tv/channels`, `GET /api/v1/tv/channels/{id}/play`, `GET /api/v1/tv/channels/{id}/epg`, `GET /api/v1/tv/now`, `POST /api/v1/tv/channels/{id}/fail`, `PUT|DELETE /api/v1/tv/favorites/{id}` (bearer), `GET /img/tv/{id}` (logo, public, cached).

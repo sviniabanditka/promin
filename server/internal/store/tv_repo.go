@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -155,9 +156,17 @@ func (r *TVRepo) SetMeta(key, value string) error {
 
 // Counts returns channels with at least one alive stream per country and per
 // category (a channel counts once per category it carries).
-func (r *TVRepo) Counts() (byCountry map[string]int, byCategory map[string]int, err error) {
-	rows, err := r.db.Query(`SELECT c.country, c.categories FROM tv_channels c
-		WHERE EXISTS (SELECT 1 FROM tv_streams s WHERE s.channel_id = c.id AND s.alive = 1)`)
+func (r *TVRepo) Counts(countries []string) (byCountry map[string]int, byCategory map[string]int, err error) {
+	q := `SELECT c.country, c.categories FROM tv_channels c
+		WHERE EXISTS (SELECT 1 FROM tv_streams s WHERE s.channel_id = c.id AND s.alive = 1)`
+	var args []any
+	if len(countries) > 0 {
+		q += ` AND c.country IN (` + placeholders(len(countries)) + `)`
+		for _, c := range countries {
+			args = append(args, c)
+		}
+	}
+	rows, err := r.db.Query(q, args...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -181,6 +190,7 @@ func (r *TVRepo) Counts() (byCountry map[string]int, byCategory map[string]int, 
 // TVFilter narrows Channels.
 type TVFilter struct {
 	Country  string // "" = all configured
+	Countries []string // the profile's allowed countries; nil = no restriction
 	Category string // "" = all
 	Query    string // substring of the name, case-insensitive
 	UserID   int64  // for the favourite flag / favourites-only
@@ -207,6 +217,12 @@ func (r *TVRepo) Channels(f TVFilter) ([]TVChannel, error) {
 	if f.Country != "" {
 		sb.WriteString(` AND c.country = ?`)
 		args = append(args, f.Country)
+	}
+	if len(f.Countries) > 0 {
+		sb.WriteString(` AND c.country IN (` + placeholders(len(f.Countries)) + `)`)
+		for _, c := range f.Countries {
+			args = append(args, c)
+		}
 	}
 	if f.Category != "" {
 		sb.WriteString(` AND c.categories LIKE ?`)
@@ -481,4 +497,193 @@ func (r *TVRepo) NowNext(now int64) (map[string]*TVNowNext, error) {
 		get(p.ChannelID).Next = &p
 	}
 	return out, rows.Err()
+}
+
+func placeholders(n int) string {
+	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
+}
+
+// ---- admin: EPG overrides, feed channels, stats ---------------------------------
+
+// EPGOverride pins a channel to a feed channel; XMLTVID "" = no guide.
+type EPGOverride struct {
+	ChannelID string `json:"channel_id"`
+	Source    string `json:"source"`
+	XMLTVID   string `json:"xmltv_id"`
+}
+
+func (r *TVRepo) EPGOverrides() (map[string]EPGOverride, error) {
+	rows, err := r.db.Query(`SELECT channel_id, source, xmltv_id FROM tv_epg_overrides`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]EPGOverride{}
+	for rows.Next() {
+		var o EPGOverride
+		if err := rows.Scan(&o.ChannelID, &o.Source, &o.XMLTVID); err != nil {
+			return nil, err
+		}
+		out[o.ChannelID] = o
+	}
+	return out, rows.Err()
+}
+
+func (r *TVRepo) SetEPGOverride(o EPGOverride) error {
+	_, err := r.db.Exec(`INSERT OR REPLACE INTO tv_epg_overrides(channel_id, source, xmltv_id) VALUES (?, ?, ?)`, o.ChannelID, o.Source, o.XMLTVID)
+	return err
+}
+
+func (r *TVRepo) DeleteEPGOverride(channelID string) error {
+	_, err := r.db.Exec(`DELETE FROM tv_epg_overrides WHERE channel_id = ?`, channelID)
+	return err
+}
+
+// EPGChannel is one channel of a feed (for the admin's picker).
+type EPGChannel struct {
+	Source  string   `json:"source"`
+	XMLTVID string   `json:"xmltv_id"`
+	Names   []string `json:"names"`
+}
+
+func (r *TVRepo) ReplaceEPGChannels(source string, list []EPGChannel) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM tv_epg_channels WHERE source = ?`, source); err != nil {
+		return err
+	}
+	st, err := tx.Prepare(`INSERT OR REPLACE INTO tv_epg_channels(source, xmltv_id, names, names_lc) VALUES (?, ?, ?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	for _, c := range list {
+		names := strings.Join(c.Names, " | ")
+		if _, err := st.Exec(source, c.XMLTVID, names, strings.ToLower(names)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// SearchEPGChannels: substring of any display name or the id, case-insensitive.
+func (r *TVRepo) SearchEPGChannels(q string, limit int) ([]EPGChannel, error) {
+	q = strings.ToLower(strings.TrimSpace(q))
+	if q == "" {
+		return []EPGChannel{}, nil
+	}
+	rows, err := r.db.Query(`SELECT source, xmltv_id, names FROM tv_epg_channels
+		WHERE names_lc LIKE ? OR lower(xmltv_id) LIKE ? ORDER BY length(names), source LIMIT ?`, "%"+q+"%", "%"+q+"%", limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []EPGChannel{}
+	for rows.Next() {
+		var c EPGChannel
+		var names string
+		if err := rows.Scan(&c.Source, &c.XMLTVID, &names); err != nil {
+			return nil, err
+		}
+		c.Names = strings.Split(names, " | ")
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// AdminChannel is a catalogue row with its guide mapping, for the admin panel.
+type AdminChannel struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Country  string `json:"country"`
+	Alive    int    `json:"alive"`
+	EPGID    string `json:"epg_id"`   // "<source>:<xmltv id>" from the last sync, "" = no guide
+	Override string `json:"override"` // "<source>:<xmltv id>", "none" (pinned to no guide) or ""
+}
+
+func (r *TVRepo) AdminChannels(q, country string, noEPG bool, limit int) ([]AdminChannel, error) {
+	var sb strings.Builder
+	var args []any
+	sb.WriteString(`SELECT c.id, c.name, c.country, c.epg_id,
+		(SELECT COUNT(*) FROM tv_streams s WHERE s.channel_id = c.id AND s.alive = 1) AS alive,
+		COALESCE(o.source, ''), COALESCE(o.xmltv_id, ''), o.channel_id IS NOT NULL
+		FROM tv_channels c LEFT JOIN tv_epg_overrides o ON o.channel_id = c.id WHERE 1 = 1`)
+	if q = strings.ToLower(strings.TrimSpace(q)); q != "" {
+		sb.WriteString(` AND (lower(c.name) LIKE ? OR lower(c.id) LIKE ? OR lower(c.alt_names) LIKE ?)`)
+		args = append(args, "%"+q+"%", "%"+q+"%", "%"+q+"%")
+	}
+	if country != "" {
+		sb.WriteString(` AND c.country = ?`)
+		args = append(args, country)
+	}
+	if noEPG {
+		sb.WriteString(` AND c.epg_id = ''`)
+	}
+	sb.WriteString(` ORDER BY alive DESC, c.name COLLATE NOCASE LIMIT ?`)
+	args = append(args, limit)
+	rows, err := r.db.Query(sb.String(), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []AdminChannel{}
+	for rows.Next() {
+		var c AdminChannel
+		var src, xid string
+		var has bool
+		if err := rows.Scan(&c.ID, &c.Name, &c.Country, &c.EPGID, &c.Alive, &src, &xid, &has); err != nil {
+			return nil, err
+		}
+		if has {
+			if xid == "" {
+				c.Override = "none"
+			} else {
+				c.Override = src + ":" + xid
+			}
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// TVStats for the admin status card.
+type TVStats struct {
+	Channels   int   `json:"channels"`
+	Alive      int   `json:"alive"` // channels with an alive stream
+	Streams    int   `json:"streams"`
+	Programmes int   `json:"programmes"`
+	WithEPG    int   `json:"with_epg"`
+	SyncedAt   int64 `json:"synced_at"`
+	CheckedAt  int64 `json:"checked_at"`
+	EPGAt      int64 `json:"epg_at"`
+}
+
+func (r *TVRepo) Stats() (TVStats, error) {
+	var st TVStats
+	q := func(sql string, dst *int) error { return r.db.QueryRow(sql).Scan(dst) }
+	if err := q(`SELECT COUNT(*) FROM tv_channels`, &st.Channels); err != nil {
+		return st, err
+	}
+	if err := q(`SELECT COUNT(*) FROM tv_channels c WHERE EXISTS (SELECT 1 FROM tv_streams s WHERE s.channel_id = c.id AND s.alive = 1)`, &st.Alive); err != nil {
+		return st, err
+	}
+	if err := q(`SELECT COUNT(*) FROM tv_streams`, &st.Streams); err != nil {
+		return st, err
+	}
+	if err := q(`SELECT COUNT(*) FROM tv_programs`, &st.Programmes); err != nil {
+		return st, err
+	}
+	if err := q(`SELECT COUNT(*) FROM tv_channels WHERE epg_id != ''`, &st.WithEPG); err != nil {
+		return st, err
+	}
+	var v int64
+	for k, dst := range map[string]*int64{"synced_at": &st.SyncedAt, "checked_at": &st.CheckedAt, "epg_at": &st.EPGAt} {
+		v = 0
+		_, _ = fmt.Sscan(r.Meta(k), &v)
+		*dst = v
+	}
+	return st, nil
 }

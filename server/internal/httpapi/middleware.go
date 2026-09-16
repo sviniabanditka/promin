@@ -67,6 +67,19 @@ func requireAuthMedia(svc *auth.Service, next http.HandlerFunc) http.HandlerFunc
 	return authMiddleware(svc, true, true, next)
 }
 
+// requireFeature sits inside requireAuth*: the profile must have the feature
+// (docs/auth.md → per-profile access). 403 feature_disabled otherwise.
+func requireFeature(name string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		info, ok := authFrom(r)
+		if !ok || !info.User.Features().Has(name) {
+			writeError(w, http.StatusForbidden, "feature_disabled", "цю функцію вимкнено для профілю")
+			return
+		}
+		next(w, r)
+	}
+}
+
 func authMiddleware(svc *auth.Service, allowQuery, required bool, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := tokenFromRequest(r, allowQuery)

@@ -59,6 +59,10 @@ func (s *Service) SyncEPG(ctx context.Context) error {
 	}
 	t0 := time.Now()
 	window := timeWindow{from: t0.Add(-epgPast).Unix(), to: t0.Add(epgAhead).Unix()}
+	overrides, err := s.repo.EPGOverrides()
+	if err != nil {
+		return err
+	}
 	var all []store.TVProgram
 	epgIDs := map[string]string{}
 	for _, src := range epgSources {
@@ -73,10 +77,13 @@ func (s *Service) SyncEPG(ctx context.Context) error {
 		if len(mine) == 0 {
 			continue
 		}
-		progs, matched, err := s.grabEPG(ctx, src, mine, window)
+		progs, matched, feed, err := s.grabEPG(ctx, src, mine, window, overrides)
 		if err != nil {
 			s.log.Warn("tv: epg source failed", "source", src.Name, "error", err)
 			continue
+		}
+		if err := s.repo.ReplaceEPGChannels(src.Name, feed); err != nil {
+			s.log.Warn("tv: epg feed channels", "source", src.Name, "error", err)
 		}
 		for our, xid := range matched {
 			epgIDs[our] = src.Name + ":" + xid
@@ -112,49 +119,51 @@ type xmltvProgramme struct {
 
 // grabEPG streams one XMLTV feed (gzip or plain) and returns the programmes
 // of the channels it could match, plus our-id → xmltv-id for those.
-func (s *Service) grabEPG(ctx context.Context, src epgSource, ours []store.TVChannelName, w timeWindow) ([]store.TVProgram, map[string]string, error) {
+func (s *Service) grabEPG(ctx context.Context, src epgSource, ours []store.TVChannelName, w timeWindow, overrides map[string]store.EPGOverride) ([]store.TVProgram, map[string]string, []store.EPGChannel, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, src.URL, nil)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	req.Header.Set("User-Agent", "promin (+https://promin.club)")
 	client := &http.Client{Timeout: 15 * time.Minute}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, nil, fmt.Errorf("status %d", resp.StatusCode)
+		return nil, nil, nil, fmt.Errorf("status %d", resp.StatusCode)
 	}
 	var body io.Reader = resp.Body
 	if strings.HasSuffix(src.URL, ".gz") || resp.Header.Get("Content-Type") == "application/x-gzip" {
 		gz, err := gzip.NewReader(resp.Body)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		defer gz.Close()
 		body = gz
 	}
-	return parseXMLTV(body, ours, w)
+	return parseXMLTV(body, ours, w, src.Name, overrides)
 }
 
 // parseXMLTV: <channel> elements come first in XMLTV, so the matcher is
-// complete by the first <programme>.
-func parseXMLTV(r io.Reader, ours []store.TVChannelName, w timeWindow) ([]store.TVProgram, map[string]string, error) {
+// complete by the first <programme>. An admin override (docs/tv.md) pins a
+// channel to a feed id of one source — or to no guide — and skips matching.
+func parseXMLTV(r io.Reader, ours []store.TVChannelName, w timeWindow, srcName string, overrides map[string]store.EPGOverride) ([]store.TVProgram, map[string]string, []store.EPGChannel, error) {
 	dec := xml.NewDecoder(r)
 	dec.Strict = false
 	m := newMatcher()
 	var xmlToOurs map[string][]string // xmltv id → our ids
 	matched := map[string]string{}
 	var out []store.TVProgram
+	var feed []store.EPGChannel
 	for {
 		tok, err := dec.Token()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		se, ok := tok.(xml.StartElement)
 		if !ok {
@@ -165,11 +174,19 @@ func parseXMLTV(r io.Reader, ours []store.TVChannelName, w timeWindow) ([]store.
 			var ch xmltvChannel
 			if err := dec.DecodeElement(&ch, &se); err == nil {
 				m.add(ch.ID, ch.Names)
+				feed = append(feed, store.EPGChannel{Source: srcName, XMLTVID: ch.ID, Names: ch.Names})
 			}
 		case "programme":
 			if xmlToOurs == nil {
 				xmlToOurs = map[string][]string{}
 				for _, o := range ours {
+					if ov, has := overrides[o.ID]; has {
+						if ov.Source == srcName && ov.XMLTVID != "" {
+							matched[o.ID] = ov.XMLTVID
+							xmlToOurs[ov.XMLTVID] = append(xmlToOurs[ov.XMLTVID], o.ID)
+						}
+						continue // pinned elsewhere or to "no guide"
+					}
 					if xid, ok := m.find(o); ok {
 						matched[o.ID] = xid
 						xmlToOurs[xid] = append(xmlToOurs[xid], o.ID)
@@ -204,7 +221,7 @@ func parseXMLTV(r io.Reader, ours []store.TVChannelName, w timeWindow) ([]store.
 			}
 		}
 	}
-	return out, matched, nil
+	return out, matched, feed, nil
 }
 
 func parseXMLTVTime(s string) int64 {

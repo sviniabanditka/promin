@@ -35,12 +35,37 @@ func (h *tvHandlers) enabled(w http.ResponseWriter) bool {
 	return true
 }
 
+// allowedCountries: the profile's TV country restriction (nil = none).
+func allowedCountries(r *http.Request) []string {
+	info, _ := authFrom(r)
+	f := info.User.Features()
+	if len(f.TVCountries) == 0 {
+		return nil
+	}
+	return f.TVCountries
+}
+
+// channelAllowed: the channel's country is within the profile's restriction.
+func (h *tvHandlers) channelAllowed(w http.ResponseWriter, r *http.Request, id string) bool {
+	info, _ := authFrom(r)
+	f := info.User.Features()
+	if len(f.TVCountries) == 0 {
+		return true
+	}
+	ch, err := h.svc.Repo().Channel(id)
+	if err != nil || !f.AllowsCountry(ch.Country) {
+		writeError(w, http.StatusForbidden, "country_blocked", "цю країну вимкнено для профілю")
+		return false
+	}
+	return true
+}
+
 // meta: GET /api/v1/tv/meta → {countries:[{code,name,flag,channels}], categories:[{id,name,channels}]}
 func (h *tvHandlers) meta(w http.ResponseWriter, r *http.Request) {
 	if !h.enabled(w) {
 		return
 	}
-	countries, cats, err := h.svc.Meta()
+	countries, cats, err := h.svc.Meta(allowedCountries(r))
 	if err != nil {
 		writeInternal(w, err)
 		return
@@ -56,13 +81,14 @@ func (h *tvHandlers) channels(w http.ResponseWriter, r *http.Request) {
 	info, _ := authFrom(r)
 	q := r.URL.Query()
 	f := store.TVFilter{
-		Country:  q.Get("country"),
-		Category: q.Get("category"),
-		Query:    q.Get("q"),
-		UserID:   info.User.ID,
-		FavOnly:  q.Get("fav") == "1",
-		Recent:   q.Get("recent") == "1",
-		Limit:    atoiDefault(q.Get("limit"), 0),
+		Country:   q.Get("country"),
+		Countries: allowedCountries(r),
+		Category:  q.Get("category"),
+		Query:     q.Get("q"),
+		UserID:    info.User.ID,
+		FavOnly:   q.Get("fav") == "1",
+		Recent:    q.Get("recent") == "1",
+		Limit:     atoiDefault(q.Get("limit"), 0),
 	}
 	if len(f.Country) > 2 || len(f.Category) > 40 || len(f.Query) > 80 {
 		writeBadRequest(w, "невірні параметри")
@@ -85,6 +111,9 @@ func (h *tvHandlers) play(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if !tvChannelID.MatchString(id) {
 		writeBadRequest(w, "невірний id")
+		return
+	}
+	if !h.channelAllowed(w, r, id) {
 		return
 	}
 	p, err := h.svc.Play(info.User.ID, id)

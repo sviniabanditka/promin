@@ -21,6 +21,7 @@ import (
 	"github.com/sviniabanditka/promin/server/internal/remux"
 	"github.com/sviniabanditka/promin/server/internal/sources"
 	"github.com/sviniabanditka/promin/server/internal/subtitles"
+	"github.com/sviniabanditka/promin/server/internal/store"
 	"github.com/sviniabanditka/promin/server/internal/sync"
 	"github.com/sviniabanditka/promin/server/internal/telegram"
 	torrentpkg "github.com/sviniabanditka/promin/server/internal/torrent"
@@ -56,6 +57,7 @@ func NewServer(
 	subsClient *subtitles.Client, // nil/disabled when PROMIN_OPENSUBTITLES_API_KEY is unset
 	ytClient *youtube.Client, // nil when PROMIN_YTX_URL is unset — the YouTube section is off,
 	tvSvc *tv.Service,
+	tgLinks *store.TelegramRepo, // admin panel: a profile's linked Telegram chats
 ) http.Handler {
 	mux := http.NewServeMux()
 
@@ -100,16 +102,16 @@ func NewServer(
 	}
 
 	src := &sourcesHandlers{svc: sourcesSvc, cat: catalogSvc}
-	mux.HandleFunc("GET /api/v1/sources/online", requireAuth(authSvc, src.online))
-	mux.HandleFunc("GET /api/v1/sources/online/resolve", requireAuth(authSvc, src.resolve))
+	mux.HandleFunc("GET /api/v1/sources/online", requireAuth(authSvc, requireFeature("online", src.online)))
+	mux.HandleFunc("GET /api/v1/sources/online/resolve", requireAuth(authSvc, requireFeature("online", src.resolve)))
 
 	trh := &torrentHandlers{sourcesSvc: sourcesSvc, mgr: torrentMgr, remuxQueue: remuxQueue, selfBaseURL: selfBaseURL, logger: logger}
-	mux.HandleFunc("GET /api/v1/sources/torrents", requireAuth(authSvc, trh.list))
-	mux.HandleFunc("GET /api/v1/torrents/add", requireAuth(authSvc, trh.add))
-	mux.HandleFunc("POST /api/v1/torrents/add", requireAuth(authSvc, trh.add))
-	mux.HandleFunc("GET /api/v1/torrents/active", requireAuth(authSvc, trh.active))
-	mux.HandleFunc("GET /api/v1/torrents/audio", requireAuth(authSvc, trh.audioTracks))
-	mux.HandleFunc("DELETE /api/v1/torrents/{infohash}", requireAuth(authSvc, trh.remove))
+	mux.HandleFunc("GET /api/v1/sources/torrents", requireAuth(authSvc, requireFeature("torrents", trh.list)))
+	mux.HandleFunc("GET /api/v1/torrents/add", requireAuth(authSvc, requireFeature("torrents", trh.add)))
+	mux.HandleFunc("POST /api/v1/torrents/add", requireAuth(authSvc, requireFeature("torrents", trh.add)))
+	mux.HandleFunc("GET /api/v1/torrents/active", requireAuth(authSvc, requireFeature("torrents", trh.active)))
+	mux.HandleFunc("GET /api/v1/torrents/audio", requireAuth(authSvc, requireFeature("torrents", trh.audioTracks)))
+	mux.HandleFunc("DELETE /api/v1/torrents/{infohash}", requireAuth(authSvc, requireFeature("torrents", trh.remove)))
 
 	mux.Handle("GET /msx/start.json", msxStartHandler())
 
@@ -123,7 +125,7 @@ func NewServer(
 	// public anyway.
 	mux.Handle("GET /img/", imgProxy(dataDir, logger))
 	mux.HandleFunc("GET /relay", requireAuthMedia(authSvc, relayHandler(logger)))
-	mux.HandleFunc("GET /stream/{infohash}/{fileIdx}", requireAuthMedia(authSvc, trh.stream))
+	mux.HandleFunc("GET /stream/{infohash}/{fileIdx}", requireAuthMedia(authSvc, requireFeature("torrents", trh.stream)))
 
 	rmx := &remuxHandlers{queue: remuxQueue, logger: logger}
 	mux.HandleFunc("GET /remux", requireAuthMedia(authSvc, rmx.create))
@@ -140,7 +142,7 @@ func NewServer(
 
 	// Admin panel (phone, FORM login → admin session cookie). Open pre-gate:
 	// it's a separate credential system and how the operator manages profiles.
-	adminH := &adminHandlers{svc: authSvc, logger: logger}
+	adminH := &adminHandlers{svc: authSvc, logger: logger, tg: tgLinks, tv: tvSvc, version: version, youtubeOn: ytClient != nil}
 	mux.HandleFunc("GET /admin", adminH.page)
 	mux.HandleFunc("POST /admin/login", adminH.login)
 	mux.HandleFunc("POST /admin/logout", adminH.logout)
@@ -148,6 +150,17 @@ func NewServer(
 	mux.HandleFunc("POST /admin/profiles", adminH.createProfile)
 	mux.HandleFunc("PATCH /admin/profiles/{id}", adminH.patchProfile)
 	mux.HandleFunc("DELETE /admin/profiles/{id}", adminH.deleteProfile)
+	mux.HandleFunc("GET /admin/profiles/{id}/devices", adminH.listDevices)
+	mux.HandleFunc("DELETE /admin/profiles/{id}/devices/{token_id}", adminH.revokeDevice)
+	mux.HandleFunc("DELETE /admin/profiles/{id}/devices", adminH.revokeAll)
+	mux.HandleFunc("GET /admin/profiles/{id}/telegram", adminH.listTelegram)
+	mux.HandleFunc("DELETE /admin/profiles/{id}/telegram/{chat_id}", adminH.unlinkTelegram)
+	mux.HandleFunc("GET /admin/status", adminH.status)
+	mux.HandleFunc("POST /admin/tv/resync", adminH.tvResync)
+	mux.HandleFunc("GET /admin/tv/channels", adminH.tvChannels)
+	mux.HandleFunc("GET /admin/tv/epg/search", adminH.tvEpgSearch)
+	mux.HandleFunc("PUT /admin/tv/channels/{cid}/epg", adminH.tvSetEpg)
+	mux.HandleFunc("DELETE /admin/tv/channels/{cid}/epg", adminH.tvClearEpg)
 
 	authH := &authHandlers{svc: authSvc}
 	mux.HandleFunc("POST /api/v1/auth/pin", authH.pinLogin) // open pre-gate: TV PIN login
@@ -155,6 +168,7 @@ func NewServer(
 	// PIN (or the admin panel). logout + devices stay (gated, useful for
 	// "switch profile" / device management).
 	mux.HandleFunc("POST /api/v1/auth/logout", requireAuth(authSvc, authH.logout))
+	mux.HandleFunc("GET /api/v1/auth/me", requireAuth(authSvc, authH.me))
 	mux.HandleFunc("GET /api/v1/auth/devices", requireAuth(authSvc, authH.listDevices))
 	mux.HandleFunc("DELETE /api/v1/auth/devices/{token_id}", requireAuth(authSvc, authH.revokeDevice))
 	mux.HandleFunc("DELETE /api/v1/auth/devices", requireAuth(authSvc, authH.revokeOthers))
@@ -216,27 +230,27 @@ func NewServer(
 	// sign-in, feeds and SABR tracks; /play hands two track URLs to a mux2
 	// remux job so the TV plays it through the ordinary /remux path.
 	ytH := &ytHandlers{yt: ytClient, queue: remuxQueue}
-	mux.HandleFunc("GET /api/v1/yt/account", requireAuth(authSvc, ytH.account))
-	mux.HandleFunc("POST /api/v1/yt/account/login", requireAuth(authSvc, ytH.login))
-	mux.HandleFunc("DELETE /api/v1/yt/account", requireAuth(authSvc, ytH.unlink))
-	mux.HandleFunc("GET /api/v1/yt/browse/{page}", requireAuth(authSvc, ytH.browse))
-	mux.HandleFunc("GET /api/v1/yt/search", requireAuth(authSvc, ytH.search))
-	mux.HandleFunc("GET /api/v1/yt/video/{id}", requireAuth(authSvc, ytH.video))
-	mux.HandleFunc("GET /api/v1/yt/play/{id}", requireAuth(authSvc, ytH.play))
-	mux.HandleFunc("GET /api/v1/yt/segments/{id}", requireAuth(authSvc, ytH.segments))
-	mux.HandleFunc("POST /api/v1/yt/watch/{id}", requireAuth(authSvc, ytH.watch))
+	mux.HandleFunc("GET /api/v1/yt/account", requireAuth(authSvc, requireFeature("youtube", ytH.account)))
+	mux.HandleFunc("POST /api/v1/yt/account/login", requireAuth(authSvc, requireFeature("youtube", ytH.login)))
+	mux.HandleFunc("DELETE /api/v1/yt/account", requireAuth(authSvc, requireFeature("youtube", ytH.unlink)))
+	mux.HandleFunc("GET /api/v1/yt/browse/{page}", requireAuth(authSvc, requireFeature("youtube", ytH.browse)))
+	mux.HandleFunc("GET /api/v1/yt/search", requireAuth(authSvc, requireFeature("youtube", ytH.search)))
+	mux.HandleFunc("GET /api/v1/yt/video/{id}", requireAuth(authSvc, requireFeature("youtube", ytH.video)))
+	mux.HandleFunc("GET /api/v1/yt/play/{id}", requireAuth(authSvc, requireFeature("youtube", ytH.play)))
+	mux.HandleFunc("GET /api/v1/yt/segments/{id}", requireAuth(authSvc, requireFeature("youtube", ytH.segments)))
+	mux.HandleFunc("POST /api/v1/yt/watch/{id}", requireAuth(authSvc, requireFeature("youtube", ytH.watch)))
 
 	// Live TV (docs/tv.md).
 	tvH := &tvHandlers{svc: tvSvc, dataDir: dataDir, logoHTTP: &http.Client{Timeout: 15 * time.Second}}
 	mux.HandleFunc("GET /img/tv/{id}", tvH.logo)
-	mux.HandleFunc("GET /api/v1/tv/meta", requireAuth(authSvc, tvH.meta))
-	mux.HandleFunc("GET /api/v1/tv/channels", requireAuth(authSvc, tvH.channels))
-	mux.HandleFunc("GET /api/v1/tv/channels/{id}/play", requireAuth(authSvc, tvH.play))
-	mux.HandleFunc("GET /api/v1/tv/channels/{id}/epg", requireAuth(authSvc, tvH.epg))
-	mux.HandleFunc("GET /api/v1/tv/now", requireAuth(authSvc, tvH.now))
-	mux.HandleFunc("POST /api/v1/tv/channels/{id}/fail", requireAuth(authSvc, tvH.report))
-	mux.HandleFunc("PUT /api/v1/tv/favorites/{id}", requireAuth(authSvc, tvH.favorite(true)))
-	mux.HandleFunc("DELETE /api/v1/tv/favorites/{id}", requireAuth(authSvc, tvH.favorite(false)))
+	mux.HandleFunc("GET /api/v1/tv/meta", requireAuth(authSvc, requireFeature("tv", tvH.meta)))
+	mux.HandleFunc("GET /api/v1/tv/channels", requireAuth(authSvc, requireFeature("tv", tvH.channels)))
+	mux.HandleFunc("GET /api/v1/tv/channels/{id}/play", requireAuth(authSvc, requireFeature("tv", tvH.play)))
+	mux.HandleFunc("GET /api/v1/tv/channels/{id}/epg", requireAuth(authSvc, requireFeature("tv", tvH.epg)))
+	mux.HandleFunc("GET /api/v1/tv/now", requireAuth(authSvc, requireFeature("tv", tvH.now)))
+	mux.HandleFunc("POST /api/v1/tv/channels/{id}/fail", requireAuth(authSvc, requireFeature("tv", tvH.report)))
+	mux.HandleFunc("PUT /api/v1/tv/favorites/{id}", requireAuth(authSvc, requireFeature("tv", tvH.favorite(true))))
+	mux.HandleFunc("DELETE /api/v1/tv/favorites/{id}", requireAuth(authSvc, requireFeature("tv", tvH.favorite(false))))
 
 	tgApp := &tgAppHandlers{bot: tgBot, auth: authSvc, sync: syncSvc, cat: catalogSvc}
 	mux.HandleFunc("POST /api/v1/tg/auth", tgApp.login) // open pre-gate: initData is the credential

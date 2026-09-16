@@ -111,22 +111,41 @@ The client stamps it in `mediaUrl()` (`web/src/core/api.ts`).
 
 Phone-oriented HTML shell served by `adminHandlers.page` (modern Chrome; not
 the TV ES5 bundle). Its JS probes `GET /admin/profiles`: 401 → login form,
-200 → roster.
+200 → three tabs. Every `/admin/*` JSON route needs the `promin_admin` cookie
+(an "admin" session, 2 h).
 
 - `POST /admin/login` `{password}` → `AdminLogin`: per-IP limiter
-  `"admin|<ip>"` (5 / 15 min), argon2 verify against user 1, session of type
-  `"admin"`, delivered as cookie `promin_admin` (`Path=/admin`, `HttpOnly`,
-  `Secure`, `SameSite=Strict`, 2 h). Response `{ok: true}`.
-- `POST /admin/logout` deletes the session and clears the cookie.
-- `GET /admin/profiles` → `{profiles: [{id, login, is_admin, has_pin}]}`.
-- `POST /admin/profiles` `{login, pin?}` → 201 `{id}`. A taken PIN rolls the
-  new profile back (409 `pin_taken`); a taken login is 409 `login_taken`.
-- `PATCH /admin/profiles/{id}` `{login?, pin?}` — `pin: ""` clears, six digits
-  sets, absent leaves untouched. 204.
-- `DELETE /admin/profiles/{id}` — 204; deleting user 1 is 403.
+  (5 failures / 15 min) plus a global one (20 / 15 min); cookie
+  `HttpOnly; Secure; SameSite=Strict; Path=/admin`. `POST /admin/logout`.
+- **Profiles**: `GET/POST /admin/profiles`, `PATCH/DELETE /admin/profiles/{id}`
+  (`login`, `pin`, `features`). A row expands into: feature switches, TV
+  country chips, the profile's devices (`GET /admin/profiles/{id}/devices`,
+  `DELETE …/devices/{token_id}`, `DELETE …/devices` = all), its Telegram
+  chats (`GET …/telegram`, `DELETE …/telegram/{chat_id}`).
+- **TV** (`docs/tv.md`): `GET /admin/status` (version, TV/YouTube flags, TV
+  counts and sync times), `POST /admin/tv/resync {kind: catalogue|check|epg}`
+  (background, one at a time per kind), the manual EPG mapping —
+  `GET /admin/tv/channels?q=&country=&noepg=1`, `GET /admin/tv/epg/search?q=`
+  (feed channels by display name), `PUT /admin/tv/channels/{id}/epg
+  {source, xmltv_id}` (`xmltv_id: ""` = pinned to no guide) and `DELETE` (back
+  to name matching). Every mapping change starts an EPG rebuild.
+- **Status**: the same `GET /admin/status` rendered as a card, link to `/logs`.
 
-Every `/admin/*` JSON route runs `gate`: the cookie must resolve to a session
-with `device_type == "admin"` whose user `IsAdmin()`.
+### Per-profile feature access
+
+`users.features` is JSON `{online, torrents, youtube, tv, tv_countries}`;
+`''` (the default for every existing and new profile) means everything the
+server offers, the admin (user 1) always has everything (`store.Features`,
+`User.Features()`). Enforcement is server-side: `requireFeature(name)` wraps
+the route groups — `online` → `/api/v1/sources/online*`, `torrents` →
+`/api/v1/sources/torrents`, `/api/v1/torrents/*`, `/stream/*`, `youtube` →
+`/api/v1/yt/*`, `tv` → `/api/v1/tv/*` — answering `403 feature_disabled`.
+`tv_countries` (empty = all configured) narrows `/tv/meta`, `/tv/channels`
+and refuses `/tv/channels/{id}/play` for another country (`403
+country_blocked`). Clients only hide what they may not use: the PIN login
+response and `GET /api/v1/auth/me` carry `features`; the TV drops the
+YouTube/TV rail items and the "Watch"/"Torrents" buttons, the Mini App its
+YouTube tab (`web/src/core/features.ts`, `store.loadPing`).
 
 ## 6. The hard gate
 

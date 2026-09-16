@@ -162,11 +162,11 @@ export function setLang(lang: Lang): void {
   setState({ lang });
 }
 
-// Whether to show the YouTube tab: a server-level flag, read once.
+// Whether to show the YouTube tab: the server has the sidecar AND the admin
+// allowed it for this profile.
 export function loadPing(): void {
-  api
-    .getPing()
-    .then((p) => setState({ youtube: !!p.youtube }))
+  Promise.all([api.getPing(), api.getMe().catch(() => ({}) as { features?: { youtube?: boolean } })])
+    .then(([p, me]) => setState({ youtube: !!p.youtube && !(me.features && me.features.youtube === false) }))
     .catch(() => {});
 }
 

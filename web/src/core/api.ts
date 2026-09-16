@@ -688,6 +688,12 @@ export interface AuthUser {
   id: number;
   login: string;
   is_admin?: boolean;
+  features?: { online: boolean; torrents: boolean; youtube: boolean; tv: boolean; tv_countries: string[] };
+}
+
+// The session's profile and what the admin allowed it (docs/auth.md).
+export function getMe(): Promise<AuthUser> {
+  return get<AuthUser>('/auth/me');
 }
 
 export interface AuthResponse {

@@ -47,7 +47,20 @@ func (h *authHandlers) pinLogin(w http.ResponseWriter, r *http.Request) {
 			"id":       result.User.ID,
 			"login":    result.User.Login,
 			"is_admin": result.User.IsAdmin(),
+			"features": result.User.Features(),
 		},
+	})
+}
+
+// me: GET /api/v1/auth/me → the session's profile and what it may use, so
+// the TV / Mini App hide sections the admin switched off (docs/auth.md).
+func (h *authHandlers) me(w http.ResponseWriter, r *http.Request) {
+	info, _ := authFrom(r)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":       info.User.ID,
+		"login":    info.User.Login,
+		"is_admin": info.User.IsAdmin(),
+		"features": info.User.Features(),
 	})
 }
 

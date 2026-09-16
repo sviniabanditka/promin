@@ -13,6 +13,7 @@
 //
 // ES5 target (swc): plain functions, no async/await/for-of/spread/find/includes.
 
+import { torrentsEnabled } from '../core/features';
 import Controller, { on } from '../core/controller';
 import { Scroll } from '../core/scroll';
 import { t } from '../core/i18n';
@@ -253,7 +254,7 @@ export function mountLibrary(container: HTMLElement): ScreenInstance {
     addLane(t('library.playlists'), plNodes);
 
     // Downloads (torrents moved off the rail into the Library).
-    addLane(t('menu.torrents'), [moreTile(t('catalog.more'), function () { openTorrents(); })]);
+    if (torrentsEnabled()) addLane(t('menu.torrents'), [moreTile(t('catalog.more'), function () { openTorrents(); })]);
 
     // Hidden under a pushed screen (deep link to a playlist / bookmarks lands
     // before the lanes load): leave the controller alone, resume() takes it.

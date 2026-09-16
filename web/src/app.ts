@@ -12,10 +12,10 @@ import { mountHome } from './screens/home';
 import { mountPinEntry } from './screens/pin';
 import { openTitle, openRoute, openYt, openYtVideo } from './screens/nav';
 import { Direction } from './core/nav';
-import { setFeatures } from './core/features';
+import { setFeatures, setUserFeatures } from './core/features';
 import { dispatchRemote, RemoteAction } from './core/player/remote';
 import { isLogged, clearLocal, onAuthChange } from './core/auth';
-import { setDeadSessionHook, getPing } from './core/api';
+import { setDeadSessionHook, getPing, getMe } from './core/api';
 import * as sync from './core/sync';
 import * as screensaver from './core/screensaver';
 import { initSettings, syncFromServer, setNightMode, isNightMode, setScreensaverChangedHook, applyLocalSetting, reportDeviceSettings } from './core/settings';
@@ -218,7 +218,19 @@ function boot(): void {
   // Tell the server this TV's device-local settings (for the Mini App).
   if (isLogged()) reportDeviceSettings();
   onAuthChange(function () {
-    if (isLogged()) reportDeviceSettings();
+    if (isLogged()) {
+      reportDeviceSettings();
+      getMe().then(
+        function (me) {
+          setUserFeatures(me && me.features ? me.features : null);
+        },
+        function () {
+          /* keep the last known set */
+        }
+      );
+    } else {
+      setUserFeatures(null);
+    }
   });
   routeInitial();
 }
@@ -231,6 +243,16 @@ function startUpdateWatch(): void {
     getPing().then(
       function (p) {
         setFeatures({ youtube: !!(p && p.youtube), tv: !!(p && p.tv) });
+        if (isLogged()) {
+          getMe().then(
+            function (me) {
+              setUserFeatures(me && me.features ? me.features : null);
+            },
+            function () {
+              /* keep the last known set */
+            }
+          );
+        }
         const v = p && p.version ? p.version : '';
         if (!v) return;
         if (!known) {

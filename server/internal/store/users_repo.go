@@ -27,6 +27,8 @@ type User struct {
 	// (not enterable — the safe closed-by-default state). Never surfaced to
 	// clients; only used to resolve a PIN to a profile in O(1).
 	PinLookup sql.NullString
+	// FeaturesRaw is users.features (JSON, '' = everything); see Features().
+	FeaturesRaw string
 }
 
 // IsAdmin reports whether u is the first registered user, per the
@@ -58,11 +60,11 @@ func (r *UsersRepo) Create(login, passHash string, createdAt int64) (User, error
 	return User{ID: id, Login: login, PassHash: passHash, CreatedAt: createdAt}, nil
 }
 
-const userCols = `id, login, pass_hash, created_at, pin_lookup`
+const userCols = `id, login, pass_hash, created_at, pin_lookup, features`
 
 func scanUser(row interface{ Scan(...any) error }) (User, error) {
 	var u User
-	err := row.Scan(&u.ID, &u.Login, &u.PassHash, &u.CreatedAt, &u.PinLookup)
+	err := row.Scan(&u.ID, &u.Login, &u.PassHash, &u.CreatedAt, &u.PinLookup, &u.FeaturesRaw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, ErrNotFound
 	}
@@ -123,6 +125,12 @@ func (r *UsersRepo) UpdateLogin(id int64, login string) error {
 }
 
 // UpdatePassHash resets a user's argon2 password hash (admin password reset).
+// UpdateFeatures stores the profile's feature JSON ('' = everything).
+func (r *UsersRepo) UpdateFeatures(id int64, raw string) error {
+	_, err := r.db.Exec(`UPDATE users SET features = ? WHERE id = ?`, raw, id)
+	return err
+}
+
 func (r *UsersRepo) UpdatePassHash(id int64, hash string) error {
 	_, err := r.db.Exec(`UPDATE users SET pass_hash = ? WHERE id = ?`, hash, id)
 	return err

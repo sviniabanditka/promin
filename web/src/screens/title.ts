@@ -10,6 +10,7 @@
 // season, sync.toggleBookmark, online resolve→openPlayer, torrent add→openPlayer,
 // playlists, resume timecodes.
 
+import { onlineEnabled, torrentsEnabled } from '../core/features';
 import Controller, { on, trigger } from '../core/controller';
 import { Scroll } from '../core/scroll';
 import { t } from '../core/i18n';
@@ -866,9 +867,10 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
       if (rp.position > 0) label += ' · ' + fmtClock(rp.position);
       continueBtn = makeAction(ICON_PLAY, label, true).btn;
     }
-    const watch = makeAction(ICON_PLAY, t('title.watch'), !rp).btn;
+    // Per-profile access (admin panel): a switched-off section has no button.
+    const watch = onlineEnabled() ? makeAction(ICON_PLAY, t('title.watch'), !rp).btn : null;
     // "hover:enter" is wired below, once season data is available.
-    const torrents = makeAction(ICON_TORRENT, t('title.torrents'), false).btn;
+    const torrents = torrentsEnabled() ? makeAction(ICON_TORRENT, t('title.torrents'), false).btn : null;
 
     // ---- trailer (YouTube) — only when the backend supplied trailers -------
     if (card.trailers && card.trailers.length) {
@@ -952,9 +954,11 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
 
     // The two action buttons are a tab selector for the in-place watch modal:
     // "Дивитись" opens it on the online tab, "Торренти" on the torrents tab.
-    on(watch, 'hover:enter', function () {
-      openWatchModal(card, seasons, 'online');
-    });
+    if (watch) {
+      on(watch, 'hover:enter', function () {
+        openWatchModal(card, seasons, 'online');
+      });
+    }
     if (continueBtn && rp) {
       on(continueBtn, 'hover:enter', function () {
         // Last played via torrent → reopen that torrent file, not an online source.
@@ -965,12 +969,14 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
         } catch (e) {
           /* ignore */
         }
-        openWatchModal(card, seasons, lastTorrent ? 'torrents' : 'online', { season: rp.season, episode: rp.episode });
+        openWatchModal(card, seasons, (lastTorrent || !watch) && torrents ? 'torrents' : 'online', { season: rp.season, episode: rp.episode });
       });
     }
-    on(torrents, 'hover:enter', function () {
-      openWatchModal(card, seasons, 'torrents');
-    });
+    if (torrents) {
+      on(torrents, 'hover:enter', function () {
+        openWatchModal(card, seasons, 'torrents');
+      });
+    }
     openEpisode = function (season: number | null, episode: number | null) {
       openWatchModal(card, seasons, 'online', { season: season, episode: episode });
     };
@@ -992,7 +998,7 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
       down: function () {
         // Open the modal on the tab of whichever button is focused (Торренти
         // → torrents), not always online.
-        openWatchModal(card, seasons, lastAction === torrents ? 'torrents' : 'online');
+        openWatchModal(card, seasons, (lastAction === torrents && torrents) || !watch ? 'torrents' : 'online');
       },
       back: function () {
         router.back();

@@ -6,19 +6,27 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/sviniabanditka/promin/server/internal/auth"
 	"github.com/sviniabanditka/promin/server/internal/store"
+	"github.com/sviniabanditka/promin/server/internal/tv"
 )
 
 // adminHandlers serve the phone-facing admin panel at /admin: a FORM login
-// (password → real session cookie, NOT Basic Auth) and profile CRUD. The admin
-// is user 1 (argon2 password). Every /admin/* JSON route requires an "admin"
-// session. The HTML/JS target is modern mobile Chrome — no ES5 constraint here.
+// (password → real session cookie, NOT Basic Auth), profile CRUD with
+// per-profile feature access, a profile's devices and Telegram chats, and the
+// live-TV maintenance (status, resync, manual EPG mapping). The admin is user 1
+// (argon2 password). Every /admin/* JSON route requires an "admin" session.
+// The HTML/JS target is modern mobile Chrome — no ES5 constraint here.
 type adminHandlers struct {
-	svc    *auth.Service
-	logger *slog.Logger
+	svc       *auth.Service
+	logger    *slog.Logger
+	tg        *store.TelegramRepo // nil-safe: no Telegram → empty lists
+	tv        *tv.Service         // nil / disabled → TV routes answer 503
+	version   string
+	youtubeOn bool
 }
 
 const adminCookie = "promin_admin"
@@ -66,11 +74,19 @@ func (h *adminHandlers) logout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// ---- profiles ---------------------------------------------------------------------
+
 type profileView struct {
-	ID      int64  `json:"id"`
-	Login   string `json:"login"`
-	IsAdmin bool   `json:"is_admin"`
-	HasPIN  bool   `json:"has_pin"`
+	ID       int64          `json:"id"`
+	Login    string         `json:"login"`
+	IsAdmin  bool           `json:"is_admin"`
+	HasPIN   bool           `json:"has_pin"`
+	Features store.Features `json:"features"`
+	// Restricted: users.features is set (not the "everything" default).
+	Restricted bool  `json:"restricted"`
+	Devices    int   `json:"devices"`
+	LastSeen   int64 `json:"last_seen"` // newest session activity, 0 = never
+	Telegram   int   `json:"telegram"`
 }
 
 func (h *adminHandlers) listProfiles(w http.ResponseWriter, r *http.Request) {
@@ -84,7 +100,24 @@ func (h *adminHandlers) listProfiles(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]profileView, 0, len(users))
 	for _, u := range users {
-		out = append(out, profileView{ID: u.ID, Login: u.Login, IsAdmin: u.IsAdmin(), HasPIN: u.PinLookup.Valid})
+		v := profileView{ID: u.ID, Login: u.Login, IsAdmin: u.IsAdmin(), HasPIN: u.PinLookup.Valid, Features: u.Features(), Restricted: strings.TrimSpace(u.FeaturesRaw) != ""}
+		if devs, err := h.svc.ListDevices(u.ID, ""); err == nil {
+			for _, d := range devs {
+				if d.DeviceType == "admin" {
+					continue
+				}
+				v.Devices++
+				if d.LastSeen > v.LastSeen {
+					v.LastSeen = d.LastSeen
+				}
+			}
+		}
+		if h.tg != nil {
+			if links, err := h.tg.List(u.ID); err == nil {
+				v.Telegram = len(links)
+			}
+		}
+		out = append(out, v)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"profiles": out})
 }
@@ -130,8 +163,9 @@ func (h *adminHandlers) patchProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Login *string `json:"login"`
-		PIN   *string `json:"pin"` // "" clears the PIN, 6 digits sets it, absent = untouched
+		Login    *string         `json:"login"`
+		PIN      *string         `json:"pin"`      // "" clears the PIN, 6 digits sets it, absent = untouched
+		Features *store.Features `json:"features"` // whole object; absent = untouched
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeBadRequest(w, "невірне тіло")
@@ -157,6 +191,32 @@ func (h *adminHandlers) patchProfile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if req.Features != nil {
+		if id == 1 {
+			writeError(w, http.StatusForbidden, "forbidden", "адмін має все")
+			return
+		}
+		f := *req.Features
+		if h.tv != nil {
+			// Keep only configured countries; bad codes would silently hide everything.
+			var keep []string
+			for _, c := range f.TVCountries {
+				for _, have := range h.tv.Countries() {
+					if strings.EqualFold(c, have) {
+						keep = append(keep, have)
+					}
+				}
+			}
+			f.TVCountries = keep
+		}
+		if f.TVCountries == nil {
+			f.TVCountries = []string{}
+		}
+		if err := h.svc.Users().UpdateFeatures(id, f.JSON()); err != nil {
+			writeInternal(w, err)
+			return
+		}
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -177,6 +237,214 @@ func (h *adminHandlers) deleteProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ---- devices / telegram of a profile ----------------------------------------------
+
+func (h *adminHandlers) listDevices(w http.ResponseWriter, r *http.Request) {
+	if !h.gate(w, r) {
+		return
+	}
+	id, ok := adminID(w, r)
+	if !ok {
+		return
+	}
+	devs, err := h.svc.ListDevices(id, "")
+	if err != nil {
+		writeInternal(w, err)
+		return
+	}
+	out := []map[string]any{}
+	for _, d := range devs {
+		if d.DeviceType == "admin" {
+			continue
+		}
+		out = append(out, map[string]any{"token_id": d.TokenID, "device_name": d.DeviceName, "device_type": d.DeviceType, "created_at": d.CreatedAt, "last_seen": d.LastSeen})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"devices": out})
+}
+
+func (h *adminHandlers) revokeDevice(w http.ResponseWriter, r *http.Request) {
+	if !h.gate(w, r) {
+		return
+	}
+	id, ok := adminID(w, r)
+	if !ok {
+		return
+	}
+	if err := h.svc.RevokeDevice(id, r.PathValue("token_id"), "", true); err != nil {
+		writeAuthError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// revokeAll: every session of the profile (TV, Mini App) is logged out.
+func (h *adminHandlers) revokeAll(w http.ResponseWriter, r *http.Request) {
+	if !h.gate(w, r) {
+		return
+	}
+	id, ok := adminID(w, r)
+	if !ok || id == 1 {
+		if ok {
+			writeError(w, http.StatusForbidden, "forbidden", "не для адміна")
+		}
+		return
+	}
+	if err := h.svc.RevokeAll(id); err != nil {
+		writeInternal(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *adminHandlers) listTelegram(w http.ResponseWriter, r *http.Request) {
+	if !h.gate(w, r) {
+		return
+	}
+	id, ok := adminID(w, r)
+	if !ok {
+		return
+	}
+	links := []store.TelegramLink{}
+	if h.tg != nil {
+		if l, err := h.tg.List(id); err == nil && l != nil {
+			links = l
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"links": links})
+}
+
+func (h *adminHandlers) unlinkTelegram(w http.ResponseWriter, r *http.Request) {
+	if !h.gate(w, r) {
+		return
+	}
+	id, ok := adminID(w, r)
+	if !ok {
+		return
+	}
+	chat, err := strconv.ParseInt(r.PathValue("chat_id"), 10, 64)
+	if err != nil || h.tg == nil {
+		writeBadRequest(w, "невірний chat_id")
+		return
+	}
+	if err := h.tg.UnlinkChatOfUser(id, chat); err != nil {
+		writeInternal(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ---- status / live TV -----------------------------------------------------------------
+
+func (h *adminHandlers) status(w http.ResponseWriter, r *http.Request) {
+	if !h.gate(w, r) {
+		return
+	}
+	out := map[string]any{"version": h.version, "youtube": h.youtubeOn, "tv": h.tv != nil && h.tv.Enabled(), "now": time.Now().Unix()}
+	if h.tv != nil && h.tv.Enabled() {
+		out["countries"] = h.tv.Countries()
+		if st, err := h.tv.Repo().Stats(); err == nil {
+			out["tv_stats"] = st
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (h *adminHandlers) tvOn(w http.ResponseWriter) bool {
+	if h.tv == nil || !h.tv.Enabled() {
+		writeError(w, http.StatusServiceUnavailable, "tv_disabled", "розділ ТВ вимкнено")
+		return false
+	}
+	return true
+}
+
+// tvResync: POST /admin/tv/resync {kind: "catalogue"|"check"|"epg"}
+func (h *adminHandlers) tvResync(w http.ResponseWriter, r *http.Request) {
+	if !h.gate(w, r) || !h.tvOn(w) {
+		return
+	}
+	var req struct {
+		Kind string `json:"kind"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || (req.Kind != "catalogue" && req.Kind != "check" && req.Kind != "epg") {
+		writeBadRequest(w, "kind: catalogue | check | epg")
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"started": h.tv.Resync(req.Kind)})
+}
+
+// tvChannels: GET /admin/tv/channels?q=&country=&noepg=1
+func (h *adminHandlers) tvChannels(w http.ResponseWriter, r *http.Request) {
+	if !h.gate(w, r) || !h.tvOn(w) {
+		return
+	}
+	q := r.URL.Query()
+	items, err := h.tv.Repo().AdminChannels(q.Get("q"), strings.ToUpper(q.Get("country")), q.Get("noepg") == "1", 200)
+	if err != nil {
+		writeInternal(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+// tvEpgSearch: GET /admin/tv/epg/search?q= — feed channels by display name.
+func (h *adminHandlers) tvEpgSearch(w http.ResponseWriter, r *http.Request) {
+	if !h.gate(w, r) || !h.tvOn(w) {
+		return
+	}
+	items, err := h.tv.Repo().SearchEPGChannels(r.URL.Query().Get("q"), 40)
+	if err != nil {
+		writeInternal(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+// tvSetEpg: PUT /admin/tv/channels/{cid}/epg {source, xmltv_id} — xmltv_id ""
+// pins "no guide". The guide is rebuilt in the background right away.
+func (h *adminHandlers) tvSetEpg(w http.ResponseWriter, r *http.Request) {
+	if !h.gate(w, r) || !h.tvOn(w) {
+		return
+	}
+	cid := r.PathValue("cid")
+	var req struct {
+		Source  string `json:"source"`
+		XMLTVID string `json:"xmltv_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || !tvChannelID.MatchString(cid) {
+		writeBadRequest(w, "невірне тіло")
+		return
+	}
+	if req.XMLTVID != "" && req.Source == "" {
+		writeBadRequest(w, "потрібне джерело")
+		return
+	}
+	if _, err := h.tv.Repo().Channel(cid); err != nil {
+		writeNotFound(w, "not_found", "каналу немає")
+		return
+	}
+	if err := h.tv.Repo().SetEPGOverride(store.EPGOverride{ChannelID: cid, Source: req.Source, XMLTVID: req.XMLTVID}); err != nil {
+		writeInternal(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"resync": h.tv.Resync("epg")})
+}
+
+func (h *adminHandlers) tvClearEpg(w http.ResponseWriter, r *http.Request) {
+	if !h.gate(w, r) || !h.tvOn(w) {
+		return
+	}
+	cid := r.PathValue("cid")
+	if !tvChannelID.MatchString(cid) {
+		writeBadRequest(w, "невірний id")
+		return
+	}
+	if err := h.tv.Repo().DeleteEPGOverride(cid); err != nil {
+		writeInternal(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"resync": h.tv.Resync("epg")})
 }
 
 func (h *adminHandlers) mapWriteErr(w http.ResponseWriter, err error) {
@@ -200,7 +468,7 @@ func adminID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 }
 
 // page serves the always-open admin SPA shell. Its JS probes /admin/profiles:
-// 401 → login form, 200 → roster.
+// 401 → login form, 200 → panel.
 func (h *adminHandlers) page(w http.ResponseWriter, r *http.Request) {
 	noFraming(w)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

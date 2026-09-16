@@ -76,6 +76,12 @@ the feed's "1+1 Україна", not the bare "1+1". Roughly two thirds of UA an
 channels get a guide; the US free-to-air long tail mostly has none, and that
 is shown as "no guide", not as an error.
 
+Manual mapping (admin panel, `docs/auth.md` §5): `tv_epg_overrides` pins a
+channel to `<source>:<xmltv id>` or to no guide; overrides win over matching
+and the channel is skipped in every other source. `tv_epg_channels` keeps each
+feed's channel list (id + display names) for the admin's search. Per-profile
+`tv_countries` narrows the section to a subset of the configured countries.
+
 Storage: `tv_programs(channel_id, start, stop, title, descr)` for −12 h…+3 d,
 rebuilt wholesale every 12 h (`tv_meta.epg_at`); `tv_channels.epg_id`
 remembers `<source>:<xmltv id>` for debugging a wrong match. ~60k rows.
@@ -94,8 +100,6 @@ remembers `<source>:<xmltv id>` for debugging a wrong match. ~60k rows.
 
 ## Not done yet
 
-- Guide for the channels name-matching misses (a manual `epg_id` override
-  table, or iptv-org/epg's per-site channel maps as a bridge).
 - "Now" on the grid tiles (the overlay has it; the grid does not yet).
 - Import of a provider's M3U / Xtream Codes (catchup, archive).
 - Mini App / bot surfaces ("switch the TV to this channel").

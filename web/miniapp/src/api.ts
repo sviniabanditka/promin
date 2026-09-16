@@ -298,6 +298,8 @@ export const ytSearch = (q: string) => get<YtFeed>('/yt/search', { q, lang });
 export const getPing = () => get<{ youtube?: boolean }>('/ping');
 
 export const tgAuth = (init_data: string) => post<{ token: string; user: AuthUser }>('/tg/auth', { init_data });
+// The profile's allowed features (admin panel).
+export const getMe = () => get<{ features?: { youtube?: boolean; tv?: boolean; online?: boolean; torrents?: boolean } }>('/auth/me');
 export const getDevices = () => get<{ devices: Device[] }>('/tg/devices');
 export const send = (body: SendBody) => post<unknown>('/tg/send', body);
 

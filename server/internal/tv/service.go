@@ -68,6 +68,44 @@ type Service struct {
 	mu         sync.Mutex
 	countries_ []Country // names/flags from countries.json, cached
 	categories []Category
+	busy       sync.Map // admin-triggered resyncs in flight, by kind
+}
+
+// Countries configured (upper-case ISO codes).
+func (s *Service) Countries() []string {
+	out := make([]string, 0, len(s.countries))
+	for _, c := range s.countries {
+		out = append(out, strings.ToUpper(c))
+	}
+	return out
+}
+
+// Resync runs one maintenance job in the background (admin panel): "catalogue"
+// (sync + liveness), "check" (liveness) or "epg". False when already running.
+func (s *Service) Resync(kind string) bool {
+	if _, running := s.busy.LoadOrStore(kind, true); running {
+		return false
+	}
+	go func() {
+		defer s.busy.Delete(kind)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
+		var err error
+		switch kind {
+		case "catalogue":
+			if err = s.Sync(ctx); err == nil {
+				s.Check(ctx)
+			}
+		case "check":
+			s.Check(ctx)
+		case "epg":
+			err = s.SyncEPG(ctx)
+		}
+		if err != nil {
+			s.log.Warn("tv: resync failed", "kind", kind, "error", err)
+		}
+	}()
+	return true
 }
 
 // New: countries is the ISO list to keep (e.g. UA,RU,GB,US); relay wraps an
@@ -405,8 +443,9 @@ func firstNonEmpty(a, b string) string {
 // ---- queries ------------------------------------------------------------------
 
 // Meta lists countries and categories with alive-channel counts.
-func (s *Service) Meta() ([]Country, []Category, error) {
-	byCountry, byCat, err := s.repo.Counts()
+// allowed = the profile's country restriction (nil = none).
+func (s *Service) Meta(allowed []string) ([]Country, []Category, error) {
+	byCountry, byCat, err := s.repo.Counts(allowed)
 	if err != nil {
 		return nil, nil, err
 	}

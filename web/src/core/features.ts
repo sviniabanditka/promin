@@ -10,6 +10,51 @@ interface Features {
   tv?: boolean;
 }
 
+// What the admin allowed THIS profile (GET /auth/me → features). Missing =
+// everything: a first boot before /me answers must not hide sections.
+export interface UserFeatures {
+  online?: boolean;
+  torrents?: boolean;
+  youtube?: boolean;
+  tv?: boolean;
+  tv_countries?: string[];
+}
+
+const USER_KEY = 'promin:features:user';
+let userCached: UserFeatures | null = null;
+
+function loadUser(): UserFeatures {
+  if (userCached) return userCached;
+  try {
+    userCached = JSON.parse(window.localStorage.getItem(USER_KEY) || '{}') as UserFeatures;
+  } catch (e) {
+    userCached = {};
+  }
+  return userCached;
+}
+
+export function setUserFeatures(f: UserFeatures | null): void {
+  userCached = f || {};
+  try {
+    window.localStorage.setItem(USER_KEY, JSON.stringify(userCached));
+  } catch (e) {
+    /* in-memory copy still applies */
+  }
+}
+
+function allowed(key: 'online' | 'torrents' | 'youtube' | 'tv'): boolean {
+  const v = loadUser()[key];
+  return v === undefined || !!v;
+}
+
+export function onlineEnabled(): boolean {
+  return allowed('online');
+}
+
+export function torrentsEnabled(): boolean {
+  return allowed('torrents');
+}
+
 let cached: Features | null = null;
 
 function load(): Features {
@@ -32,9 +77,9 @@ export function setFeatures(f: Features): void {
 }
 
 export function youtubeEnabled(): boolean {
-  return !!load().youtube;
+  return !!load().youtube && allowed('youtube');
 }
 
 export function tvEnabled(): boolean {
-  return !!load().tv;
+  return !!load().tv && allowed('tv');
 }
