@@ -347,8 +347,8 @@ func (s *Service) Check(ctx context.Context) {
 		go func(st store.TVStream) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			ok := probe(ctx, client, st)
-			_ = s.repo.MarkStream(st.ID, ok)
+			ok, cors := probe(ctx, client, st)
+			_ = s.repo.MarkStream(st.ID, ok, cors)
 			mu.Lock()
 			if ok {
 				alive++
@@ -363,12 +363,14 @@ func (s *Service) Check(ctx context.Context) {
 	s.log.Info("tv: streams checked", "alive", alive, "dead", dead, "ms", time.Since(t0).Milliseconds())
 }
 
-func probe(ctx context.Context, c *http.Client, st store.TVStream) bool {
+// probe: alive = 2xx + "#EXTM3U"; cors = the upstream allows any origin, so
+// hls.js in the TV's browser may fetch it directly (otherwise /relay).
+func probe(ctx context.Context, c *http.Client, st store.TVStream) (alive, cors bool) {
 	cctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(cctx, http.MethodGet, st.URL, nil)
 	if err != nil {
-		return false
+		return false, false
 	}
 	req.Header.Set("User-Agent", firstNonEmpty(st.UserAgent, "Mozilla/5.0 (SMART-TV; Linux; Tizen 5.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.106 Safari/537.36"))
 	if st.Referrer != "" {
@@ -376,14 +378,15 @@ func probe(ctx context.Context, c *http.Client, st store.TVStream) bool {
 	}
 	resp, err := c.Do(req)
 	if err != nil {
-		return false
+		return false, false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return false
+		return false, false
 	}
 	head, _ := bufio.NewReader(io.LimitReader(resp.Body, 4096)).Peek(4096)
-	return strings.HasPrefix(strings.TrimSpace(string(head)), "#EXTM3U")
+	alive = strings.HasPrefix(strings.TrimSpace(string(head)), "#EXTM3U")
+	return alive, resp.Header.Get("Access-Control-Allow-Origin") == "*"
 }
 
 func firstNonEmpty(a, b string) string {
@@ -477,7 +480,7 @@ func (s *Service) Play(userID int64, channelID string) (Play, error) {
 		return Play{}, ErrNoStream
 	}
 	_ = s.repo.Touch(userID, channelID)
-	direct := strings.HasPrefix(pick.URL, "https://") && pick.UserAgent == "" && pick.Referrer == ""
+	direct := pick.CORS && strings.HasPrefix(pick.URL, "https://") && pick.UserAgent == "" && pick.Referrer == ""
 	p := Play{Direct: direct, Quality: pick.Quality, Streams: alive}
 	if direct {
 		p.URL = pick.URL
@@ -495,7 +498,7 @@ func (s *Service) Report(channelID string) {
 	}
 	for _, st := range sts {
 		if st.Alive {
-			_ = s.repo.MarkStream(st.ID, false)
+			_ = s.repo.MarkStream(st.ID, false, st.CORS)
 			return
 		}
 	}

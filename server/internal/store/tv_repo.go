@@ -31,6 +31,7 @@ type TVStream struct {
 	Referrer  string
 	Alive     bool
 	Fails     int
+	CORS      bool // upstream sends Access-Control-Allow-Origin: * (direct play possible)
 }
 
 type TVRepo struct {
@@ -49,23 +50,25 @@ func (r *TVRepo) Replace(channels []TVChannel, streams []TVStream) error {
 	// Remember verdicts, then rebuild.
 	type verdict struct {
 		alive     bool
+		cors      bool
 		fails     int
 		checkedAt int64
 	}
 	old := map[string]verdict{}
-	rows, err := tx.Query(`SELECT channel_id, url, alive, fails, checked_at FROM tv_streams`)
+	rows, err := tx.Query(`SELECT channel_id, url, alive, cors, fails, checked_at FROM tv_streams`)
 	if err != nil {
 		return err
 	}
 	for rows.Next() {
 		var ch, u string
 		var v verdict
-		var alive int
-		if err := rows.Scan(&ch, &u, &alive, &v.fails, &v.checkedAt); err != nil {
+		var alive, cors int
+		if err := rows.Scan(&ch, &u, &alive, &cors, &v.fails, &v.checkedAt); err != nil {
 			rows.Close()
 			return err
 		}
 		v.alive = alive == 1
+		v.cors = cors == 1
 		old[ch+"\n"+u] = v
 	}
 	rows.Close()
@@ -86,21 +89,21 @@ func (r *TVRepo) Replace(channels []TVChannel, streams []TVStream) error {
 			return err
 		}
 	}
-	stStmt, err := tx.Prepare(`INSERT OR IGNORE INTO tv_streams(channel_id, url, quality, user_agent, referrer, alive, fails, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+	stStmt, err := tx.Prepare(`INSERT OR IGNORE INTO tv_streams(channel_id, url, quality, user_agent, referrer, alive, cors, fails, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
 	defer stStmt.Close()
 	for _, s := range streams {
 		v, ok := old[s.ChannelID+"\n"+s.URL]
-		alive, fails, checked := 1, 0, int64(0)
+		alive, cors, fails, checked := 1, 0, 0, int64(0)
 		if ok {
 			if !v.alive {
 				alive = 0
 			}
-			fails, checked = v.fails, v.checkedAt
+			cors, fails, checked = b2i(v.cors), v.fails, v.checkedAt
 		}
-		if _, err := stStmt.Exec(s.ChannelID, s.URL, s.Quality, s.UserAgent, s.Referrer, alive, fails, checked); err != nil {
+		if _, err := stStmt.Exec(s.ChannelID, s.URL, s.Quality, s.UserAgent, s.Referrer, alive, cors, fails, checked); err != nil {
 			return err
 		}
 	}
@@ -258,7 +261,7 @@ func (r *TVRepo) channelsByIDs(ids []string) ([]TVChannel, error) {
 
 // Streams lists a channel's streams, alive first, best quality first.
 func (r *TVRepo) Streams(channelID string) ([]TVStream, error) {
-	rows, err := r.db.Query(`SELECT id, channel_id, url, quality, user_agent, referrer, alive, fails FROM tv_streams
+	rows, err := r.db.Query(`SELECT id, channel_id, url, quality, user_agent, referrer, alive, fails, cors FROM tv_streams
 		WHERE channel_id = ?
 		ORDER BY alive DESC, CASE quality WHEN '2160p' THEN 0 WHEN '1080p' THEN 1 WHEN '720p' THEN 2 WHEN '576p' THEN 3 WHEN '480p' THEN 4 WHEN '' THEN 5 ELSE 6 END, fails`, channelID)
 	if err != nil {
@@ -268,11 +271,12 @@ func (r *TVRepo) Streams(channelID string) ([]TVStream, error) {
 	var out []TVStream
 	for rows.Next() {
 		var s TVStream
-		var alive int
-		if err := rows.Scan(&s.ID, &s.ChannelID, &s.URL, &s.Quality, &s.UserAgent, &s.Referrer, &alive, &s.Fails); err != nil {
+		var alive, cors int
+		if err := rows.Scan(&s.ID, &s.ChannelID, &s.URL, &s.Quality, &s.UserAgent, &s.Referrer, &alive, &s.Fails, &cors); err != nil {
 			return nil, err
 		}
 		s.Alive = alive == 1
+		s.CORS = cors == 1
 		out = append(out, s)
 	}
 	return out, rows.Err()
@@ -280,7 +284,7 @@ func (r *TVRepo) Streams(channelID string) ([]TVStream, error) {
 
 // AllStreams is for the liveness sweep.
 func (r *TVRepo) AllStreams() ([]TVStream, error) {
-	rows, err := r.db.Query(`SELECT id, channel_id, url, quality, user_agent, referrer, alive, fails FROM tv_streams`)
+	rows, err := r.db.Query(`SELECT id, channel_id, url, quality, user_agent, referrer, alive, fails, cors FROM tv_streams`)
 	if err != nil {
 		return nil, err
 	}
@@ -288,11 +292,12 @@ func (r *TVRepo) AllStreams() ([]TVStream, error) {
 	var out []TVStream
 	for rows.Next() {
 		var s TVStream
-		var alive int
-		if err := rows.Scan(&s.ID, &s.ChannelID, &s.URL, &s.Quality, &s.UserAgent, &s.Referrer, &alive, &s.Fails); err != nil {
+		var alive, cors int
+		if err := rows.Scan(&s.ID, &s.ChannelID, &s.URL, &s.Quality, &s.UserAgent, &s.Referrer, &alive, &s.Fails, &cors); err != nil {
 			return nil, err
 		}
 		s.Alive = alive == 1
+		s.CORS = cors == 1
 		out = append(out, s)
 	}
 	return out, rows.Err()
@@ -301,9 +306,9 @@ func (r *TVRepo) AllStreams() ([]TVStream, error) {
 // MarkStream records one liveness verdict. A stream goes dead after two
 // consecutive failures (one bad night must not hide a channel) and comes back
 // on the first success.
-func (r *TVRepo) MarkStream(id int64, ok bool) error {
+func (r *TVRepo) MarkStream(id int64, ok, cors bool) error {
 	if ok {
-		_, err := r.db.Exec(`UPDATE tv_streams SET alive = 1, fails = 0, checked_at = ? WHERE id = ?`, time.Now().Unix(), id)
+		_, err := r.db.Exec(`UPDATE tv_streams SET alive = 1, fails = 0, cors = ?, checked_at = ? WHERE id = ?`, b2i(cors), time.Now().Unix(), id)
 		return err
 	}
 	_, err := r.db.Exec(`UPDATE tv_streams SET fails = fails + 1, alive = CASE WHEN fails + 1 >= 2 THEN 0 ELSE alive END, checked_at = ? WHERE id = ?`, time.Now().Unix(), id)
@@ -327,4 +332,11 @@ func (r *TVRepo) Touch(userID int64, channelID string) error {
 	_, err := r.db.Exec(`DELETE FROM tv_recent WHERE user_id = ? AND channel_id NOT IN (
 		SELECT channel_id FROM tv_recent WHERE user_id = ? ORDER BY watched_at DESC LIMIT 50)`, userID, userID)
 	return err
+}
+
+func b2i(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

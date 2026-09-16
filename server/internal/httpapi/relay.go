@@ -339,7 +339,11 @@ func relayResolve(ref string, base *url.URL, token string) string {
 	// here and never reaches the foreign upstream. `token` may carry the
 	// relay's own ua=/ref= extras after a "&" (see relayExtra).
 	tok, extra, _ := strings.Cut(token, "&")
-	return withMediaToken(sources.EncodeRelayURL(resolved.String()), tok) + extra
+	out := withMediaToken(sources.EncodeRelayURL(resolved.String()), tok)
+	if extra != "" {
+		out += "&" + extra
+	}
+	return out
 }
 
 // relayExtra re-encodes the ua/ref query params so rewritten manifest URLs
