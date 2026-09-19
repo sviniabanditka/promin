@@ -271,7 +271,7 @@ func main() {
 		logger.Info("sessions: legacy tokens hashed", "count", n)
 	}
 	httpapi.SetRelayBlockedIPs(cfg.RelayBlockIPs)
-	handler := httpapi.NewServer(version, logger, cfg.DataDir, catalogSvc, sourcesSvc, remuxQueue, torrentMgr, authSvc, syncSvc, cfg.HTTPAddr, logBuf, cfg.LogsPassword, weatherSvc, cfg.WeatherPlace, cfg.H1Host, cfg.MainHost, tgBot, subsClient, ytClient, tvSvc, db.Telegram)
+	handler := httpapi.NewServer(version, logger, cfg.DataDir, catalogSvc, sourcesSvc, remuxQueue, torrentMgr, authSvc, syncSvc, cfg.HTTPAddr, logBuf, cfg.LogsPassword, weatherSvc, cfg.WeatherPlace, cfg.H1Host, cfg.MainHost, tgBot, subsClient, ytClient, tvSvc, db.Telegram, db.Skips)
 	srv := &http.Server{
 		Addr:    cfg.HTTPAddr,
 		Handler: handler,

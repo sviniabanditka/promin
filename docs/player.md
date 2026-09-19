@@ -133,6 +133,35 @@ next one so a phrase spanning two cues is found where it starts (unit tests in
 where the line is heard. With no subtitle on, the row answers with a toast
 instead of an empty overlay.
 
+## Skip intro
+
+The player has always been able to jump over marked spans (`ctx.skipSegments`,
+the 1 s tick in `skipWatch()`), but only YouTube ever filled them. For a series
+the segments are now **learned from the household's own seeking**:
+
+- `rewindApply()` reports every applied scrub as
+  `POST /api/v1/skips/observe {tmdb_id, season, episode, from, to}`. The server
+  decides what counts (`observableSkip`): forward, starting inside the first
+  15 min, 10–240 s long. Anything else is accepted and dropped, so the client
+  can fire blind.
+- `skip_segments` (migration 0017) keeps one row per cluster of a season.
+  A new jump within 15 s of both ends of an existing row joins it, averaging the
+  bounds weighted by the votes already there; otherwise it starts its own row.
+  `last_episode` keeps one episode from voting twice — only a **different**
+  episode raises `votes`.
+- `GET /api/v1/skips?tmdb_id&season` returns the rows with `votes >= 2`, so the
+  first episode of a binge teaches and the second one onwards skips. The player
+  merges them into `skipSegments` on open and after every episode switch (which
+  also clears the once-per-episode `skipped` map).
+
+Segments are shared by every profile — the intro of a show is the same for the
+whole house. A movie never qualifies: agreement needs two episodes.
+
+An audio fingerprint (Jellyfin-style chromaprint over the first minutes of two
+episodes) would learn the intro without anyone skipping it first, but it has to
+pull those minutes through a provider or a torrent for every show; that path is
+in `docs/backlog.md`, not here.
+
 ## Playback speed
 
 Speeds 0.5–2× in seven steps. The rate is a **global per-user setting** (`player_speed`, synced), applied after every load because `<video>` resets it; when the element refuses the rate (some native pipelines) a toast says so and the pill/badge show the rate actually in effect.

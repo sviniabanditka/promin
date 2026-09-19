@@ -58,6 +58,7 @@ func NewServer(
 	ytClient *youtube.Client, // nil when PROMIN_YTX_URL is unset — the YouTube section is off,
 	tvSvc *tv.Service,
 	tgLinks *store.TelegramRepo, // admin panel: a profile's linked Telegram chats
+	skipsRepo *store.SkipsRepo, // learned intro segments (docs/player.md)
 ) http.Handler {
 	mux := http.NewServeMux()
 
@@ -204,6 +205,11 @@ func NewServer(
 	mux.HandleFunc("POST /api/v1/queue/pop", requireAuth(authSvc, qh.pop))
 	mux.HandleFunc("DELETE /api/v1/queue/{id}", requireAuth(authSvc, qh.remove))
 	mux.HandleFunc("PUT /api/v1/queue/{id}/move", requireAuth(authSvc, qh.move))
+
+	// Learned "skip intro" segments (docs/player.md).
+	skH := &skipHandlers{repo: skipsRepo}
+	mux.HandleFunc("GET /api/v1/skips", requireAuth(authSvc, skH.list))
+	mux.HandleFunc("POST /api/v1/skips/observe", requireAuth(authSvc, skH.observe))
 
 	// Settings → Danger zone (docs/auth.md).
 	meH := &meHandlers{svc: syncSvc, auth: authSvc, logger: logger}

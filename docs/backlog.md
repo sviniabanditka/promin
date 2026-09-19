@@ -46,23 +46,16 @@ system itself is described in the other documents.
 Picked by the owner after a repo audit. Ordered by value/cost; every item names
 the machinery it stands on, because none of them starts from zero.
 
-1. **Automatic skip intro.** The player already implements skip segments end to
-   end (`PlayerContext.skipSegments`, the auto-skip loop at
-   `web/src/core/player/index.ts:2807`) and nothing feeds them for films and
-   series. Producer: an offline ffmpeg audio fingerprint over the first ~6
-   minutes of two episodes of a season, the common stretch is the intro; store
-   per show, compute once. Manual marking stays the fallback.
-
-2. **Night audio (loudnorm).** Night mode dims the picture; the sound is
+1. **Night audio (loudnorm).** Night mode dims the picture; the sound is
    untouched. `internal/remux/ffmpeg.go:194` already assembles a video filter
    chain and no audio filter at all — add `loudnorm`/compression behind a
    profile flag so explosions do not wake the house and whispers stay audible.
 
-3. **Remembered dub.** The viewer picks the same Ukrainian voice every time.
+2. **Remembered dub.** The viewer picks the same Ukrainian voice every time.
    Store the chosen voice / audio track per profile and preselect it at resolve
    time, falling back to the nearest match.
 
-4. **Two TVs in sync, one account.** Not "watch together with a friend" — the
+3. **Two TVs in sync, one account.** Not "watch together with a friend" — the
    same account driving two sets in one home so they play the same frame.
    Everything needed exists: `EventRemote` is already a playback command aimed
    at one device (`internal/sync/hub.go:42`), the TV reports position, pause and
@@ -74,7 +67,7 @@ the machinery it stands on, because none of them starts from zero.
    seek past that. Pause/seek from any member fans out to the rest; ignore the
    echo of your own command by `device_id`.
 
-5. **Timeshift and recording for Live TV (nDVR).** The biggest of the seven and
+4. **Timeshift and recording for Live TV (nDVR).** The biggest of the seven and
    the most distinctive. EPG is already stored whole per feed
    (`internal/tv/epg.go`) and the remux queue already writes HLS segments: keep
    a rolling 30–60 min window for favourite channels → "start this programme
@@ -82,7 +75,7 @@ the machinery it stands on, because none of them starts from zero.
    straight off the guide, with the recording appearing as an ordinary title.
    Needs the free-disk gate from *Torrents* above to land first.
 
-6. **Live TV in the Telegram Mini App.** The Mini App has home, search,
+5. **Live TV in the Telegram Mini App.** The Mini App has home, search,
    youtube, remote, library and settings (`web/miniapp/src/router.ts`) and no
    TV tab at all, while the backend already serves the catalogue, the EPG and
    the logo proxy (`internal/httpapi/handlers_tv.go`). Add a TV tab: channel
@@ -131,6 +124,14 @@ Reliability and operations:
 17. **Dependabot** for actions and Go modules.
 
 See also `docs/proposals/youtube.md`.
+
+## Player
+
+- **Intro detection without a first skip.** Segments are learned from the
+  household's own seeking (`docs/player.md`), so episode 1 of a new show still
+  gets skipped by hand. An audio fingerprint over the first minutes of two
+  episodes (Jellyfin's chromaprint approach) would know it up front, but it must
+  pull those minutes through a provider or a torrent for every show.
 
 ## Sources / subtitles
 

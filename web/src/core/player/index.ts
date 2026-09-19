@@ -53,7 +53,7 @@ import { setRemoteHandler, RemoteAction } from './remote';
 import { ensureHls, HlsInstance, HlsCtor } from './hls';
 import { CueLine } from './cues';
 import { LineSearch, openLineSearch } from './lineSearch';
-import { Stream, Subtitle, Voice, mediaUrl, postPlayerState, PlayerStateReport, searchSubtitles, subtitleFileUrl, SubtitleResult, buildHeaders } from '../api';
+import { Stream, Subtitle, Voice, mediaUrl, postPlayerState, PlayerStateReport, searchSubtitles, subtitleFileUrl, SubtitleResult, buildHeaders, getSkips, reportSkip } from '../api';
 
 export interface PlayerMedia {
   type: 'hls' | 'mp4';
@@ -727,6 +727,45 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   let episodes: PlayerEpisode[] = [];
   let curEpisode: number | null = ctx.episode != null ? ctx.episode : null;
   let curSeason: number | null = ctx.season != null ? ctx.season : null;
+
+  // ---- skip intro (learned from what viewers actually skip) ----
+  // ctx.skipSegments is what the caller knew up front (YouTube sponsor spans);
+  // for a series the server adds what the household already skipped in other
+  // episodes of this season (docs/player.md).
+  let skipSegments: SkipSegment[] = ctx.skipSegments || [];
+  function loadSkips(): void {
+    if (ctx.live || !ctx.tmdb_id || curSeason == null) return;
+    const season = curSeason;
+    getSkips(ctx.tmdb_id, season).then(
+      function (res) {
+        if (destroyed || curSeason !== season) return;
+        const learned: SkipSegment[] = [];
+        const list = res && res.segments ? res.segments : [];
+        for (let i = 0; i < list.length; i++) {
+          learned.push({ start: list[i].start, end: list[i].end, label: t('player.skip_intro') });
+        }
+        skipSegments = (ctx.skipSegments || []).concat(learned);
+      },
+      function () {
+        /* no segments is the normal case; never bother the viewer about it */
+      }
+    );
+  }
+  // A manual forward jump in the opening stretch is the only signal we have for
+  // where an intro is; the server decides whether it is intro-shaped and only
+  // offers a segment once a second episode agrees.
+  function observeSkip(from: number, to: number): void {
+    if (ctx.live || !ctx.tmdb_id || curSeason == null || curEpisode == null) return;
+    if (to - from < 10) return; // an ordinary nudge, not a skip
+    reportSkip({ tmdb_id: ctx.tmdb_id, season: curSeason, episode: curEpisode, from: from, to: to }).then(
+      function () {
+        /* fire and forget */
+      },
+      function () {
+        /* fire and forget */
+      }
+    );
+  }
   function loadEpisodes(): void {
     if (!ctx.onEpisodes) return;
     ctx.onEpisodes(function (list, current) {
@@ -1748,6 +1787,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   function rewindApply(): void {
     const target = rewindPosition;
     const resume = !wasPausedBeforeScrub;
+    observeSkip(scrubStart, target);
     scrubbing = false;
     rewindPosition = 0;
     scrubPresses = 0;
@@ -2660,6 +2700,9 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       if (meta && meta.episode != null) curEpisode = meta.episode;
       if (meta && meta.season != null) curSeason = meta.season;
       applyStoredExt(); // this episode's remembered external subtitle
+      skipped = {}; // the new episode's intro has not been skipped yet
+      skipSegments = ctx.skipSegments || [];
+      loadSkips(); // the season may have changed with the episode
       refreshButtons();
       loadEpisodes(); // the season may have changed; the caption follows
       loadCtxAudio(); // a torrent pack's next file has its own track list
@@ -2856,9 +2899,9 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   // SponsorBlock-style skips: jump to the segment's end the first time
   // playback lands inside it. A 2 s guard past the end keeps a user seeking
   // back into the segment from being thrown out again.
-  const skipped: { [idx: number]: boolean } = {};
+  let skipped: { [idx: number]: boolean } = {};
   function skipWatch(): void {
-    const segs = ctx.skipSegments;
+    const segs = skipSegments;
     if (!segs || !segs.length || video.paused || errorBox) return;
     const pos = absTime();
     for (let i = 0; i < segs.length; i++) {
@@ -3653,6 +3696,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   }
   loadCtxAudio();
   loadEpisodes();
+  loadSkips();
   applyStoredExt();
 
   return {

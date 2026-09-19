@@ -251,6 +251,13 @@ Sync events added: `player_state` (`PlayerState` + `device_id`, or `{device_id, 
 | GET | `/api/v1/subtitles/search?imdb_id=&season=&episode=&langs=uk,ru,en` | bearer | `{enabled, results:[{file_id, lang, release, downloads, hearing_impaired, fps, uploader}]}` — most downloaded first; `enabled:false` when no API key |
 | GET | `/api/v1/subtitles/{file_id}.vtt` | media token `?t=` | The subtitle as WebVTT; downloaded once per file id (anonymous quota) and cached under `/data/subs/` |
 
+## Skip intro (`handlers_skips.go`, see `docs/player.md`)
+
+| Method | Path | Auth | Effect |
+|---|---|---|---|
+| GET | `/api/v1/skips?tmdb_id=&season=` | bearer | `{segments:[{start, end, votes}]}` — only the clusters at least two episodes agreed on |
+| POST | `/api/v1/skips/observe` | bearer | Body `{tmdb_id, season, episode, from, to}`: one applied forward scrub. `204` either way — the server drops jumps that are not intro-shaped (forward, starting in the first 15 min, 10–240 s long) |
+
 ## YouTube section (`/api/v1/yt/*`)
 
 Bearer routes proxied to the `ytx` sidecar: `GET /account`, `POST /account/login`, `DELETE /account`, `GET /browse/{page}`, `GET /search`, `GET /video/{id}`, `GET /play/{id}` (creates a `mux2` remux job), `GET /segments/{id}` (SponsorBlock). Shapes and errors in `docs/youtube.md`. `GET /api/v1/ping` carries `youtube: true|false`.

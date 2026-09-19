@@ -28,6 +28,7 @@ type DB struct {
 	Telegram     *TelegramRepo
 	Queue        *QueueRepo
 	TV           *TVRepo
+	Skips        *SkipsRepo
 }
 
 // Open opens (creating if necessary) the SQLite database at path, applies
@@ -86,6 +87,7 @@ func Open(path string) (*DB, error) {
 		Telegram:     &TelegramRepo{db: sqlDB},
 		Queue:        &QueueRepo{db: sqlDB},
 		TV:           &TVRepo{db: sqlDB},
+		Skips:        &SkipsRepo{db: sqlDB},
 	}, nil
 }
 

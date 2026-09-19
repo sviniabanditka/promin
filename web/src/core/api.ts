@@ -1025,6 +1025,29 @@ export function postPlayerState(state: PlayerStateReport): Promise<void> {
   return post<void>('/player/state', state, undefined, 5000);
 }
 
+// Learned "skip intro" segments (docs/player.md). The player reports the
+// forward jumps a viewer makes near the start of an episode; once two episodes
+// of a season agree, the segment comes back here as an auto-skip.
+export interface SkipSegmentDTO {
+  start: number;
+  end: number;
+  votes?: number;
+}
+
+export function getSkips(tmdbId: number | string, season: number): Promise<{ segments: SkipSegmentDTO[] }> {
+  return get<{ segments: SkipSegmentDTO[] }>('/skips', { tmdb_id: tmdbId, season: season }, 6000);
+}
+
+export function reportSkip(body: {
+  tmdb_id: number | string;
+  season: number;
+  episode: number;
+  from: number;
+  to: number;
+}): Promise<void> {
+  return post<void>('/skips/observe', body, undefined, 5000);
+}
+
 // Sign out every other device of the profile (Settings → account).
 export function revokeOtherDevices(): Promise<{ revoked: number }> {
   return del<{ revoked: number }>('/auth/devices');
