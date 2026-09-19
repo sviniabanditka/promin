@@ -41,6 +41,62 @@ system itself is described in the other documents.
 - Transcode HEVC/HDR → H.264/SDR on the fly for old panels: see `streaming.md`
   for what exists; the on-the-fly path for 4K/HEVC torrents is not complete.
 
+## Chosen 2026-09-19 (audit)
+
+Picked by the owner after a repo audit. Ordered by value/cost; every item names
+the machinery it stands on, because none of them starts from zero.
+
+1. **Search inside a film by its lines.** Subtitles are already fetched and
+   converted (`internal/subtitles/opensubtitles.go`, cached on disk). Index the
+   cues in SQLite FTS5 (modernc ships it), add "find a line" on the title
+   screen and jump to the timecode. Later: one search across every subtitle the
+   library has ("which film had that line about…").
+
+2. **Automatic skip intro.** The player already implements skip segments end to
+   end (`PlayerContext.skipSegments`, the auto-skip loop at
+   `web/src/core/player/index.ts:2807`) and nothing feeds them for films and
+   series. Producer: an offline ffmpeg audio fingerprint over the first ~6
+   minutes of two episodes of a season, the common stretch is the intro; store
+   per show, compute once. Manual marking stays the fallback.
+
+3. **Night audio (loudnorm).** Night mode dims the picture; the sound is
+   untouched. `internal/remux/ffmpeg.go:194` already assembles a video filter
+   chain and no audio filter at all — add `loudnorm`/compression behind a
+   profile flag so explosions do not wake the house and whispers stay audible.
+
+4. **Remembered dub.** The viewer picks the same Ukrainian voice every time.
+   Store the chosen voice / audio track per profile and preselect it at resolve
+   time, falling back to the nearest match.
+
+5. **Two TVs in sync, one account.** Not "watch together with a friend" — the
+   same account driving two sets in one home so they play the same frame.
+   Everything needed exists: `EventRemote` is already a playback command aimed
+   at one device (`internal/sync/hub.go:42`), the TV reports position, pause and
+   duration every 5 s (`internal/sync/player_state.go`), and the remux queue
+   reuses one job for several clients (`queue_reuse_test.go`), so the second set
+   does not start a second transcode. Design: a watch group inside the account,
+   one member leads; followers open the same title/source/position, then hold
+   the drift with `playbackRate` 0.98/1.02 while |Δ| is 0.3–1.5 s and a hard
+   seek past that. Pause/seek from any member fans out to the rest; ignore the
+   echo of your own command by `device_id`.
+
+6. **Timeshift and recording for Live TV (nDVR).** The biggest of the seven and
+   the most distinctive. EPG is already stored whole per feed
+   (`internal/tv/epg.go`) and the remux queue already writes HLS segments: keep
+   a rolling 30–60 min window for favourite channels → "start this programme
+   from the beginning", a pause that does not lose the broadcast, and "record"
+   straight off the guide, with the recording appearing as an ordinary title.
+   Needs the free-disk gate from *Torrents* above to land first.
+
+7. **Live TV in the Telegram Mini App.** The Mini App has home, search,
+   youtube, remote, library and settings (`web/miniapp/src/router.ts`) and no
+   TV tab at all, while the backend already serves the catalogue, the EPG and
+   the logo proxy (`internal/httpapi/handlers_tv.go`). Add a TV tab: channel
+   list with "now / next" from the guide, favourites, and — the point of having
+   it on the phone — "switch the TV to this channel" through the existing
+   `EventRemote` path, plus playing the channel on the phone itself where the
+   stream allows it.
+
 ## Candidates reviewed 2026-09-12 (not started)
 
 Ranked by the owner's value; the top three are 8, 13 and 1 of this list.
@@ -51,12 +107,11 @@ For the viewer:
    episode out, open on TV". The one feature that brings people back.
 2. **Mini-player** — keep `<video>` alive in a corner while browsing the
    title page, similar titles or seasons; one press to expand.
-3. **Watch together** — play/pause/seek sync between two TVs (or TV and
-   phone) over the existing sync WebSocket.
+3. **Watch together** — superseded by "Two TVs in sync" above (same account,
+   two sets in one home), which is the shape the owner actually wants.
 4. **Search transliteration fallback** — zero results → retry the query
    mapped through the other keyboard layout.
-5. **Skip intro / next episode by timing** — a "skip intro" button from a
-   repeated segment between episodes or a manual mark remembered per show.
+5. **Skip intro** — superseded by "Automatic skip intro" above.
 6. **Kids profile** — own PIN, TMDB content-rating filter, hidden shelves.
 7. **Smarter Home shelves** — "because you watched X", "unfinished this
    week", "new in your genres"; the data is already in the DB.

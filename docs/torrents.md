@@ -43,6 +43,23 @@ Normalization (`mapTorrents`):
   ("1080p" or ""), voices[], id`. Sorted by seeders descending (zero-seed rows
   sink, not vanish).
 
+### Playable-first ordering (client)
+
+The server ranks by seeders only — it does not know which panel is asking. The
+title screen reorders what it got before rendering
+(`web/src/core/release.ts`, `byPlaybackCost`): releases that play as they are
+come first, then those needing an HEVC/AV1 → H264 transcode, then 4K ones,
+whose transcode a single VPS cannot sustain in real time. Seeder order is kept
+inside each bucket (own buckets, not `Array.sort` — that is not stable on the
+Chromium ~47 webview). The two demoted buckets also carry a badge on the row
+(`torrent.transcode` / `torrent.too_heavy`), so the cost is visible before the
+viewer presses Enter and watches a stalled transcode.
+
+`release.ts` is the single place that reads a release name: `parseMeta`
+(quality/codec/HDR/year badges), `needsHevcDecoder` and `isHDR` (which the play
+path in `torrentPlay.ts` uses to set `transcode=1&hdr=1`), and `playbackCost`.
+Unit tests: `web/test/release.test.ts`.
+
 `id` is the **magnet id**: `base64url(raw magnet URI)` without padding
 (`EncodeMagnetID`). It is opaque only in the sense that a client cannot act on it
 without going through `/api/v1/torrents/add`; it is not encrypted.

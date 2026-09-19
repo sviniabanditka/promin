@@ -5,6 +5,7 @@
 
 import { streamUrl, TorrentFile } from './api';
 import { caps, canDecodeHevc } from './capabilities';
+import { isHDR, needsHevcDecoder } from './release';
 import { PlayerMedia } from './player';
 import { t } from './i18n';
 
@@ -23,8 +24,8 @@ export interface TorrentMedia {
 export function torrentMedia(infohash: string, file: TorrentFile, torrentTitle: string): TorrentMedia {
   const name = (file.name || '') + ' ' + (torrentTitle || '');
   const isMkv = /\.mkv$/i.test(file.name || '');
-  const looksHevc = /hevc|h\.?265|x265|av1|2160p|\b4k\b/i.test(name);
-  const looksHdr = /\bhdr|dolby.?vision|hdr10|\bdv\b/i.test(name) && !/\bsdr\b/i.test(name);
+  const looksHevc = needsHevcDecoder(name);
+  const looksHdr = isHDR(name);
   // Transcode when the release is HEVC/AV1 and this device's engine can't decode
   // it (hls.js/MSE can't). copy_mkv only remuxes the container, so it'd leave
   // HEVC unplayable — transcode supersedes it.

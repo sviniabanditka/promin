@@ -43,33 +43,7 @@ export function seedClass(seeds: number | undefined): string {
   return 'torrent-badge--seeds-low';
 }
 
-// Parse the release-quality bits out of a raw torrent title. Ported 1:1 from
-// screens/sources.
-export interface TorrentMeta {
-  quality: string;
-  codec: string;
-  hdr: string;
-  dv: string;
-  year: string;
-}
-
-export function parseMeta(title: string | undefined): TorrentMeta {
-  const s = ' ' + (title || '') + ' ';
-  const out: TorrentMeta = { quality: '', codec: '', hdr: '', dv: '', year: '' };
-
-  let m = s.match(/\b(2160p|1080p|720p|480p)\b/i);
-  if (m) out.quality = m[1].toLowerCase();
-  else if (/\b(4k|uhd)\b/i.test(s)) out.quality = '2160p';
-
-  if (/\bhdr10\+?\b/i.test(s) || /\bhdr\b/i.test(s)) out.hdr = 'HDR';
-  if (/dolby\s*vision/i.test(s) || /\b(dovi|dv)\b/i.test(s)) out.dv = 'Dolby Vision';
-
-  if (/\b(hevc|h\.?265|x265)\b/i.test(s)) out.codec = 'H.265';
-  else if (/\b(avc|h\.?264|x264)\b/i.test(s)) out.codec = 'H.264';
-
-  m = s.match(/\b((?:19|20)\d{2})\b/);
-  if (m) out.year = m[1];
-
-  return out;
-}
-
+// Release-name parsing lives in core/release (pure, shared with the play path
+// and unit-tested); re-exported here so the title screen keeps one import.
+export { parseMeta } from '../core/release';
+export type { TorrentMeta } from '../core/release';

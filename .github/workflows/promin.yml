@@ -28,9 +28,9 @@ jobs:
         run: go vet -tags providers ./... && go test -tags providers ./...
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: web/package-lock.json }
-      - name: Web typecheck + ES5 bundle check
+      - name: Web typecheck + unit tests + ES5 bundle check
         working-directory: web
-        run: npm ci && npm run typecheck && npm run typecheck:tg && npm run build && npm run check:es5
+        run: npm ci && npm run typecheck && npm run typecheck:tg && npm test && npm run build && npm run check:es5
       - name: ytx syntax check
         working-directory: ytx
         run: npm ci && npm run check

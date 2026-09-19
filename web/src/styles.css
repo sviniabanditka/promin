@@ -2108,6 +2108,16 @@ body.reduce-motion .toast__progress::after {
   background-color: rgba(208, 96, 96, 0.16);
 }
 
+.torrent-badge--transcode {
+  color: var(--warn);
+  background-color: rgba(242, 193, 78, 0.16);
+}
+
+.torrent-badge--heavy {
+  color: var(--danger-fill);
+  background-color: rgba(208, 96, 96, 0.16);
+}
+
 .torrent-badge--quality {
   color: var(--ink-2);
   background-color: rgba(255, 255, 255, 0.12);

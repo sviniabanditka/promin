@@ -54,6 +54,8 @@ import * as sync from '../core/sync';
 import { fmtClock, runtimeText, qBadge, seedClass, parseMeta } from './titleMeta';
 import { openNameModal } from './playlists';
 import { torrentMedia, parseEpisode } from '../core/torrentPlay';
+import { byPlaybackCost, playbackCost } from '../core/release';
+import { canDecodeHevc } from '../core/capabilities';
 import { openPlayer, PlayerMedia, EpisodeMeta, PlayerEpisode } from '../core/player';
 import { isFinished, isResumable } from '../core/progress';
 
@@ -2180,7 +2182,16 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
         }).then(
           function (res) {
             if (closed) return;
-            const list = res && res.torrents ? res.torrents : [];
+            // Playable-first: a 4K/HEVC release on a TV without an HEVC decoder
+            // means a server transcode this VPS cannot sustain, so it sinks below
+            // the releases that just play. Seeder order survives inside a bucket.
+            const list = byPlaybackCost(
+              res && res.torrents ? res.torrents : [],
+              function (tor) {
+                return tor.title || '';
+              },
+              canDecodeHevc()
+            );
             torrentsCache = list;
             if (!list.length) {
               showListMessage(t('sources.torrents_empty'));
@@ -2247,6 +2258,14 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
             seeds.appendChild(el('span', 'torrent-badge__dot', ''));
             seeds.appendChild(el('span', undefined, String(tor.seeders || 0)));
             meta.appendChild(seeds);
+            // Say out loud what this release costs on THIS panel instead of
+            // letting the viewer find out by staring at a stalled transcode.
+            const cost = playbackCost(tor.title || '', canDecodeHevc());
+            if (cost !== 'direct') {
+              meta.appendChild(
+                el('span', 'torrent-badge torrent-badge--' + cost, t(cost === 'heavy' ? 'torrent.too_heavy' : 'torrent.transcode'))
+              );
+            }
             main.appendChild(meta);
 
             row.appendChild(main);
