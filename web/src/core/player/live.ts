@@ -12,7 +12,7 @@ import { Navigator } from '../nav';
 import * as router from '../router';
 import { t } from '../i18n';
 import { ScreenInstance } from '../activity';
-import { tvPlay, tvFail, getTvNow, mediaUrl, postPlayerState } from '../api';
+import { tvPlay, tvFail, getTvNow, mediaUrl, postPlayerState, startTimeshift, timeshiftUrl } from '../api';
 import { ensureHls } from './hls';
 import { setRemoteHandler } from './remote';
 import { preferNativeHls } from '../capabilities';
@@ -64,6 +64,17 @@ function mountLive(root: HTMLElement, ctx: LiveContext): ScreenInstance {
   let digits = '';
   let sleepMin = 0;
   let sleepTimer = 0;
+  // ---- timeshift (docs/tv.md) ----
+  // The server keeps a rolling window of the channel while somebody watches it,
+  // so a pause no longer throws the broadcast away: resuming plays on from the
+  // pause instead of jumping back to the live edge.
+  let bufferWindow = 0; // seconds the server says we may seek back into; 0 = off
+  let bufferTimer = 0;
+  let pausedAt = 0; // Date.now() at the pause
+  let timeshiftOn = false; // playing out of the buffer, not the live stream
+  let seekBehind = 0; // seconds behind the live edge to land on once seekable
+  let seekTries = 0;
+  const TIMESHIFT_MIN_S = 5; // a blink of a pause just resumes live
   let netRetries = 0;
   let mediaRecovered = false;
   let stateTimer = 0;
@@ -138,8 +149,10 @@ function mountLive(root: HTMLElement, ctx: LiveContext): ScreenInstance {
     const now = nowSec();
     infoNum.textContent = typed != null ? typed + '_' : String(idx + 1);
     infoName.textContent = ch.name + (ch.quality ? ' · ' + ch.quality : '');
-    infoBadge.textContent = paused ? t('live.paused').toUpperCase() : 'LIVE';
+    const behind = behindSec();
+    infoBadge.textContent = paused ? t('live.paused').toUpperCase() : behind > 0 ? '-' + fmtBehind(behind) : 'LIVE';
     infoBadge.classList.toggle('is-paused', paused);
+    infoBadge.classList.toggle('is-behind', !paused && behind > 0);
     const v = nn[ch.id];
     infoNow.textContent = v && v.now ? hhmm(v.now.start) + '–' + hhmm(v.now.stop) + '  ' + v.now.title : '';
     infoFill.style.width = Math.round(progress(v && v.now, now) * 100) + '%';
@@ -214,6 +227,12 @@ function mountLive(root: HTMLElement, ctx: LiveContext): ScreenInstance {
     if (!ch) return;
     idx = i;
     paused = false;
+    // A new channel: out of the old channel's window, into this one's.
+    timeshiftOn = false;
+    seekBehind = 0;
+    pausedAt = 0;
+    bufferWindow = 0;
+    keepBuffer();
     pausedEl.classList.add('hide');
     pausedHint.classList.add('hide');
     netRetries = 0;
@@ -234,6 +253,100 @@ function mountLive(root: HTMLElement, ctx: LiveContext): ScreenInstance {
         failed();
       }
     );
+  }
+
+  // Ask the server to keep this channel's window alive. Failure is not an
+  // error the viewer needs to hear about: timeshift simply stays off.
+  function keepBuffer(): void {
+    const ch = channels[idx];
+    if (!ch) return;
+    startTimeshift(ch.id).then(
+      function (r) {
+        if (!destroyed) bufferWindow = r && r.window_sec ? r.window_sec : 0;
+      },
+      function () {
+        if (!destroyed) bufferWindow = 0;
+      }
+    );
+  }
+
+  // Play the channel out of its rolling window, `behind` seconds behind live.
+  function goTimeshift(behind: number): void {
+    const ch = channels[idx];
+    if (!ch || bufferWindow <= 0) {
+      resumeLiveEdge();
+      return;
+    }
+    const my = ++loading;
+    teardown();
+    timeshiftOn = true;
+    seekBehind = Math.min(behind, bufferWindow - 30);
+    seekTries = 0;
+    spinner.classList.remove('hide');
+    attach(mediaUrl(timeshiftUrl(ch.id)), my);
+    applySeekBehind();
+    showInfo();
+  }
+
+  // The window's playlist arrives a moment after the engine starts; land on the
+  // wanted spot as soon as there is something seekable, then give up quietly.
+  function applySeekBehind(): void {
+    if (destroyed || !timeshiftOn || seekBehind <= 0) return;
+    let done = false;
+    try {
+      const sk = video.seekable;
+      if (sk && sk.length) {
+        const end = sk.end(sk.length - 1);
+        const startOf = sk.start(0);
+        let target = end - seekBehind;
+        if (target < startOf) target = startOf;
+        if (isFinite(target) && target >= 0 && end - startOf > 1) {
+          video.currentTime = target;
+          done = true;
+        }
+      }
+    } catch (e) {
+      /* engines differ on when a live playlist becomes seekable */
+    }
+    if (done) {
+      seekBehind = 0;
+      tryPlay();
+      return;
+    }
+    if (++seekTries > 40) return; // ~10 s: play from wherever the engine landed
+    window.setTimeout(applySeekBehind, 250);
+  }
+
+  // Seconds behind the live edge right now (0 when riding the edge).
+  function behindSec(): number {
+    if (!timeshiftOn) return 0;
+    try {
+      const sk = video.seekable;
+      if (!sk || !sk.length) return 0;
+      const d = sk.end(sk.length - 1) - video.currentTime;
+      return d > 2 ? Math.round(d) : 0;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  // How far back the programme that is on now started, when the window still
+  // reaches it (docs/tv.md). 0 = nothing to offer.
+  function programStartBehind(): number {
+    const ch = channels[idx];
+    if (!ch || bufferWindow <= 0) return 0;
+    const cur = nn[ch.id] && nn[ch.id].now;
+    if (!cur) return 0;
+    const behind = nowSec() - cur.start;
+    if (behind < 60) return 0; // it just started; the edge is the beginning
+    if (behind > bufferWindow - 60) return 0; // outside the window
+    return behind - behindSec() > 0 ? behind : 0;
+  }
+
+  function fmtBehind(sec: number): string {
+    const m = Math.floor(sec / 60);
+    const s2 = Math.floor(sec % 60);
+    return m + ':' + pad2(s2);
   }
 
   function attach(url: string, my: number): void {
@@ -301,6 +414,7 @@ function mountLive(root: HTMLElement, ctx: LiveContext): ScreenInstance {
     if (!paused) {
       video.pause();
       paused = true;
+      pausedAt = Date.now();
       pausedEl.classList.remove('hide');
       pausedHint.classList.remove('hide');
       showInfo();
@@ -314,6 +428,20 @@ function mountLive(root: HTMLElement, ctx: LiveContext): ScreenInstance {
     paused = false;
     pausedEl.classList.add('hide');
     pausedHint.classList.add('hide');
+    // The broadcast kept running while we stood still: if the server has been
+    // buffering it, carry on from the pause instead of skipping what was missed.
+    const away = pausedAt ? (Date.now() - pausedAt) / 1000 : 0;
+    pausedAt = 0;
+    if (bufferWindow > 0 && away >= TIMESHIFT_MIN_S) {
+      goTimeshift(away + behindSec());
+      return;
+    }
+    resumeLiveEdge();
+  }
+
+  // Back to the live edge of whatever is playing (the stream itself, or the
+  // window when the viewer is inside it).
+  function resumeLiveEdge(): void {
     // Back to NOW, not to where we paused: a live channel has no "continue".
     try {
       let edge = 0;
@@ -538,6 +666,25 @@ function mountLive(root: HTMLElement, ctx: LiveContext): ScreenInstance {
         },
       },
     ];
+    if (timeshiftOn) {
+      items.push({
+        label: t('live.go_live'),
+        sub: '-' + fmtBehind(behindSec()),
+        onEnter: function () {
+          start(idx); // straight back to the broadcast
+        },
+      });
+    }
+    const fromStart = programStartBehind();
+    if (fromStart > 0) {
+      items.push({
+        label: t('live.from_start'),
+        sub: '-' + fmtBehind(fromStart),
+        onEnter: function () {
+          goTimeshift(fromStart);
+        },
+      });
+    }
     if (qualityLabel()) {
       items.push({
         label: t('live.quality'),
@@ -733,6 +880,10 @@ function mountLive(root: HTMLElement, ctx: LiveContext): ScreenInstance {
     if (!info.classList.contains('hide')) paintInfo(digits || undefined);
   }, 30000);
 
+  // Keep the channel's rolling window alive while this player is up; the server
+  // drops a buffer nobody has asked about for two minutes.
+  bufferTimer = window.setInterval(keepBuffer, 30000);
+
   // ---- boot ----
   Controller.toggle('live');
   refreshNow();
@@ -748,6 +899,7 @@ function mountLive(root: HTMLElement, ctx: LiveContext): ScreenInstance {
       if (sleepTimer) clearTimeout(sleepTimer);
       if (miniTimer) clearTimeout(miniTimer);
       if (stateTimer) clearInterval(stateTimer);
+      if (bufferTimer) clearInterval(bufferTimer);
       window.removeEventListener('keydown', onExtraKey);
       video.removeEventListener('playing', onPlaying);
       video.removeEventListener('canplay', onPlaying);

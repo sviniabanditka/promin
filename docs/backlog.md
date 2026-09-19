@@ -44,17 +44,6 @@ system itself is described in the other documents.
 - Transcode HEVC/HDR → H.264/SDR on the fly for old panels: see `streaming.md`
   for what exists; the on-the-fly path for 4K/HEVC torrents is not complete.
 
-## Chosen 2026-09-19 (audit)
-
-Picked by the owner after a repo audit; shipped items are removed as they land.
-What is left:
-
-1. **Timeshift for Live TV.** Recording off the guide is done (`docs/tv.md`,
-   `internal/dvr`); the live half is not: pausing the broadcast and starting
-   the programme that is already running from its beginning. Needs the recorder
-   started when a channel is tuned in (a rolling window, dropped when nobody is
-   watching) and the live player able to read behind the live edge.
-
 ## Candidates reviewed 2026-09-12 (not started)
 
 Ranked by the owner's value; the top three are 8, 13 and 1 of this list.
@@ -112,9 +101,12 @@ See also `docs/proposals/youtube.md`.
   to ask "which film had that line".
 
 ## Live TV (docs/tv.md)
-- EPG from the iptv-org/epg grabber for the configured countries ("now / next").
 - Provider M3U / Xtream import with catchup.
-- Mini App / bot: switch the TV to a channel; channel numbers on the remote.
+- Channel numbers on the remote (the Mini App can already switch a TV to a
+  channel).
+- Verify recording and timeshift on a real channel and a real set: both were
+  driven end to end against the real binary with a generated stream, never
+  against a broadcaster.
 
 ## Ideas (not planned)
 

@@ -157,3 +157,73 @@ func TestRecordsAChannelEndToEnd(t *testing.T) {
 		t.Fatalf("directory survived the delete")
 	}
 }
+
+// A rolling timeshift window: the buffer starts on demand, keeps producing a
+// playlist without an ENDLIST (it is live), survives a second heartbeat and
+// goes away when nobody asks for it.
+func TestTimeshiftBuffer(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not installed")
+	}
+	src := filepath.Join(t.TempDir(), "channel.ts")
+	gen := exec.Command("ffmpeg", "-y", "-loglevel", "error",
+		"-f", "lavfi", "-i", "testsrc=size=320x240:rate=10:duration=12",
+		"-c:v", "libx264", "-preset", "ultrafast", "-t", "12", src)
+	if out, err := gen.CombinedOutput(); err != nil {
+		t.Skipf("cannot generate a test stream: %v %s", err, out)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, src)
+	}))
+	defer srv.Close()
+
+	svc, _, _ := testService(t, func(string) (string, string, string, error) {
+		return srv.URL + "/channel.ts", "", "", nil
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	go svc.Run(ctx) // Run owns the context the buffer's ffmpeg hangs off
+
+	window, err := svc.EnsureBuffer("test.ua")
+	if err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	if window != BufferWindowSec {
+		t.Fatalf("window %d, want %d", window, BufferWindowSec)
+	}
+	// A second call is a heartbeat, not a second ffmpeg.
+	if _, err := svc.EnsureBuffer("test.ua"); err != nil {
+		t.Fatalf("heartbeat: %v", err)
+	}
+
+	playlist := filepath.Join(svc.BufferDir("test.ua"), PlaylistFile)
+	deadline := time.Now().Add(20 * time.Second)
+	var data []byte
+	for time.Now().Before(deadline) {
+		data, err = os.ReadFile(playlist)
+		if err == nil && strings.Contains(string(data), "seg-00000.ts") {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if !strings.Contains(string(data), "seg-00000.ts") {
+		t.Fatalf("no segments in the window:\n%s", data)
+	}
+	if strings.Contains(string(data), "#EXT-X-ENDLIST") {
+		t.Fatalf("a live window must not be closed with ENDLIST:\n%s", data)
+	}
+
+	svc.StopBuffer("test.ua")
+	if _, err := os.Stat(svc.BufferDir("test.ua")); !os.IsNotExist(err) {
+		t.Fatalf("the window survived the stop")
+	}
+}
+
+func TestBufferArgsSlidingWindow(t *testing.T) {
+	args := strings.Join(bufferArgs("http://x/live.m3u8", "", "", "/d"), " ")
+	for _, want := range []string{"-hls_list_size 200", "delete_segments", "omit_endlist", "-c copy"} {
+		if !strings.Contains(args, want) {
+			t.Errorf("buffer args missing %q:\n%s", want, args)
+		}
+	}
+}

@@ -637,6 +637,7 @@ export function mediaUrl(url: string): string {
     url.indexOf('/remux') === 0 ||
     url.indexOf('/stream') === 0 ||
     url.indexOf('/tv/records/') === 0 ||
+    url.indexOf('/tv/timeshift/') === 0 ||
     url.indexOf(API_BASE + '/subtitles/') === 0
   ) {
     // Match the token param specifically — a bare 't=' also matches ?st=/format=ts
@@ -1286,6 +1287,16 @@ export function tvFail(id: string): Promise<void> {
 export function tvFavorite(id: string, on: boolean): Promise<void> {
   const path = '/tv/favorites/' + encodeURIComponent(id);
   return on ? put<void>(path) : del<void>(path);
+}
+
+// Timeshift (docs/tv.md): start/keep alive the channel's rolling window on the
+// server. Called on tune-in and every 30 s while the channel plays.
+export function startTimeshift(channelId: string): Promise<{ url: string; window_sec: number }> {
+  return post<{ url: string; window_sec: number }>('/tv/channels/' + encodeURIComponent(channelId) + '/timeshift', {}, undefined, 8000);
+}
+
+export function timeshiftUrl(channelId: string): string {
+  return mediaUrl('/tv/timeshift/' + encodeURIComponent(channelId) + '/playlist.m3u8');
 }
 
 // ---- recorded live TV (docs/tv.md) --------------------------------------

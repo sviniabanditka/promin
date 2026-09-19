@@ -117,6 +117,46 @@ func (h *dvrHandlers) remove(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// timeshift: POST /api/v1/tv/channels/{id}/timeshift — start (or keep alive)
+// the channel's rolling window and say where to play it from. The TV calls it
+// on tune-in and every 30 s while watching; two TVs on one channel share the
+// buffer, and it is dropped two minutes after the last heartbeat.
+func (h *dvrHandlers) timeshift(w http.ResponseWriter, r *http.Request) {
+	if !h.enabled(w) {
+		return
+	}
+	id := r.PathValue("id")
+	if !tvChannelID.MatchString(id) {
+		writeBadRequest(w, "невірний id")
+		return
+	}
+	window, err := h.svc.EnsureBuffer(id)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "timeshift_unavailable", "таймшифт зараз недоступний")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"url":        "/tv/timeshift/" + id + "/" + dvr.PlaylistFile,
+		"window_sec": window,
+	})
+}
+
+// serveTimeshift: GET /tv/timeshift/{id}/{file} — the rolling window's playlist
+// and segments, same media token and token stamping as a recording.
+func (h *dvrHandlers) serveTimeshift(w http.ResponseWriter, r *http.Request) {
+	if h.svc == nil {
+		writeNotFound(w, "timeshift_off", "таймшифт вимкнено")
+		return
+	}
+	id := r.PathValue("id")
+	file := r.PathValue("file")
+	if !tvChannelID.MatchString(id) || !recordingFile.MatchString(file) {
+		writeBadRequest(w, "невірний шлях")
+		return
+	}
+	h.serveHLS(w, r, filepath.Join(h.svc.BufferDir(id), file), file)
+}
+
 // serveFile: GET /tv/records/{id}/{file} — the recording's playlist and
 // segments, behind the media token like every other media route. The playlist's
 // child URIs are relative, so the caller's token is stamped onto them (same
@@ -132,7 +172,12 @@ func (h *dvrHandlers) serveFile(w http.ResponseWriter, r *http.Request) {
 		writeBadRequest(w, "невірний шлях")
 		return
 	}
-	path := filepath.Join(h.svc.Dir(id), file)
+	h.serveHLS(w, r, filepath.Join(h.svc.Dir(id), file), file)
+}
+
+// serveHLS is the shared body of the two media routes: a playlist with the
+// caller's token stamped onto its relative children, or a segment off disk.
+func (h *dvrHandlers) serveHLS(w http.ResponseWriter, r *http.Request, path, file string) {
 	if strings.HasSuffix(file, ".m3u8") {
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -153,6 +198,8 @@ func (h *dvrHandlers) serveFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "video/mp2t")
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	// A timeshift segment is deleted as the window slides, so it must not be
+	// cached as immutable forever by anything in between.
+	w.Header().Set("Cache-Control", "public, max-age=300")
 	http.ServeFile(w, r, path)
 }

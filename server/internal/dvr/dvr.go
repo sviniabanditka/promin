@@ -51,12 +51,29 @@ type Service struct {
 	source  StreamSource
 	logger  *slog.Logger
 
+	// baseCtx is the process-lifetime context Run was given: a buffer or a
+	// recording must outlive the HTTP request that asked for it.
+	baseCtx context.Context
+
 	mu      sync.Mutex
 	running map[string]context.CancelFunc
+	// Rolling timeshift windows by channel id (buffer.go).
+	buffers map[string]*buffer
 }
+
+// Reasons a recording or a buffer could not start.
+type dvrError string
+
+func (e dvrError) Error() string { return string(e) }
+
+const (
+	errNoDisk   = dvrError("dvr: not enough free space")
+	errNoStream = dvrError("dvr: channel has no stream")
+)
 
 func New(repo *store.RecordingsRepo, dir, ffmpeg string, maxSizeBytes int64, source StreamSource, logger *slog.Logger) *Service {
 	return &Service{
+		baseCtx: context.Background(),
 		repo:    repo,
 		dir:     dir,
 		ffmpeg:  ffmpeg,
@@ -64,6 +81,7 @@ func New(repo *store.RecordingsRepo, dir, ffmpeg string, maxSizeBytes int64, sou
 		source:  source,
 		logger:  logger,
 		running: map[string]context.CancelFunc{},
+		buffers: map[string]*buffer{},
 	}
 }
 
@@ -114,6 +132,9 @@ func (s *Service) Delete(id string, userID int64) error {
 // Run is the scheduler loop; it returns when ctx is done (killing whatever is
 // still recording, which leaves a playable partial recording behind).
 func (s *Service) Run(ctx context.Context) {
+	s.mu.Lock()
+	s.baseCtx = ctx
+	s.mu.Unlock()
 	t := time.NewTicker(tickInterval)
 	defer t.Stop()
 	s.tick(ctx)
@@ -121,6 +142,7 @@ func (s *Service) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			s.stopAll()
+			s.stopBuffers()
 			return
 		case <-t.C:
 			s.tick(ctx)
@@ -152,6 +174,7 @@ func (s *Service) tick(ctx context.Context) {
 		}
 	}
 	s.sweep()
+	s.bufferSweep()
 }
 
 func (s *Service) isRunning(id string) bool {
@@ -255,6 +278,18 @@ func (s *Service) clearRunning(id string) {
 	s.mu.Lock()
 	delete(s.running, id)
 	s.mu.Unlock()
+}
+
+func (s *Service) stopBuffers() {
+	s.mu.Lock()
+	ids := make([]string, 0, len(s.buffers))
+	for id := range s.buffers {
+		ids = append(ids, id)
+	}
+	s.mu.Unlock()
+	for _, id := range ids {
+		s.StopBuffer(id)
+	}
 }
 
 func (s *Service) stopAll() {

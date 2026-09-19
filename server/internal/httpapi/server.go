@@ -269,6 +269,8 @@ func NewServer(
 	mux.HandleFunc("POST /api/v1/tv/records", requireAuth(authSvc, requireFeature("tv", dvrH.add)))
 	mux.HandleFunc("DELETE /api/v1/tv/records/{id}", requireAuth(authSvc, requireFeature("tv", dvrH.remove)))
 	mux.HandleFunc("GET /tv/records/{id}/{file}", requireAuthMedia(authSvc, dvrH.serveFile))
+	mux.HandleFunc("POST /api/v1/tv/channels/{id}/timeshift", requireAuth(authSvc, requireFeature("tv", dvrH.timeshift)))
+	mux.HandleFunc("GET /tv/timeshift/{id}/{file}", requireAuthMedia(authSvc, dvrH.serveTimeshift))
 
 	tgApp := &tgAppHandlers{bot: tgBot, auth: authSvc, sync: syncSvc, cat: catalogSvc}
 	mux.HandleFunc("POST /api/v1/tg/auth", tgApp.login) // open pre-gate: initData is the credential

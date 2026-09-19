@@ -4368,6 +4368,8 @@ body.night-mode #night-shade { display: block; }
 .live-info__name { font-size: 2.2rem; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .live-info__badge { flex: 0 0 auto; margin-left: 1.2rem; padding: 0.1rem 0.8rem; border-radius: 0.5rem; background: #d33; color: #fff; font-size: 1.2rem; font-weight: bold; letter-spacing: 0.06em; }
 .live-info__badge.is-paused { background: #555; }
+/* Playing out of the timeshift window: how far behind the broadcast we are. */
+.live-info__badge.is-behind { background: #8a6d1f; }
 .live-info__now { margin-top: 0.4rem; font-size: 1.7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .live-info__bar { max-width: 60%; }
 .live-info__next { margin-top: 0.6rem; font-size: 1.5rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -113,6 +113,7 @@ section to a subset of the configured countries.
 | GET | `/records` | `{records:[{id, channel_id, channel_title, title, start_at, end_at, state, error?, bytes}]}` for this profile |
 | POST | `/records` | `{channel_id, channel_title, title, start_at, end_at}` — the programme's own times; the server pads them |
 | DELETE | `/records/{id}` | stops it if running and deletes the files |
+| POST | `/channels/{id}/timeshift` | starts (or keeps alive) the channel's rolling window: `{url, window_sec}`; heartbeat every 30 s while watching |
 
 The media itself is `GET /tv/records/{id}/playlist.m3u8` + `seg-NNNNN.ts`,
 behind the same `?t=` media token as `/remux` and `/stream` (the playlist's
@@ -154,13 +155,30 @@ The Telegram Mini App has a TV tab (`docs/miniapp.md`): favourites, recent and
 search, each row showing what is on now, tapping one sends `open_tv` to the
 chosen TV. The TV resolves the channel by id and opens the live player.
 
-## Not done yet
+## Timeshift
 
-- **Timeshift**: pausing live TV and starting the running programme from its
-  beginning. Recording covers "I will not be home for it", not "I sat down ten
-  minutes late" — that needs a rolling buffer running while the channel is
-  watched, i.e. the recorder started on tune-in and the player reading behind
-  the live edge.
+While a channel is being watched the same recorder keeps a **rolling window** of
+it (`internal/dvr/buffer.go`): 200 × 6 s segments ≈ 20 minutes, old ones deleted
+as they fall out (`-hls_flags delete_segments+omit_endlist`). The window belongs
+to the channel, not to the viewer — two TVs on one channel share one ffmpeg.
+
+- The live player calls `POST /api/v1/tv/channels/{id}/timeshift` on tune-in and
+  every 30 s as a heartbeat; two minutes without one and the buffer is stopped
+  and deleted. The buffer hangs off the **service's** context, not the request's
+  (that mistake killed every ffmpeg the moment the HTTP call returned).
+- **Pause no longer loses the broadcast**: a pause of 5 s or more resumes out of
+  the window at the point it was paused, instead of jumping to the live edge.
+  The info bar's LIVE badge turns into `-mm:ss`.
+- **"З початку передачі"** in the player's settings menu plays the programme
+  that is on now from its start, when the window still reaches back that far
+  (the guide gives the start time). **"Прямий ефір"** goes back to the broadcast.
+- The client never needs server timestamps: it seeks to
+  `seekable.end − <seconds behind>`, which works the same on hls.js and on a
+  native HLS panel.
+
+Media is `GET /tv/timeshift/{channel}/{file}` behind the same `?t=` token.
+
+## Not done yet
 - "Now" on the grid tiles (the overlay has it; the grid does not yet).
 - Import of a provider's M3U / Xtream Codes (catchup, archive).
 - Channel numbers on the remote.
