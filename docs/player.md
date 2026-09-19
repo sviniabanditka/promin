@@ -108,6 +108,17 @@ The Audio pill opens a single sheet with up to two sections:
 
 The pill's value shows the dub currently playing. The picked in-stream track (`wantAudio`) is re-selected on the next episode.
 
+**Remembered dub.** Choosing a voice by hand writes its *name* into the synced
+setting `preferred_voice` (the id is per-provider and means nothing to the next
+source). On every new title the player calls `applyPreferredVoice()` once: if
+the source offers something matching and it is not what is already playing, it
+switches by the ordinary `requestVoice` path. Matching lives in
+`web/src/core/player/voices.ts` — normalised names (case, punctuation, ё→е),
+exact first, then one name containing the other, so "Цікава Ідея" finds
+"Дубляж | Цікава Ідея" without matching every dub in the list
+(`web/test/voices.test.ts`). Any manual pick during the session stops the
+automatic one from second-guessing the viewer.
+
 ## Subtitles
 
 Sources: sidecar files from the resolve response (`<track kind="subtitles">` appended to the video) and WebVTT renditions inside an HLS master (`hls.subtitleTracks`). Exactly one may be active; "Off" disables all. The `/relay` endpoint converts `.srt` to WebVTT on the fly (`server/internal/httpapi/relay_subtitle.go`), so SRT sidecars render like VTT.

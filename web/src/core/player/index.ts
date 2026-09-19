@@ -46,7 +46,8 @@ import { toast } from '../../ui/toast';
 import { el, empty, pad2 } from '../../ui/dom';
 import { ScreenInstance } from '../activity';
 import { preferNativeHls, canDecodeHevc } from '../capabilities';
-import { getDefaultQuality, getPlayerEngine, getPlayerSpeed, setPlayerSpeed, getSubSize, setSubSize, SubSize, isNightMode, setNightMode } from '../settings';
+import { getDefaultQuality, getPlayerEngine, getPlayerSpeed, setPlayerSpeed, getSubSize, setSubSize, SubSize, isNightMode, setNightMode, getPreferredVoice, setPreferredVoice } from '../settings';
+import { pickPreferredVoice } from './voices';
 import { isResumable } from '../progress';
 import { report as diag } from '../diag';
 import { setRemoteHandler, RemoteAction } from './remote';
@@ -1627,8 +1628,29 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   }
 
   // ---- voice re-resolve ----
+  // The viewer who picks a dub by hand means it for every film, not just this
+  // one: the name is remembered per profile (synced) and preselected below.
+  let voicePrefApplied = false;
+  function applyPreferredVoice(): void {
+    if (voicePrefApplied || ctx.live || !ctx.onVoice) return;
+    voicePrefApplied = true;
+    const voices = media.voices || [];
+    if (voices.length < 2) return;
+    const id = pickPreferredVoice(voices, getPreferredVoice(), media.currentVoice || '');
+    if (!id) return;
+    for (let i = 0; i < voices.length; i++) {
+      if (voices[i].id === id) {
+        requestVoice(id, voices[i].name);
+        return;
+      }
+    }
+  }
   function requestVoice(voiceId: string, name?: string): void {
     if (!ctx.onVoice) return;
+    // An automatic switch re-saves the same name (a no-op); a manual one is
+    // exactly the signal we want to keep.
+    if (name) setPreferredVoice(name);
+    voicePrefApplied = true; // the viewer has spoken; don't second-guess them
     setBuffering(true);
     if (name) toast({ kind: 'progress', title: t('player.switching_voice'), text: name, duration: 0 }); // a cold source takes up to ~25s
     const keepTime = absTime();
@@ -3727,6 +3749,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   loadEpisodes();
   loadSkips();
   applyNightAudio();
+  applyPreferredVoice();
   applyStoredExt();
 
   return {

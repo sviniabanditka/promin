@@ -53,6 +53,9 @@ interface Store {
   // Synced: it's the user's habit, not the device's quirk.
   night_mode: boolean;
   night_dim: number; // shade opacity in %, 50..90 step 5
+  // Name (not id — ids are per-provider) of the dub last chosen by hand. The
+  // player preselects the closest match on every new title. '' = never picked.
+  preferred_voice: string;
 }
 
 // Diagnostics is opt-in (Settings → diagnostics mode, or ?debug=1 in the URL).
@@ -69,6 +72,7 @@ const store: Store = {
   night_mode: false,
   night_dim: 85,
   subtitle_size: 'medium',
+  preferred_voice: '',
 };
 
 function isSubSize(v: unknown): v is SubSize {
@@ -120,6 +124,7 @@ function readLocal(): void {
     if (isSubSize(data.subtitle_size)) store.subtitle_size = data.subtitle_size;
     store.night_mode = !!data.night_mode;
     if (isNightDim(data.night_dim)) store.night_dim = data.night_dim as number;
+    if (typeof data.preferred_voice === 'string') store.preferred_voice = data.preferred_voice.slice(0, 120);
   } catch (e) {
     /* ignore corrupt cache */
   }
@@ -280,6 +285,9 @@ export function applyRemoteSetting(key: string, value: string): void {
       persist();
       applyNight();
     }
+  } else if (key === 'preferred_voice') {
+    store.preferred_voice = (value || '').slice(0, 120);
+    persist();
   } else if (key === 'player_speed') {
     const sp = parseFloat(value);
     if (isSpeed(sp)) {
@@ -287,6 +295,22 @@ export function applyRemoteSetting(key: string, value: string): void {
       persist();
     }
   }
+}
+
+// ---- remembered dub -----------------------------------------------------
+
+export function getPreferredVoice(): string {
+  return store.preferred_voice;
+}
+
+// Called when the viewer picks a dub by hand in the player. Synced, so the
+// habit follows the profile to the other TV.
+export function setPreferredVoice(name: string): void {
+  const v = (name || '').slice(0, 120);
+  if (v === store.preferred_voice) return;
+  store.preferred_voice = v;
+  persist();
+  pushSetting('preferred_voice', v);
 }
 
 // ---- reads (synchronous) -----------------------------------------------
