@@ -4372,6 +4372,15 @@ body.night-mode #night-shade { display: block; }
 .live-info__badge.is-behind { background: #8a6d1f; }
 .live-info__now { margin-top: 0.4rem; font-size: 1.7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .live-info__bar { max-width: 60%; }
+/* Timeshift window: live edge on the right, marker where we are / will resume. */
+.live-shift { display: flex; align-items: center; margin-top: 0.8rem; max-width: 60%; font-size: 1.3rem; color: var(--muted); }
+.live-shift__track { position: relative; flex: 1 1 auto; height: 0.5rem; margin: 0 1rem; border-radius: 0.25rem; background: rgba(255, 255, 255, 0.14); }
+.live-shift__fill { height: 100%; width: 100%; border-radius: 0.25rem; background: #8a6d1f; }
+.live-shift.is-live .live-shift__fill { background: #d33; }
+.live-shift__mark { position: absolute; top: 50%; left: 100%; width: 1.4rem; height: 1.4rem; margin: -0.7rem 0 0 -0.7rem; border-radius: 50%; background: #fff; box-shadow: 0 0 0 0.2rem rgba(0, 0, 0, 0.45); }
+.live-shift__label { flex: 0 0 auto; min-width: 5rem; font-variant-numeric: tabular-nums; }
+.live-shift__label--live { min-width: 0; font-weight: bold; }
+.live-shift.is-live .live-shift__label--live { color: #fff; }
 .live-info__next { margin-top: 0.6rem; font-size: 1.5rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .live-info__side { flex: 0 0 auto; margin-left: 2.4rem; text-align: right; }
 .live-info__clock { font-size: 2.4rem; font-weight: bold; }

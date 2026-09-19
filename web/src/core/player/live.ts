@@ -13,6 +13,7 @@ import * as router from '../router';
 import { t } from '../i18n';
 import { ScreenInstance } from '../activity';
 import { tvPlay, tvFail, getTvNow, mediaUrl, postPlayerState, startTimeshift, timeshiftUrl } from '../api';
+import { SEEK_STEP_S, fmtBehind, isLive, shiftFraction, shiftTarget } from './shift';
 import { ensureHls } from './hls';
 import { setRemoteHandler } from './remote';
 import { preferNativeHls } from '../capabilities';
@@ -71,6 +72,8 @@ function mountLive(root: HTMLElement, ctx: LiveContext): ScreenInstance {
   let bufferWindow = 0; // seconds the server says we may seek back into; 0 = off
   let bufferTimer = 0;
   let pausedAt = 0; // Date.now() at the pause
+  let pauseBehind = 0; // seconds behind live when the pause happened
+  let scrubDelta = 0; // ◀/▶ while paused: seconds moved (+ = towards live)
   let timeshiftOn = false; // playing out of the buffer, not the live stream
   let seekBehind = 0; // seconds behind the live edge to land on once seekable
   let seekTries = 0;
@@ -118,6 +121,20 @@ function mountLive(root: HTMLElement, ctx: LiveContext): ScreenInstance {
   const infoFill = el('div', 'live-info__fill');
   infoBar.appendChild(infoFill);
   infoMain.appendChild(infoBar);
+  // Timeshift bar (docs/tv.md): the server's window, live edge at the right,
+  // the marker where we are (or where a paused viewer will resume).
+  const shiftBar = el('div', 'live-shift hide');
+  const shiftTrack = el('div', 'live-shift__track');
+  const shiftFill = el('div', 'live-shift__fill');
+  const shiftMark = el('div', 'live-shift__mark');
+  shiftTrack.appendChild(shiftFill);
+  shiftTrack.appendChild(shiftMark);
+  const shiftLeft = el('div', 'live-shift__label');
+  const shiftRight = el('div', 'live-shift__label live-shift__label--live', 'LIVE');
+  shiftBar.appendChild(shiftLeft);
+  shiftBar.appendChild(shiftTrack);
+  shiftBar.appendChild(shiftRight);
+  infoMain.appendChild(shiftBar);
   const infoNext = el('div', 'live-info__next');
   infoMain.appendChild(infoNext);
   const infoSide = el('div', 'live-info__side');
@@ -160,6 +177,66 @@ function mountLive(root: HTMLElement, ctx: LiveContext): ScreenInstance {
     infoNext.textContent = v && v.next ? t('tv.next') + ': ' + hhmm(v.next.start) + '  ' + v.next.title : '';
     const d = new Date();
     infoClock.textContent = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+    paintShift();
+  }
+
+  // Seconds behind live the viewer is at — or, while paused, will resume at.
+  function targetBehind(): number {
+    if (!paused) return behindSec();
+    const away = pausedAt ? (Date.now() - pausedAt) / 1000 : 0;
+    return shiftTarget(pauseBehind, away, scrubDelta, bufferWindow);
+  }
+
+  function paintShift(): void {
+    if (bufferWindow <= 0) {
+      shiftBar.classList.add('hide');
+      return;
+    }
+    shiftBar.classList.remove('hide');
+    const behind = targetBehind();
+    const pct = Math.round(shiftFraction(behind, bufferWindow) * 1000) / 10;
+    shiftFill.style.width = pct + '%';
+    shiftMark.style.left = pct + '%';
+    shiftLeft.textContent = isLive(behind) ? '' : '-' + fmtBehind(behind);
+    shiftBar.classList.toggle('is-live', isLive(behind));
+  }
+
+  // ◀/▶ while paused, ⏪/⏩ any time, Mini App "seek": move through the window.
+  // Playing live and stepping back drops into the window; stepping forward past
+  // the edge goes back to the broadcast.
+  function seekBy(delta: number): void {
+    if (bufferWindow <= 0) return;
+    if (paused) {
+      scrubDelta += delta;
+      // Keep the scrub inside what shiftTarget will accept, so the label and
+      // the landing spot agree.
+      const away = pausedAt ? (Date.now() - pausedAt) / 1000 : 0;
+      const t2 = shiftTarget(pauseBehind, away, scrubDelta, bufferWindow);
+      scrubDelta = pauseBehind + away - t2;
+      showInfo();
+      return;
+    }
+    if (!timeshiftOn) {
+      if (delta < 0) goTimeshift(-delta);
+      return;
+    }
+    const behind = behindSec() - delta;
+    if (isLive(behind)) {
+      start(idx); // back to the broadcast itself
+      return;
+    }
+    try {
+      const sk = video.seekable;
+      if (sk && sk.length) {
+        const end = sk.end(sk.length - 1);
+        let target = end - shiftTarget(behind, 0, 0, bufferWindow);
+        if (target < sk.start(0)) target = sk.start(0);
+        video.currentTime = target;
+      }
+    } catch (e) {
+      /* the engine refused the seek; the next tick paints where we really are */
+    }
+    showInfo();
   }
 
   function showInfo(typed?: string): void {
@@ -262,7 +339,10 @@ function mountLive(root: HTMLElement, ctx: LiveContext): ScreenInstance {
     if (!ch) return;
     startTimeshift(ch.id).then(
       function (r) {
-        if (!destroyed) bufferWindow = r && r.window_sec ? r.window_sec : 0;
+        if (destroyed) return;
+        bufferWindow = r && r.window_sec ? r.window_sec : 0;
+        // The bar was painted before the server answered: show the window now.
+        if (!info.classList.contains('hide')) paintInfo(digits || undefined);
       },
       function () {
         if (!destroyed) bufferWindow = 0;
@@ -343,12 +423,6 @@ function mountLive(root: HTMLElement, ctx: LiveContext): ScreenInstance {
     return behind - behindSec() > 0 ? behind : 0;
   }
 
-  function fmtBehind(sec: number): string {
-    const m = Math.floor(sec / 60);
-    const s2 = Math.floor(sec % 60);
-    return m + ':' + pad2(s2);
-  }
-
   function attach(url: string, my: number): void {
     const engine = getPlayerEngine();
     const nativeHls = engine === 'native' ? true : engine === 'hlsjs' ? false : preferNativeHls();
@@ -415,7 +489,10 @@ function mountLive(root: HTMLElement, ctx: LiveContext): ScreenInstance {
       video.pause();
       paused = true;
       pausedAt = Date.now();
+      pauseBehind = behindSec();
+      scrubDelta = 0;
       pausedEl.classList.remove('hide');
+      pausedHint.textContent = t(bufferWindow > 0 ? 'live.paused_hint_shift' : 'live.paused_hint');
       pausedHint.classList.remove('hide');
       showInfo();
       reportState(true);
@@ -429,14 +506,45 @@ function mountLive(root: HTMLElement, ctx: LiveContext): ScreenInstance {
     pausedEl.classList.add('hide');
     pausedHint.classList.add('hide');
     // The broadcast kept running while we stood still: if the server has been
-    // buffering it, carry on from the pause instead of skipping what was missed.
+    // buffering it, carry on from the pause (moved by any scrubbing) instead of
+    // skipping what was missed.
     const away = pausedAt ? (Date.now() - pausedAt) / 1000 : 0;
+    const behind = shiftTarget(pauseBehind, away, scrubDelta, bufferWindow);
+    const scrubbed = scrubDelta !== 0;
     pausedAt = 0;
-    if (bufferWindow > 0 && away >= TIMESHIFT_MIN_S) {
-      goTimeshift(away + behindSec());
+    scrubDelta = 0;
+    if (bufferWindow <= 0) {
+      resumeLiveEdge();
       return;
     }
-    resumeLiveEdge();
+    if (isLive(behind) || (!scrubbed && away < TIMESHIFT_MIN_S && !timeshiftOn)) {
+      // At the edge (or a blink of a pause on the live stream): play the
+      // broadcast itself, not the window's copy of it.
+      if (timeshiftOn) start(idx);
+      else resumeLiveEdge();
+      return;
+    }
+    if (!timeshiftOn) {
+      goTimeshift(behind); // the live stream's own window has moved on
+      return;
+    }
+    // Already inside the window: the paused frame is still there, and a scrub
+    // is a plain seek in it.
+    if (scrubbed) {
+      try {
+        const sk = video.seekable;
+        if (sk && sk.length) {
+          let target = sk.end(sk.length - 1) - behind;
+          if (target < sk.start(0)) target = sk.start(0);
+          video.currentTime = target;
+        }
+      } catch (e) {
+        /* ignore */
+      }
+    }
+    tryPlay();
+    showInfo();
+    reportState(true);
   }
 
   // Back to the live edge of whatever is playing (the stream itself, or the
@@ -785,6 +893,12 @@ function mountLive(root: HTMLElement, ctx: LiveContext): ScreenInstance {
   // ---- transport mode ----
   const mediaKeys: ControllerCalls = {
     playpause: togglePause,
+    rewind: function () {
+      seekBy(-SEEK_STEP_S);
+    },
+    forward: function () {
+      seekBy(SEEK_STEP_S);
+    },
     play: function () {
       if (paused) resumeLive();
     },
@@ -811,8 +925,16 @@ function mountLive(root: HTMLElement, ctx: LiveContext): ScreenInstance {
     down: function () {
       zap(-1);
     },
-    left: openGuide,
-    right: openMenu,
+    // Paused = the timeline is up: ◀/▶ move through the window. Playing, they
+    // are the guide and the settings as always.
+    left: function () {
+      if (paused && bufferWindow > 0) seekBy(-SEEK_STEP_S);
+      else openGuide();
+    },
+    right: function () {
+      if (paused && bufferWindow > 0) seekBy(SEEK_STEP_S);
+      else openMenu();
+    },
     back: exit,
   };
   for (const k in mediaKeys) if (Object.prototype.hasOwnProperty.call(mediaKeys, k)) live[k] = mediaKeys[k];
@@ -827,6 +949,9 @@ function mountLive(root: HTMLElement, ctx: LiveContext): ScreenInstance {
     switch (action) {
       case 'toggle_play':
         togglePause();
+        return true;
+      case 'seek':
+        seekBy(value || 0);
         return true;
       case 'next':
         zap(1);

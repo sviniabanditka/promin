@@ -169,6 +169,15 @@ to the channel, not to the viewer — two TVs on one channel share one ffmpeg.
 - **Pause no longer loses the broadcast**: a pause of 5 s or more resumes out of
   the window at the point it was paused, instead of jumping to the live edge.
   The info bar's LIVE badge turns into `-mm:ss`.
+- **Seeking.** The info bar carries a second bar for the window (live edge at
+  the right, marker where we are or will resume, `-mm:ss` on the left). OK
+  pauses and puts the timeline up; while paused **◀/▶ move 30 s** (the guide and
+  the settings keep ◀/▶ while playing), OK resumes at the marker. **⏪/⏩ and the
+  Mini App's `seek`** work any time: stepping back on the live stream drops into
+  the window, stepping forward past the edge goes back to the broadcast. The
+  arithmetic — drift while paused, scrub, the 30 s margin at the window's dying
+  end, the 5 s "that is live" edge — is `web/src/core/player/shift.ts`, unit
+  tested.
 - **"З початку передачі"** in the player's settings menu plays the programme
   that is on now from its start, when the window still reaches back that far
   (the guide gives the start time). **"Прямий ефір"** goes back to the broadcast.
