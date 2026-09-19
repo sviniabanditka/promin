@@ -76,6 +76,13 @@ type OpenTitlePayload struct {
 	Episode   int    `json:"episode,omitempty"`
 }
 
+// OpenTVPayload is EventOpenTV: switch one TV to a live channel (Mini App).
+type OpenTVPayload struct {
+	ChannelID string `json:"channel_id"`
+	DeviceID  string `json:"device_id"`
+	Title     string `json:"title,omitempty"`
+}
+
 // OpenYouTubePayload is EventOpenYouTube: open a YouTube video page on one TV.
 type OpenYouTubePayload struct {
 	VideoID  string `json:"video_id"`

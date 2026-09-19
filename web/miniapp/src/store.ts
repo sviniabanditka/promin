@@ -16,6 +16,7 @@ export interface LiveState extends PlayerState {
 export interface State {
   phase: Phase;
   youtube: boolean; // the server has the YouTube section (from /ping)
+  tv: boolean; // the server has the live-TV section (from /ping), allowed for this profile
   error: string | null;
   user: api.AuthUser | null;
   lang: Lang;
@@ -38,6 +39,7 @@ const DEVICE_KEY = 'promin_tg_device';
 let state: State = {
   phase: 'boot',
   youtube: false,
+  tv: false,
   error: null,
   user: null,
   lang: 'en',
@@ -162,11 +164,16 @@ export function setLang(lang: Lang): void {
   setState({ lang });
 }
 
-// Whether to show the YouTube tab: the server has the sidecar AND the admin
-// allowed it for this profile.
+// Whether to show the YouTube and TV tabs: the server has the section AND the
+// admin allowed it for this profile.
 export function loadPing(): void {
-  Promise.all([api.getPing(), api.getMe().catch(() => ({}) as { features?: { youtube?: boolean } })])
-    .then(([p, me]) => setState({ youtube: !!p.youtube && !(me.features && me.features.youtube === false) }))
+  Promise.all([api.getPing(), api.getMe().catch(() => ({}) as { features?: { youtube?: boolean; tv?: boolean } })])
+    .then(([p, me]) =>
+      setState({
+        youtube: !!p.youtube && !(me.features && me.features.youtube === false),
+        tv: !!p.tv && !(me.features && me.features.tv === false),
+      })
+    )
     .catch(() => {});
 }
 
@@ -336,6 +343,13 @@ export async function sendOpenYt(videoId: string): Promise<boolean> {
   const ok = await sendTo((device_id) => ({ device_id, open_yt: { video_id: videoId } }), dev ? t('title.sent', { name: dev.name }) : undefined);
   if (ok) setState({ padOpen: true });
   return ok;
+}
+
+// Switch the target TV to a live channel (docs/tv.md). No D-pad sheet after
+// it: the channel is already playing, the phone's remote tab is one tap away.
+export async function sendOpenTv(channelId: string, title?: string): Promise<boolean> {
+  const dev = targetDevice(state);
+  return sendTo((device_id) => ({ device_id, open_tv: { channel_id: channelId, title } }), dev ? t('title.sent', { name: dev.name }) : undefined);
 }
 
 export function closePad(): void {

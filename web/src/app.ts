@@ -15,7 +15,8 @@ import { Direction } from './core/nav';
 import { setFeatures, setUserFeatures } from './core/features';
 import { dispatchRemote, RemoteAction } from './core/player/remote';
 import { isLogged, clearLocal, onAuthChange } from './core/auth';
-import { setDeadSessionHook, getPing, getMe } from './core/api';
+import { setDeadSessionHook, getPing, getMe, getTvChannels } from './core/api';
+import { openLivePlayer } from './core/player/live';
 import * as sync from './core/sync';
 import * as screensaver from './core/screensaver';
 import { initSettings, syncFromServer, setNightMode, isNightMode, setScreensaverChangedHook, applyLocalSetting, reportDeviceSettings } from './core/settings';
@@ -185,6 +186,27 @@ function boot(): void {
     openYt('home');
     openYtVideo(videoId);
     toast({ kind: 'info', icon: '✈', title: t('telegram.opened'), text: title || 'YouTube' });
+  });
+  // "Open on TV" for a live channel: one lookup by id (the phone never pulls
+  // the catalogue) and straight into the live player.
+  sync.setOpenTvHandler(function (channelID, title) {
+    if (!isLogged() || !channelID) return;
+    getTvChannels({ id: channelID }).then(
+      function (r) {
+        const items = r && r.items ? r.items : [];
+        if (!items.length) return;
+        const c = items[0];
+        openLivePlayer({
+          channels: [{ id: c.id, name: c.name, logo: c.logo, quality: c.quality, favorite: c.favorite }],
+          index: 0,
+          sectionLabel: '',
+        });
+        toast({ kind: 'info', icon: '✈', title: t('telegram.opened'), text: title || c.name });
+      },
+      function () {
+        /* offline or gone: the phone already said "sent" */
+      }
+    );
   });
   // Remote-control presses from the bot: the player consumes playback actions;
   // night mode is global and works from any screen.

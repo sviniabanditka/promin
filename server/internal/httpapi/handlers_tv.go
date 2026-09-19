@@ -81,6 +81,9 @@ func (h *tvHandlers) channels(w http.ResponseWriter, r *http.Request) {
 	info, _ := authFrom(r)
 	q := r.URL.Query()
 	f := store.TVFilter{
+		// ?id= is how the Mini App's "open on TV" resolves one channel without
+		// pulling the whole catalogue down to the phone.
+		ID:        q.Get("id"),
 		Country:   q.Get("country"),
 		Countries: allowedCountries(r),
 		Category:  q.Get("category"),
@@ -92,6 +95,10 @@ func (h *tvHandlers) channels(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(f.Country) > 2 || len(f.Category) > 40 || len(f.Query) > 80 {
 		writeBadRequest(w, "невірні параметри")
+		return
+	}
+	if f.ID != "" && !tvChannelID.MatchString(f.ID) {
+		writeBadRequest(w, "невірний id")
 		return
 	}
 	items, err := h.svc.Channels(f)

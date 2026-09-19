@@ -21,9 +21,27 @@ const D: Record<string, Entry> = {
   'tab.home': ['Головна', 'Главная', 'Home'],
   'tab.search': ['Пошук', 'Поиск', 'Search'],
   'tab.youtube': ['YouTube', 'YouTube', 'YouTube'],
+  'tab.tv': ['ТБ', 'ТВ', 'TV'],
   'tab.remote': ['Пульт', 'Пульт', 'Remote'],
   'tab.library': ['Бібліотека', 'Библиотека', 'Library'],
   'tab.settings': ['Налаштування', 'Настройки', 'Settings'],
+
+  'tv.favorites': ['Обрані', 'Избранные', 'Favourites'],
+  'tv.recent': ['Нещодавні', 'Недавние', 'Recent'],
+  'tv.search': ['Пошук', 'Поиск', 'Search'],
+  'tv.search_hint': ['Назва каналу', 'Название канала', 'Channel name'],
+  'tv.no_epg': ['Програми немає', 'Программы нет', 'No guide'],
+  'tv.favorite': ['В обрані', 'В избранные', 'Favourite'],
+  'tv.fav_added': ['Додано в обрані', 'Добавлено в избранные', 'Added to favourites'],
+  'tv.fav_removed': ['Прибрано з обраних', 'Убрано из избранных', 'Removed from favourites'],
+  'tv.no_favorites': ['Обраних каналів немає', 'Избранных каналов нет', 'No favourite channels'],
+  'tv.no_recent': ['Ще нічого не дивилися', 'Ещё ничего не смотрели', 'Nothing watched yet'],
+  'tv.nothing_found': ['Нічого не знайдено', 'Ничего не найдено', 'Nothing found'],
+  'tv.fav_hint': [
+    'Зірочка тут або довге OK на телевізорі додає канал в обрані.',
+    'Звёздочка здесь или долгое OK на телевизоре добавляет канал в избранные.',
+    'The star here, or a long OK on the TV, adds a channel to favourites.',
+  ],
 
   'gate.not_tg_title': ['Відкрийте в Telegram', 'Откройте в Telegram', 'Open this in Telegram'],
   'gate.not_tg_body': [

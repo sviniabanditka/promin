@@ -46,25 +46,14 @@ system itself is described in the other documents.
 
 ## Chosen 2026-09-19 (audit)
 
-Picked by the owner after a repo audit. Ordered by value/cost; every item names
-the machinery it stands on, because none of them starts from zero.
+Picked by the owner after a repo audit; shipped items are removed as they land.
+What is left:
 
-1. **Timeshift and recording for Live TV (nDVR).** The biggest of the seven and
-   the most distinctive. EPG is already stored whole per feed
-   (`internal/tv/epg.go`) and the remux queue already writes HLS segments: keep
-   a rolling 30–60 min window for favourite channels → "start this programme
-   from the beginning", a pause that does not lose the broadcast, and "record"
-   straight off the guide, with the recording appearing as an ordinary title.
-   Needs the free-disk gate from *Torrents* above to land first.
-
-2. **Live TV in the Telegram Mini App.** The Mini App has home, search,
-   youtube, remote, library and settings (`web/miniapp/src/router.ts`) and no
-   TV tab at all, while the backend already serves the catalogue, the EPG and
-   the logo proxy (`internal/httpapi/handlers_tv.go`). Add a TV tab: channel
-   list with "now / next" from the guide, favourites, and — the point of having
-   it on the phone — "switch the TV to this channel" through the existing
-   `EventRemote` path, plus playing the channel on the phone itself where the
-   stream allows it.
+1. **Timeshift for Live TV.** Recording off the guide is done (`docs/tv.md`,
+   `internal/dvr`); the live half is not: pausing the broadcast and starting
+   the programme that is already running from its beginning. Needs the recorder
+   started when a channel is tuned in (a rolling window, dropped when nobody is
+   watching) and the live player able to read behind the live edge.
 
 ## Candidates reviewed 2026-09-12 (not started)
 

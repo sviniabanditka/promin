@@ -192,6 +192,7 @@ func (r *TVRepo) Counts(countries []string) (byCountry map[string]int, byCategor
 
 // TVFilter narrows Channels.
 type TVFilter struct {
+	ID        string   // "" = any; one channel by id (Mini App "open on TV")
 	Country   string   // "" = all configured
 	Countries []string // the profile's allowed countries; nil = no restriction
 	Category  string   // "" = all
@@ -217,6 +218,10 @@ func (r *TVRepo) Channels(f TVFilter) ([]TVChannel, error) {
 		args = append(args, f.UserID)
 	}
 	sb.WriteString(` FROM tv_channels c WHERE alive > 0`)
+	if f.ID != "" {
+		sb.WriteString(` AND c.id = ?`)
+		args = append(args, f.ID)
+	}
 	if f.Country != "" {
 		sb.WriteString(` AND c.country = ?`)
 		args = append(args, f.Country)

@@ -140,6 +140,9 @@ func TestTGSendValidation(t *testing.T) {
 		{`{"device_id":"` + tvID + `","remote":{"action":"sync_state","value":120.5,"str":"buffering"}}`, 400},
 		{`{"device_id":"` + tvID + `","remote":{"action":"sync_state","value":-1,"str":"playing"}}`, 400},
 		{`{"device_id":"` + tvID + `","remote":{"action":"sync_stop"}}`, 204},
+		// Live TV from the phone: "switch that TV to this channel".
+		{`{"device_id":"` + tvID + `","open_tv":{"channel_id":"Suspilne.ua"}}`, 204},
+		{`{"device_id":"` + tvID + `","open_tv":{"channel_id":"../etc/passwd"}}`, 400},
 	}
 	for _, c := range cases {
 		if rr := tgCall(mux, http.MethodPost, "/api/v1/tg/send", phone, c.body); rr.Code != c.want {
@@ -151,8 +154,8 @@ func TestTGSendValidation(t *testing.T) {
 	for len(ch) > 0 {
 		got = append(got, <-ch)
 	}
-	if len(got) != 5 {
-		t.Fatalf("published %d events, want 5", len(got))
+	if len(got) != 6 {
+		t.Fatalf("published %d events, want 6", len(got))
 	}
 	js := func(ev sync.Event) string { b, _ := json.Marshal(ev.Payload); return string(b) }
 	if got[0].Type != sync.EventRemote || js(got[0]) != `{"device_id":"`+tvID+`","action":"seek_to","value":1234.5}` {
@@ -169,6 +172,9 @@ func TestTGSendValidation(t *testing.T) {
 	}
 	if got[4].Type != sync.EventRemote || js(got[4]) != `{"device_id":"`+tvID+`","action":"sync_stop","value":0}` {
 		t.Fatalf("sync stop: %s %s", got[4].Type, js(got[4]))
+	}
+	if got[5].Type != sync.EventOpenTV || js(got[5]) != `{"channel_id":"Suspilne.ua","device_id":"`+tvID+`"}` {
+		t.Fatalf("open tv: %s %s", got[5].Type, js(got[5]))
 	}
 	if _, ok := got[2].Payload.(telegram.OpenTitlePayload); !ok {
 		t.Fatal("payload type")

@@ -196,6 +196,20 @@ navigation, `MainButton` for the primary action on Title, haptic feedback on
 remote presses. Language: `Telegram.WebApp.initDataUnsafe.user.language_code`
 until the profile settings load, then the synced `lang`.
 
+## TV tab
+
+Shown when `/ping` reports `tv: true` and the profile is allowed the feature.
+Three segments — favourites, recently watched, search over the catalogue
+(`GET /api/v1/tv/channels?fav=1 | recent=1 | q=`), each row carrying the
+channel's logo, quality and what is on now from one `GET /api/v1/tv/now` fetch,
+with a progress bar for the running programme. The star toggles
+`PUT/DELETE /api/v1/tv/favorites/{id}`; tapping a row sends
+`open_tv {channel_id}` to the chosen TV, which looks the channel up by id
+(`/tv/channels?id=`) and opens the live player on it.
+
+The phone deliberately does not play the stream itself: half the channels need
+the relay's UA/Referer and hls.js, which this bundle does not carry.
+
 ## YouTube tab
 
 Shown when `/ping` reports `youtube: true`. Three segments — continue watching

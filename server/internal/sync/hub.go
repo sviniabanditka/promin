@@ -39,6 +39,8 @@ const (
 	// EventOpenYouTube asks ONE device to open a YouTube video page (bot /
 	// Mini App → TV). Payload {video_id, device_id, title}.
 	EventOpenYouTube = "open_yt"
+	// EventOpenTV asks ONE device to open a live channel (Mini App, docs/tv.md).
+	EventOpenTV = "open_tv"
 	// EventRemote is a playback command for ONE device (Telegram remote).
 	// Payload {device_id, action, value}: action toggle_play|seek|seek_to|
 	// prev|next|mute|night|sleep; value is seconds for seek (±30) and

@@ -285,6 +285,22 @@ h1, h2, p { margin: 0; }
 
 /* YouTube tab: thumbnail rows that open the video on the TV. */
 .ytlist { display: flex; flex-direction: column; gap: 10px; padding: 8px 16px 16px; }
+/* Live TV rows (docs/tv.md): logo, what is on now, a star. Tapping the row
+   switches the chosen TV to the channel. */
+.tvlist { display: flex; flex-direction: column; gap: 14px; padding: 8px 16px 16px; }
+.tvrow { display: flex; gap: 8px; align-items: center; width: 100%; }
+.tvrow-main { display: flex; gap: 12px; align-items: center; flex: 1; min-width: 0; text-align: left; background: none; color: inherit; padding: 0; }
+.tvrow-logo { flex: 0 0 56px; width: 56px; height: 56px; border-radius: 10px; background: var(--bg2); display: flex; align-items: center; justify-content: center; overflow: hidden; font-size: 15px; font-weight: 600; color: var(--hint); }
+.tvrow-logo img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.tvrow-text { flex: 1; min-width: 0; }
+.tvrow-title { font-size: 15px; display: flex; align-items: center; gap: 6px; }
+.tvrow-q { font-size: 10px; font-weight: 600; padding: 1px 4px; border-radius: 4px; background: var(--bg2); color: var(--hint); }
+.tvrow-sub { font-size: 12px; color: var(--hint); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tvrow-prog { height: 3px; margin-top: 5px; border-radius: 2px; background: var(--bg2); overflow: hidden; }
+.tvrow-prog div { height: 100%; background: var(--link); }
+.tvrow-fav { flex: 0 0 auto; background: none; border: 0; font-size: 20px; line-height: 1; padding: 6px; color: var(--hint); }
+.tvrow-fav.on { color: #f2c14e; }
+
 .ytrow { display: flex; gap: 12px; align-items: flex-start; text-align: left; width: 100%; background: none; color: inherit; padding: 0; }
 .ytrow-thumb { position: relative; flex: 0 0 132px; width: 132px; aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden; background: var(--bg2); }
 .ytrow-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }

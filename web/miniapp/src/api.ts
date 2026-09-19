@@ -262,6 +262,7 @@ export interface OpenCmd {
 export type SendBody = { device_id: string } & (
   | { open: OpenCmd }
   | { open_yt: { video_id: string } }
+  | { open_tv: { channel_id: string; title?: string } }
   | { remote: { action: RemoteAction; value?: number } }
   | { remote: { action: RemoteStrAction; str: string } }
   | { remote: { action: 'set_local'; key: LocalKey; str: 'true' | 'false' } }
@@ -295,7 +296,34 @@ export interface YtFeed {
 }
 export const ytBrowse = (page: string) => get<YtFeed>('/yt/browse/' + encodeURIComponent(page), { lang });
 export const ytSearch = (q: string) => get<YtFeed>('/yt/search', { q, lang });
-export const getPing = () => get<{ youtube?: boolean }>('/ping');
+export const getPing = () => get<{ youtube?: boolean; tv?: boolean }>('/ping');
+
+// ---- live TV (docs/tv.md; the catalogue and the guide live on the server) ----
+export interface TvChannel {
+  id: string;
+  name: string;
+  country?: string;
+  categories?: string[];
+  logo?: string;
+  quality?: string;
+  streams?: number;
+  favorite?: boolean;
+}
+export interface TvProgram {
+  start: number;
+  stop: number;
+  title: string;
+  desc?: string;
+}
+export interface TvNowNext {
+  now?: TvProgram;
+  next?: TvProgram;
+}
+export const getTvChannels = (q: { fav?: string; recent?: string; q?: string; limit?: number }) =>
+  get<{ items: TvChannel[] }>('/tv/channels', q);
+export const getTvNow = () => get<{ items: Record<string, TvNowNext>; at: number }>('/tv/now');
+export const tvFavorite = (id: string, on: boolean) =>
+  on ? put<unknown>('/tv/favorites/' + encodeURIComponent(id)) : del<unknown>('/tv/favorites/' + encodeURIComponent(id));
 
 export const tgAuth = (init_data: string) => post<{ token: string; user: AuthUser }>('/tg/auth', { init_data });
 // The profile's allowed features (admin panel).

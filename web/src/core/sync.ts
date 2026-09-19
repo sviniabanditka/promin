@@ -317,6 +317,11 @@ let openYtHandler: ((videoId: string, title: string) => void) | null = null;
 export function setOpenYtHandler(fn: (videoId: string, title: string) => void): void {
   openYtHandler = fn;
 }
+// Mini App → "switch this TV to that channel" (docs/tv.md).
+let openTvHandler: ((channelID: string, title: string) => void) | null = null;
+export function setOpenTvHandler(fn: (channelID: string, title: string) => void): void {
+  openTvHandler = fn;
+}
 
 export function setRemoteEventHandler(fn: (action: string, value: number, key: string, str: string) => void): void {
   remoteHandler = fn;
@@ -388,6 +393,11 @@ function applyEvent(ev: SyncEvent): void {
     const tok = getToken() || '';
     if (openYtHandler && p.device_id && tok.slice(0, 12) === String(p.device_id)) {
       openYtHandler(String(p.video_id || ''), String(p.title || ''));
+    }
+  } else if (ev.type === 'open_tv') {
+    const tok = getToken() || '';
+    if (openTvHandler && p.device_id && tok.slice(0, 12) === String(p.device_id)) {
+      openTvHandler(String(p.channel_id || ''), String(p.title || ''));
     }
   } else if (ev.type === 'remote') {
     const tok = getToken() || '';

@@ -103,6 +103,7 @@ section to a subset of the configured countries.
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/meta` | `{countries:[{code,name,flag,channels}], categories:[{id,name,channels}]}` — alive channels only |
+| GET | `/channels?id=&country=UA&category=news&q=&fav=1&recent=1&limit=` | `id=` returns the one channel (the Mini App's "open on TV" resolves it without pulling the catalogue) |
 | GET | `/channels?country=UA&category=news&q=&fav=1&recent=1&limit=` | `{items:[{id,name,country,categories,logo,quality,streams,favorite}]}`, favourites first, then by name |
 | GET | `/channels/{id}/play` | `{url, direct, quality, streams}`; records "recent"; `404 no_stream` |
 | POST | `/channels/{id}/fail` | the player could not start it |
@@ -147,6 +148,12 @@ Recordings are per profile, like bookmarks. On the TV they are a section of the
 left rail ("Записи"): OK plays the recording in the ordinary player, long-press
 deletes it.
 
+## From the phone
+
+The Telegram Mini App has a TV tab (`docs/miniapp.md`): favourites, recent and
+search, each row showing what is on now, tapping one sends `open_tv` to the
+chosen TV. The TV resolves the channel by id and opens the live player.
+
 ## Not done yet
 
 - **Timeshift**: pausing live TV and starting the running programme from its
@@ -156,5 +163,4 @@ deletes it.
   the live edge.
 - "Now" on the grid tiles (the overlay has it; the grid does not yet).
 - Import of a provider's M3U / Xtream Codes (catchup, archive).
-- Mini App / bot surfaces ("switch the TV to this channel").
 - Channel numbers on the remote.

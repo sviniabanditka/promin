@@ -124,6 +124,10 @@ type tgSendRequest struct {
 	OpenYT *struct {
 		VideoID string `json:"video_id"`
 	} `json:"open_yt"`
+	OpenTV *struct {
+		ChannelID string `json:"channel_id"`
+		Title     string `json:"title"`
+	} `json:"open_tv"`
 	Remote *struct {
 		Action string  `json:"action"`
 		Value  float64 `json:"value"`
@@ -139,13 +143,17 @@ func (h *tgAppHandlers) send(w http.ResponseWriter, r *http.Request) {
 	var req tgSendRequest
 	err := json.NewDecoder(r.Body).Decode(&req)
 	kinds := 0
-	for _, set := range []bool{req.Open != nil, req.Remote != nil, req.OpenYT != nil} {
+	for _, set := range []bool{req.Open != nil, req.Remote != nil, req.OpenYT != nil, req.OpenTV != nil} {
 		if set {
 			kinds++
 		}
 	}
 	if err != nil || req.DeviceID == "" || kinds != 1 {
-		writeBadRequest(w, "потрібні device_id та рівно одне з open | remote | open_yt")
+		writeBadRequest(w, "потрібні device_id та рівно одне з open | remote | open_yt | open_tv")
+		return
+	}
+	if req.OpenTV != nil && (!tvChannelID.MatchString(req.OpenTV.ChannelID) || len(req.OpenTV.Title) > 200) {
+		writeBadRequest(w, "open_tv: невірний channel_id")
 		return
 	}
 	if req.OpenYT != nil && !ytVideoID.MatchString(req.OpenYT.VideoID) {
@@ -193,6 +201,11 @@ func (h *tgAppHandlers) send(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.OpenYT != nil {
 		hub.Publish(info.User.ID, sync.EventOpenYouTube, telegram.OpenYouTubePayload{VideoID: req.OpenYT.VideoID, DeviceID: req.DeviceID})
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if req.OpenTV != nil {
+		hub.Publish(info.User.ID, sync.EventOpenTV, telegram.OpenTVPayload{ChannelID: req.OpenTV.ChannelID, DeviceID: req.DeviceID, Title: req.OpenTV.Title})
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}

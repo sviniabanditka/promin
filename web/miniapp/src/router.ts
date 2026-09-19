@@ -1,21 +1,21 @@
-// Hash router: #/  #/search?q=  #/youtube?tab=  #/title/tv/1399  #/remote  #/library  #/settings
+// Hash router: #/  #/search?q=  #/youtube?tab=  #/tv?tab=  #/title/tv/1399  #/remote  #/library  #/settings
 
 import { useEffect, useState } from 'preact/hooks';
 
-export type Screen = 'home' | 'search' | 'youtube' | 'title' | 'remote' | 'library' | 'settings';
+export type Screen = 'home' | 'search' | 'youtube' | 'tv' | 'title' | 'remote' | 'library' | 'settings';
 export interface Route {
   screen: Screen;
   params: string[];
   query: URLSearchParams;
 }
 
-export const TABS: Screen[] = ['home', 'search', 'youtube', 'remote', 'library', 'settings'];
+export const TABS: Screen[] = ['home', 'search', 'youtube', 'tv', 'remote', 'library', 'settings'];
 
 export function parse(hash: string): Route {
   const [pathPart, q = ''] = hash.replace(/^#\/?/, '').split('?');
   const segs = pathPart.split('/').filter(Boolean);
   const head = segs[0] || 'home';
-  const screen: Screen = (['search', 'youtube', 'title', 'remote', 'library', 'settings'] as Screen[]).includes(head as Screen) ? (head as Screen) : 'home';
+  const screen: Screen = (['search', 'youtube', 'tv', 'title', 'remote', 'library', 'settings'] as Screen[]).includes(head as Screen) ? (head as Screen) : 'home';
   return { screen, params: segs.slice(1), query: new URLSearchParams(q) };
 }
 

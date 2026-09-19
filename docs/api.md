@@ -238,6 +238,8 @@ Sync event `open_title` (`{tmdb_id, media_type, device_id, title}`) is delivered
 | GET | `/api/v1/tg/devices` | bearer | `{devices:[{id, name, type, current, online, state}]}` — `online` = live sync socket, `state` = last `PlayerState` (null when idle or older than 60 s) |
 | POST | `/api/v1/tg/send` | bearer | `{device_id, open:{tmdb_id, media_type, season?, episode?, resume?}}` or `{device_id, remote:{action, value?, key?, str?}}` → publishes `open_title` / `remote` to that device. Actions: `nav_up nav_down nav_left nav_right nav_ok nav_back toggle_play seek seek_to prev next mute night sleep volume set_voice set_subtitle set_local`. 204; `400` unknown action; `404 device_offline` |
 | `open_yt: {video_id}` | opens the YouTube video page on the device (`open_yt` event; the account is the profile's, linked on the TV) |
+| `open_tv: {channel_id, title?}` | switches the device to a live channel (`open_tv` event, docs/tv.md); the TV resolves the channel with `GET /api/v1/tv/channels?id=` |
+| `remote: {action: "sync_state", value, str}` / `{action: "sync_stop"}` | two TVs of one account playing the same frame (docs/player.md) |
 | POST | `/api/v1/player/state` | bearer | TV reports `{tmdb_id, media_type, title, season, episode, position_sec, duration_sec, paused, voice}` or `{closed:true}`; kept per device in memory, published as sync event `player_state` (≤1/s per device). 204 |
 
 Sync events added: `player_state` (`PlayerState` + `device_id`, or `{device_id, closed:true}`); `open_title` gained optional `season`/`episode`; `remote` gained action `seek_to` (absolute seconds). `remote` also carries the D-pad actions `nav_*` (the TV routes them into its Controller, so they work outside the player).
