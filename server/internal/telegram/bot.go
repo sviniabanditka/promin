@@ -121,6 +121,42 @@ func New(api *Client, repo *store.TelegramRepo, cat *catalog.Service, syncSvc *p
 	}
 }
 
+// Notify sends tr(key, args...) to every chat linked to userID — the push
+// channel for things that happen while nobody is looking (a recording is
+// ready, a scheduled one starts in five minutes). Nil-safe, best-effort.
+func (b *Bot) Notify(userID int64, key string, args ...any) {
+	if b == nil {
+		return
+	}
+	links, err := b.repo.List(userID)
+	if err != nil || len(links) == 0 {
+		return
+	}
+	text := tr(b.langOf(userID), key, args...)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	for _, l := range links {
+		b.reply(ctx, l.ChatID, text, nil)
+	}
+}
+
+// NotifyAdmin sends raw text to the owner's chats (the first registered
+// profile is the admin): "it does not play" reports from the TVs land here.
+func (b *Bot) NotifyAdmin(text string) {
+	if b == nil {
+		return
+	}
+	links, err := b.repo.List(1)
+	if err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	for _, l := range links {
+		b.reply(ctx, l.ChatID, text, nil)
+	}
+}
+
 // Username is the bot's @name ("" until getMe succeeded).
 func (b *Bot) Username() string {
 	if b == nil {

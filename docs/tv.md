@@ -147,6 +147,10 @@ keeps the directory inside its budget:
   whatever is left of its window; one whose window passed while the server was
   down is marked `failed: missed`.
 
+The profile's Telegram chats hear about it: five minutes before a scheduled
+recording starts, when it is ready (with the size) and when it failed
+(`docs/telegram.md`, Notifications).
+
 Recordings are per profile, like bookmarks. On the TV they are a section of the
 left rail ("Записи"): OK plays a finished recording in the ordinary player, OK
 on a scheduled one offers to cancel it, long-press deletes any of them.

@@ -17,11 +17,11 @@ type Recording struct {
 	EndAt        int64  `json:"end_at"`
 	// The programme's own end from the guide (unpadded) — what the TV matches
 	// a guide row against to show ⏺ and to toggle.
-	ProgramEnd int64 `json:"program_end"`
-	State        string `json:"state"`
-	Error        string `json:"error,omitempty"`
-	Bytes        int64  `json:"bytes"`
-	CreatedAt    int64  `json:"created_at"`
+	ProgramEnd int64  `json:"program_end"`
+	State      string `json:"state"`
+	Error      string `json:"error,omitempty"`
+	Bytes      int64  `json:"bytes"`
+	CreatedAt  int64  `json:"created_at"`
 }
 
 // Recording states.

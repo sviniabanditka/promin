@@ -53,6 +53,19 @@ level=INFO msg=diag kind=<kind> seq=<n> user=<id> ip=<client ip> host=<page host
 `host` from the page (tells h1 host from main host), `data` is the client's
 JSON verbatim.
 
+### "Повідомити" — the one probe meant for a human
+
+The player's error screen has a third button next to Retry / Change source. It
+sends `kind: "report"` through the same endpoint, **not gated by the
+diagnostics switch** (`diag.send`, the button is the point), with what the
+owner needs to see why this panel did not play this stream: title and episode,
+source label, error kind and the `<video>` error code, the stream URL (200
+chars), quality, engine (hls.js / native), platform, `hevc`, `demuxed_hls`. The
+server (`formatReport`) turns it into a Telegram message to the owner's linked
+chats — the first registered profile is the admin — adding the login, the
+User-Agent and the IP. Only a signed-in viewer can page the owner; the usual
+diag rate limit applies.
+
 ## 4. Reading it in production
 
 ```

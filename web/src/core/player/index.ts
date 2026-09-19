@@ -45,13 +45,13 @@ import { t, getLang } from '../i18n';
 import { toast } from '../../ui/toast';
 import { el, empty, pad2 } from '../../ui/dom';
 import { ScreenInstance } from '../activity';
-import { preferNativeHls, canDecodeHevc } from '../capabilities';
+import { preferNativeHls, canDecodeHevc, caps } from '../capabilities';
 import { getDefaultQuality, getPlayerEngine, getPlayerSpeed, setPlayerSpeed, getSubSize, setSubSize, SubSize, isNightMode, setNightMode, getPreferredVoice, setPreferredVoice } from '../settings';
 import { pickPreferredVoice } from './voices';
 import { followCorrection } from './follow';
 import { scrubStep, speedLabel, fmtTime, qualityOf, playableStream, pickQuality } from './pure';
 import { isResumable } from '../progress';
-import { report as diag } from '../diag';
+import { report as diag, send as diagSend } from '../diag';
 import { setRemoteHandler, RemoteAction } from './remote';
 import { ensureHls, HlsInstance, HlsCtor } from './hls';
 import { attachNightAudio, isNightAudio, nightAudioSupported, setNightAudioStored, NightAudio } from './nightAudio';
@@ -2792,6 +2792,37 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       exitToSources();
     });
     row.appendChild(change);
+
+    // "Повідомити": what the owner needs to see why THIS panel did not play
+    // THIS stream, sent to their Telegram (docs/diagnostics.md). One press.
+    const reportBtn = el('div', 'button selector', t('player.report'));
+    on(reportBtn, 'hover:enter', function () {
+      if (reportBtn.classList.contains('is-disabled')) return;
+      reportBtn.classList.add('is-disabled');
+      const st = media.streams[streamIndex];
+      const merr = video.error as { code?: number; message?: string } | null;
+      diagSend('report', {
+        title: ctx.title || '',
+        episode: curSeason != null && curEpisode != null ? 'S' + curSeason + 'E' + curEpisode : '',
+        tmdb_id: ctx.tmdb_id || '',
+        media_type: ctx.media_type || '',
+        source: ctx.subtitle || (st && st.label) || '',
+        kind: kind,
+        media_error: merr ? 'code ' + merr.code + (merr.message ? ' ' + merr.message : '') : '',
+        url: currentUrl().slice(0, 200),
+        quality: st ? st.quality || '' : '',
+        engine: hls ? 'hlsjs' : 'native',
+        platform: caps.platform,
+        hevc: caps.hevc,
+        demuxed_hls: caps.demuxed_hls,
+        type: media.type,
+      }).then(function (ok) {
+        if (destroyed) return;
+        toast({ kind: ok ? 'success' : 'error', icon: '🛠', title: t('player.report'), text: t(ok ? 'player.report_sent' : 'player.report_failed') });
+        if (!ok) reportBtn.classList.remove('is-disabled');
+      });
+    });
+    row.appendChild(reportBtn);
 
     box.appendChild(row);
     root.appendChild(box);

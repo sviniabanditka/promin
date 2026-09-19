@@ -39,6 +39,21 @@ export function report(kind: string, data?: { [k: string]: unknown }): void {
   }
 }
 
+// A probe the viewer asked to send (the error screen's "Повідомити"): not
+// gated by the diagnostics switch — it is the point of the button. Resolves
+// true when the server took it.
+export function send(kind: string, data: { [k: string]: unknown }): Promise<boolean> {
+  seq++;
+  return post('/diag', { kind: kind, seq: seq, host: window.location.host, data: data }).then(
+    function () {
+      return true;
+    },
+    function () {
+      return false;
+    }
+  );
+}
+
 export function viewportInfo(): { [k: string]: unknown } {
   const w = window as unknown as { devicePixelRatio?: number; visualViewport?: { width: number; height: number } };
   const de = document.documentElement;

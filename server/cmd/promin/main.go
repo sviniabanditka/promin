@@ -256,6 +256,7 @@ func main() {
 	if tvSvc.Enabled() && cfg.DVRMaxGB > 0 {
 		dvrSvc = dvr.New(db.Recordings, filepath.Join(cfg.DataDir, "dvr"), cfg.FFmpegPath,
 			int64(cfg.DVRMaxGB)<<30, tvSvc.StreamFor, logger)
+		dvrSvc.Notify = tgBot.Notify // nil-safe when the bot is off
 		go dvrSvc.Run(ctx)
 	}
 

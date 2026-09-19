@@ -96,6 +96,21 @@ prefix, pushes the title page and shows an "Opened from Telegram" toast.
 Limits: one search per two seconds per chat; group chats are ignored; the bot
 token is never logged.
 
+## Notifications
+
+The bot also pushes, to every chat linked to the profile (`Bot.Notify`, the
+profile's language):
+
+- `rec.soon` — a scheduled recording starts in five minutes (once per
+  recording);
+- `rec.ready` — a recording finished, with the channel and the size;
+- `rec.failed` — it could not record, with the reason (`no_stream`, `no_disk`,
+  `missed`, `empty`).
+
+`Bot.NotifyAdmin` sends raw text to the owner's chats: the player's
+"Повідомити" reports (`docs/diagnostics.md`). Both are nil-safe, so the rest of
+the server calls them without checking whether the bot is configured.
+
 ## Mini App
 
 The chat menu button opens the Telegram Mini App at `/tg/` — a phone-first remote and browser for the same profile. The button is set by the bot owner in BotFather, not by the server. See docs/miniapp.md.

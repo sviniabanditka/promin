@@ -51,6 +51,12 @@ type Service struct {
 	source  StreamSource
 	logger  *slog.Logger
 
+	// Notify pushes a message to a profile (the Telegram bot); nil = off.
+	// key/args are the bot's own i18n (rec.ready / rec.soon / rec.failed).
+	Notify func(userID int64, key string, args ...any)
+	// Recordings already warned about "starts in 5 minutes".
+	warned map[string]bool
+
 	// baseCtx is the process-lifetime context Run was given: a buffer or a
 	// recording must outlive the HTTP request that asked for it.
 	baseCtx context.Context
@@ -82,6 +88,7 @@ func New(repo *store.RecordingsRepo, dir, ffmpeg string, maxSizeBytes int64, sou
 		logger:  logger,
 		running: map[string]context.CancelFunc{},
 		buffers: map[string]*buffer{},
+		warned:  map[string]bool{},
 	}
 }
 
@@ -160,6 +167,11 @@ func (s *Service) tick(ctx context.Context) {
 	}
 	now := time.Now().Unix()
 	for _, rec := range pending {
+		// Heads-up five minutes before a scheduled recording, once.
+		if rec.State == store.RecScheduled && rec.StartAt > now && rec.StartAt-now <= 300 && !s.warned[rec.ID] {
+			s.warned[rec.ID] = true
+			s.notify(rec, "rec.soon", rec.Title, rec.ChannelTitle)
+		}
 		switch {
 		case rec.State == store.RecScheduled && now >= rec.StartAt && now < rec.EndAt:
 			s.start(ctx, rec)
@@ -259,11 +271,33 @@ func (s *Service) finish(id string) {
 	}
 	_ = s.repo.SetState(id, store.RecDone, "")
 	s.logger.Info("dvr: recorded", "id", id, "mb", size>>20)
+	s.notify(rec, "rec.ready", rec.Title, rec.ChannelTitle, humanSize(size))
 }
 
 func (s *Service) fail(id, reason string) {
 	_ = s.repo.SetState(id, store.RecFailed, reason)
 	_ = os.RemoveAll(s.Dir(id))
+	if rec, err := s.repo.Get(id); err == nil {
+		s.notify(rec, "rec.failed", rec.Title, rec.ChannelTitle, reason)
+	}
+}
+
+func (s *Service) notify(rec store.Recording, key string, args ...any) {
+	if s.Notify == nil {
+		return
+	}
+	s.Notify(rec.UserID, key, args...)
+}
+
+func humanSize(n int64) string {
+	switch {
+	case n >= 1<<30:
+		return fmt.Sprintf("%.1f GB", float64(n)/float64(1<<30))
+	case n >= 1<<20:
+		return fmt.Sprintf("%d MB", n>>20)
+	default:
+		return fmt.Sprintf("%d KB", n>>10)
+	}
 }
 
 func (s *Service) stop(id string) {

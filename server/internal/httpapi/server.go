@@ -6,6 +6,7 @@ package httpapi
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -84,7 +85,7 @@ func NewServer(
 	// No auth gate: the report that matters most comes from a device that cannot
 	// get past the PIN screen (see ?debug=1 in web settings.ts). Body is capped
 	// at 16 KiB, the client throttles itself, and the log carries the remote IP.
-	mux.HandleFunc("POST /api/v1/diag", handleDiag(logger))
+	mux.HandleFunc("POST /api/v1/diag", handleDiag(logger, tgBot.NotifyAdmin))
 
 	// Hard gate: every data + media route requires a valid session (PIN or
 	// admin). The only open surfaces are the static SPA shell, the auth entry
@@ -360,7 +361,59 @@ func (l *ipLimiter) allow(ip string) bool {
 	return true
 }
 
-func handleDiag(logger *slog.Logger) http.HandlerFunc {
+// formatReport turns the error screen's "Повідомити" probe into the message
+// the owner reads on the phone: what, where, on which panel.
+func formatReport(login string, ip, ua string, data json.RawMessage) string {
+	var d map[string]any
+	_ = json.Unmarshal(data, &d)
+	get := func(k string) string {
+		if v, ok := d[k]; ok && v != nil {
+			return fmt.Sprint(v)
+		}
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("🛠 Не грає")
+	if login != "" {
+		b.WriteString(" у " + login)
+	}
+	b.WriteString("\n")
+	if t := get("title"); t != "" {
+		b.WriteString(t)
+		if ep := get("episode"); ep != "" {
+			b.WriteString(" · " + ep)
+		}
+		b.WriteString("\n")
+	}
+	if src := get("source"); src != "" {
+		b.WriteString("Джерело: " + src + "\n")
+	}
+	if k := get("kind"); k != "" {
+		b.WriteString("Помилка: " + k)
+		if c := get("media_error"); c != "" {
+			b.WriteString(" (" + c + ")")
+		}
+		b.WriteString("\n")
+	}
+	if u := get("url"); u != "" {
+		b.WriteString("URL: " + u + "\n")
+	}
+	if p := get("platform"); p != "" {
+		b.WriteString("Панель: " + p + ", hevc=" + get("hevc") + ", demuxed_hls=" + get("demuxed_hls") + ", engine=" + get("engine") + "\n")
+	}
+	if ua != "" {
+		if len(ua) > 120 {
+			ua = ua[:120] + "…"
+		}
+		b.WriteString("UA: " + ua + "\n")
+	}
+	if ip != "" {
+		b.WriteString("IP: " + ip)
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func handleDiag(logger *slog.Logger, notifyOwner func(text string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !diagLimiter.allow(clientIP(r)) {
 			w.WriteHeader(http.StatusTooManyRequests)
@@ -382,10 +435,18 @@ func handleDiag(logger *slog.Logger) http.HandlerFunc {
 			return
 		}
 		user := int64(0)
-		if info, ok := authFrom(r); ok {
+		login := ""
+		info, authed := authFrom(r)
+		if authed {
 			user = info.User.ID
+			login = info.User.Login
 		}
 		logger.Info("diag", "kind", probe.Kind, "seq", probe.Seq, "user", user, "ip", clientIP(r), "host", probe.Host, "ua", r.UserAgent(), "data", string(probe.Data))
+		// "Повідомити" on the player's error screen: the one probe that is meant
+		// for a human, not the log. Only a signed-in viewer may page the owner.
+		if probe.Kind == "report" && authed && notifyOwner != nil {
+			notifyOwner(formatReport(login, clientIP(r), r.UserAgent(), probe.Data))
+		}
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

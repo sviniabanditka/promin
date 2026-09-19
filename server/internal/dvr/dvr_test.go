@@ -2,6 +2,7 @@ package dvr
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -113,6 +114,11 @@ func TestRecordsAChannelEndToEnd(t *testing.T) {
 	svc, db, _ := testService(t, func(string) (string, string, string, error) {
 		return srv.URL + "/channel.ts", "", "", nil
 	})
+	// The bot hook: a finished recording is announced to its profile.
+	var notified []string
+	svc.Notify = func(userID int64, key string, args ...any) {
+		notified = append(notified, fmt.Sprintf("%d:%s:%v", userID, key, args[0]))
+	}
 	now := time.Now().Unix()
 	rec, err := svc.Schedule(7, "test.ua", "Test", "Programme", now, now+2)
 	if err != nil {
@@ -147,6 +153,10 @@ func TestRecordsAChannelEndToEnd(t *testing.T) {
 	}
 	if !strings.Contains(string(playlist), "#EXT-X-ENDLIST") {
 		t.Fatalf("a finished recording must be closed with ENDLIST:\n%s", playlist)
+	}
+
+	if len(notified) != 1 || notified[0] != "7:rec.ready:Programme" {
+		t.Fatalf("profile 7 should have been told once that Programme is ready: %v", notified)
 	}
 
 	// Deleting takes the files with it.
