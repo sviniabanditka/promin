@@ -15,6 +15,9 @@ type Recording struct {
 	Title        string `json:"title"`
 	StartAt      int64  `json:"start_at"`
 	EndAt        int64  `json:"end_at"`
+	// The programme's own end from the guide (unpadded) — what the TV matches
+	// a guide row against to show ⏺ and to toggle.
+	ProgramEnd int64 `json:"program_end"`
 	State        string `json:"state"`
 	Error        string `json:"error,omitempty"`
 	Bytes        int64  `json:"bytes"`
@@ -38,12 +41,12 @@ type RecordingsRepo struct {
 	db *sql.DB
 }
 
-const recCols = `id, user_id, channel_id, channel_title, title, start_at, end_at, state, error, bytes, created_at`
+const recCols = `id, user_id, channel_id, channel_title, title, start_at, end_at, state, error, bytes, created_at, program_end`
 
 func scanRecording(row interface{ Scan(...any) error }) (Recording, error) {
 	var r Recording
 	err := row.Scan(&r.ID, &r.UserID, &r.ChannelID, &r.ChannelTitle, &r.Title,
-		&r.StartAt, &r.EndAt, &r.State, &r.Error, &r.Bytes, &r.CreatedAt)
+		&r.StartAt, &r.EndAt, &r.State, &r.Error, &r.Bytes, &r.CreatedAt, &r.ProgramEnd)
 	return r, err
 }
 
@@ -52,9 +55,9 @@ func (r *RecordingsRepo) Add(rec Recording) error {
 		rec.CreatedAt = time.Now().Unix()
 	}
 	_, err := r.db.Exec(
-		`INSERT INTO tv_recordings (`+recCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO tv_recordings (`+recCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		rec.ID, rec.UserID, rec.ChannelID, rec.ChannelTitle, rec.Title,
-		rec.StartAt, rec.EndAt, rec.State, rec.Error, rec.Bytes, rec.CreatedAt)
+		rec.StartAt, rec.EndAt, rec.State, rec.Error, rec.Bytes, rec.CreatedAt, rec.ProgramEnd)
 	return err
 }
 
@@ -94,6 +97,18 @@ func (r *RecordingsRepo) Pending() ([]Recording, error) {
 		out = append(out, rec)
 	}
 	return out, rows.Err()
+}
+
+// FindPending returns this profile's not-yet-finished recording of the same
+// programme (same channel, same guide end time).
+func (r *RecordingsRepo) FindPending(userID int64, channelID string, programEnd int64) (Recording, bool, error) {
+	rec, err := scanRecording(r.db.QueryRow(
+		`SELECT `+recCols+` FROM tv_recordings WHERE user_id = ? AND channel_id = ? AND program_end = ? AND state IN (?, ?) LIMIT 1`,
+		userID, channelID, programEnd, RecScheduled, RecRecording))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Recording{}, false, nil
+	}
+	return rec, err == nil, err
 }
 
 // Get returns one row regardless of owner; callers that act on behalf of a

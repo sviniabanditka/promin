@@ -3,9 +3,9 @@ package dvr
 import (
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"

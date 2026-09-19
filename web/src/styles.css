@@ -4290,6 +4290,9 @@ body.night-mode #night-shade { display: block; }
 .tvg-ch.is-fav .tvg-ch__star { display: block; }
 .tvg-ch__bar, .tvg-pr__bar, .live-info__bar { height: 0.3rem; margin-top: 0.5rem; border-radius: 0.2rem; background: rgba(255, 255, 255, 0.14); overflow: hidden; }
 .tvg-ch__fill, .tvg-pr__fill, .live-info__fill { height: 100%; width: 0; background: var(--accent); }
+/* A programme set to record: red dot before the title. */
+.tvg-pr.is-rec .tvg-pr__title::before { content: '⏺ '; color: var(--danger-fill); }
+.tvg-pr.is-rec.focus .tvg-pr__title::before { color: #fff; }
 .tvg-pr { display: flex; flex-direction: row; align-items: flex-start; padding: 1rem 1.6rem; margin: 0.2rem 1.2rem 0.2rem 0; border-radius: 0.8rem; color: var(--ink-2); }
 .tvg-pr.is-past { opacity: 0.45; }
 .tvg-pr.is-now { color: #fff; background: rgba(255, 255, 255, 0.06); }

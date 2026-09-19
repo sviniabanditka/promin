@@ -247,6 +247,8 @@ export interface ProgramPaneHooks {
   // Long-press OK on a programme row — the TV screen records it (docs/tv.md).
   // Absent (the player's overlay) → the row has no long press.
   onLong?: (ch: GuideChannel, p: TvProgram) => void;
+  // Is this programme already set to record? Paints the ⏺ marker.
+  isRecording?: (ch: GuideChannel, p: TvProgram) => boolean;
 }
 
 export class ProgramPane {
@@ -374,7 +376,8 @@ export class ProgramPane {
           body.appendChild(el('div', 'tvg-pr__day', day));
         }
         const isNow = p.start <= now && p.stop > now;
-        const row = el('div', 'tvg-pr selector' + (isNow ? ' is-now' : p.stop <= now ? ' is-past' : ''));
+        const rec = !!(self.hooks.isRecording && self.hooks.isRecording(ch, p));
+        const row = el('div', 'tvg-pr selector' + (isNow ? ' is-now' : p.stop <= now ? ' is-past' : '') + (rec ? ' is-rec' : ''));
         row.appendChild(el('div', 'tvg-pr__time', hhmm(p.start)));
         const txt = el('div', 'tvg-pr__text');
         txt.appendChild(el('div', 'tvg-pr__title', p.title));
@@ -408,6 +411,11 @@ export class ProgramPane {
     this.showDetail(nowP);
     this.scroll.reset();
     if (this.nowRow) this.scroll.immediate(this.nowRow, true);
+  }
+
+  // Repaint the current channel from the cache (a ⏺ marker changed).
+  refresh(): void {
+    if (this.channel && this.cache[this.channel.id]) this.renderList(this.cache[this.channel.id]);
   }
 
   hasRows(): boolean {

@@ -114,6 +114,26 @@ export function mountTv(container: HTMLElement, params: TvParams): ScreenInstanc
   listCol.appendChild(recordsBox);
   let records: TvRecord[] = [];
   let lastRecord: HTMLElement | false = false;
+  // channel|program_end → id of a scheduled/running recording: the guide's ⏺.
+  let pendingRec: { [key: string]: string } = {};
+  function indexPending(list: TvRecord[]): void {
+    pendingRec = {};
+    for (let i = 0; i < list.length; i++) {
+      const r = list[i];
+      if ((r.state === 'scheduled' || r.state === 'recording') && r.program_end) pendingRec[r.channel_id + '|' + r.program_end] = r.id;
+    }
+    prog.refresh();
+  }
+  function loadPending(): void {
+    getTvRecords().then(
+      function (r) {
+        if (!destroyed) indexPending(r.records || []);
+      },
+      function () {
+        /* recording off on the server: no markers */
+      }
+    );
+  }
   const prog = new ProgramPane({
     onEnter: function (ch) {
       const i = list.indexOfId(ch.id);
@@ -121,6 +141,9 @@ export function mountTv(container: HTMLElement, params: TvParams): ScreenInstanc
     },
     onLong: function (ch, p) {
       record(ch, p);
+    },
+    isRecording: function (ch, p) {
+      return !!pendingRec[ch.id + '|' + p.stop];
     },
   });
   progCol.appendChild(prog.el);
@@ -199,6 +222,7 @@ export function mountTv(container: HTMLElement, params: TvParams): ScreenInstanc
       function (r) {
         if (destroyed || my !== seq) return;
         records = r.records || [];
+        indexPending(records);
         renderRecords();
       },
       function () {
@@ -248,7 +272,7 @@ export function mountTv(container: HTMLElement, params: TvParams): ScreenInstanc
 
   function playRecord(rec: TvRecord): void {
     if (rec.state === 'scheduled') {
-      toast({ kind: 'info', icon: '⏺', text: t('tv.rec_scheduled') });
+      removeRecord(rec, true); // nothing to play yet: OK offers to cancel
       return;
     }
     if (rec.state === 'failed') {
@@ -262,9 +286,9 @@ export function mountTv(container: HTMLElement, params: TvParams): ScreenInstanc
     });
   }
 
-  function removeRecord(rec: TvRecord): void {
+  function removeRecord(rec: TvRecord, cancel?: boolean): void {
     openConfirm(container, {
-      text: t('tv.rec_delete_confirm'),
+      text: t(cancel ? 'tv.rec_cancel_confirm' : 'tv.rec_delete_confirm'),
       yesLabel: t('action.confirm'),
       mode: 'tv_rec_confirm',
       returnMode: 'tv_list',
@@ -277,7 +301,9 @@ export function mountTv(container: HTMLElement, params: TvParams): ScreenInstanc
               if (records[i].id !== rec.id) next.push(records[i]);
             }
             records = next;
+            indexPending(records);
             renderRecords();
+            if (cancel) toast({ kind: 'info', icon: '⏺', text: t('tv.rec_cancelled') });
             Controller.toggle('tv_list');
           },
           function () {
@@ -302,8 +328,12 @@ export function mountTv(container: HTMLElement, params: TvParams): ScreenInstanc
       start_at: p.start,
       end_at: p.stop,
     }).then(
-      function () {
-        if (!destroyed) toast({ kind: 'success', icon: '⏺', title: t('tv.rec_added'), text: p.title || ch.name });
+      function (r) {
+        if (destroyed) return;
+        // The server toggles: the same programme pressed again is a cancel.
+        if (r && r.cancelled) toast({ kind: 'info', icon: '⏺', title: t('tv.rec_cancelled'), text: p.title || ch.name });
+        else toast({ kind: 'success', icon: '⏺', title: t('tv.rec_added'), text: p.title || ch.name });
+        loadPending();
       },
       function (e: ApiError) {
         if (destroyed) return;
@@ -311,6 +341,8 @@ export function mountTv(container: HTMLElement, params: TvParams): ScreenInstanc
       }
     );
   }
+
+  loadPending();
 
   // ---- sidebar ----
   function sideItem(def: SectionDef, isCurrent: boolean): HTMLElement {

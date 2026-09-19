@@ -1308,6 +1308,8 @@ export interface TvRecord {
   title: string;
   start_at: number;
   end_at: number;
+  // The programme's own end from the guide: what marks a guide row as ⏺.
+  program_end?: number;
   // scheduled | recording | done | failed
   state: string;
   error?: string;
@@ -1319,14 +1321,15 @@ export function getTvRecords(): Promise<{ records: TvRecord[] }> {
 }
 
 // start_at/end_at are the programme's own times; the server adds the padding.
+// The same programme sent again CANCELS its pending recording ({cancelled}).
 export function addTvRecord(body: {
   channel_id: string;
   channel_title: string;
   title: string;
   start_at: number;
   end_at: number;
-}): Promise<TvRecord> {
-  return post<TvRecord>('/tv/records', body);
+}): Promise<Partial<TvRecord> & { id: string; cancelled?: boolean }> {
+  return post<Partial<TvRecord> & { id: string; cancelled?: boolean }>('/tv/records', body);
 }
 
 export function deleteTvRecord(id: string): Promise<void> {

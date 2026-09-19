@@ -62,6 +62,25 @@ func TestDVRRoutesRecordAndServe(t *testing.T) {
 		t.Fatalf("add: decode %v", err)
 	}
 
+	// The same programme again cancels instead of duplicating; a third press
+	// schedules it anew.
+	rec = httptest.NewRecorder()
+	h.add(rec, httptest.NewRequest("POST", "/api/v1/tv/records", strings.NewReader(body)))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"cancelled":true`) {
+		t.Fatalf("second press should cancel: %d %s", rec.Code, rec.Body)
+	}
+	if list, _ := db.Recordings.List(0); len(list) != 0 {
+		t.Fatalf("cancelled recording still listed: %+v", list)
+	}
+	rec = httptest.NewRecorder()
+	h.add(rec, httptest.NewRequest("POST", "/api/v1/tv/records", strings.NewReader(body)))
+	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), `"cancelled"`) {
+		t.Fatalf("third press should schedule again: %d %s", rec.Code, rec.Body)
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("re-add: decode %v", err)
+	}
+
 	// Bad input is refused rather than scheduled.
 	for _, bad := range []string{
 		`{"channel_id":"../etc","start_at":1,"end_at":2}`,

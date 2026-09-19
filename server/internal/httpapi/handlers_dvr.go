@@ -86,6 +86,19 @@ func (h *dvrHandlers) add(w http.ResponseWriter, r *http.Request) {
 		writeBadRequest(w, "title ≤ 300, channel_title ≤ 200")
 		return
 	}
+	// The same programme pressed again is a cancel, not a second copy: the
+	// remote has one gesture for this, so it toggles.
+	if twin, ok, err := h.repo.FindPending(info.User.ID, req.ChannelID, req.EndAt); err != nil {
+		writeInternal(w, err)
+		return
+	} else if ok {
+		if err := h.svc.Delete(twin.ID, info.User.ID); err != nil && !errors.Is(err, store.ErrRecordingNotFound) {
+			writeInternal(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"cancelled": true, "id": twin.ID})
+		return
+	}
 	rec, err := h.svc.Schedule(info.User.ID, req.ChannelID, req.ChannelTitle, req.Title, req.StartAt, req.EndAt)
 	if err != nil {
 		writeInternal(w, err)

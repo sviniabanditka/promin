@@ -111,7 +111,7 @@ section to a subset of the configured countries.
 | GET | `/now` | `{items:{<id>:{now:{start,stop,title},next:{…}}}, at}` for every channel with a guide — the overlay's channel column |
 | PUT / DELETE | `/favorites/{id}` | |
 | GET | `/records` | `{records:[{id, channel_id, channel_title, title, start_at, end_at, state, error?, bytes}]}` for this profile |
-| POST | `/records` | `{channel_id, channel_title, title, start_at, end_at}` — the programme's own times; the server pads them |
+| POST | `/records` | `{channel_id, channel_title, title, start_at, end_at}` — the programme's own times; the server pads them. The same programme again → `{cancelled:true, id}` |
 | DELETE | `/records/{id}` | stops it if running and deletes the files |
 | POST | `/channels/{id}/timeshift` | starts (or keeps alive) the channel's rolling window: `{url, window_sec}`; heartbeat every 30 s while watching |
 
@@ -148,8 +148,16 @@ keeps the directory inside its budget:
   down is marked `failed: missed`.
 
 Recordings are per profile, like bookmarks. On the TV they are a section of the
-left rail ("Записи"): OK plays the recording in the ordinary player, long-press
-deletes it.
+left rail ("Записи"): OK plays a finished recording in the ordinary player, OK
+on a scheduled one offers to cancel it, long-press deletes any of them.
+
+**One gesture, a toggle.** Long-press on a programme that is already set to
+record cancels it (`POST /records` answers `{cancelled:true}` when this profile
+has a pending recording of the same channel + `program_end`); a guide row that
+is scheduled or recording carries a ⏺ (`ProgramPane.isRecording`, fed from
+`GET /records` on the TV screen and refreshed after every toggle).
+`program_end` is the guide's own end time, kept unpadded beside the padded
+`end_at`, precisely so the client never has to know the padding.
 
 ## From the phone
 

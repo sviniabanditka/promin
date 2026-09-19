@@ -7,8 +7,8 @@ package dvr
 
 import (
 	"context"
-	"encoding/hex"
 	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"os"
@@ -92,6 +92,7 @@ func (s *Service) Dir(id string) string { return filepath.Join(s.dir, id) }
 // padding is added here so every caller gets it.
 func (s *Service) Schedule(userID int64, channelID, channelTitle, title string, start, end int64) (store.Recording, error) {
 	now := time.Now().Unix()
+	programEnd := end
 	start -= PadBeforeSec
 	end += PadAfterSec
 	if start < now {
@@ -111,6 +112,7 @@ func (s *Service) Schedule(userID int64, channelID, channelTitle, title string, 
 		Title:        title,
 		StartAt:      start,
 		EndAt:        end,
+		ProgramEnd:   programEnd,
 		State:        store.RecScheduled,
 		CreatedAt:    now,
 	}
