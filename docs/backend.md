@@ -95,7 +95,8 @@ All configuration is environment variables. Durations use Go syntax (`30s`, `24h
 | `PROMIN_REMUX_JOB_TTL` | `30m` | Idle time before a remux job directory is deleted |
 | `PROMIN_TORRENT_PORT` | `0` | BitTorrent peer port; 0 = anacrolix default (42069) |
 | `PROMIN_TORRENT_MAX_ACTIVE` | `5` | Torrents held by the client at once (production sets 3); the oldest idle one is evicted to make room |
-| `PROMIN_TORRENT_CACHE_LIMIT_GB` | `80` | On-disk torrent data cap; LRU evicts to 90 % of it |
+| `PROMIN_TORRENT_CACHE_LIMIT_GB` | `80` | On-disk torrent data cap (production 150); LRU evicts to 90 % of it |
+| `PROMIN_TORRENT_CACHE_TTL_DAYS` | `7` | Torrents untouched this long are deleted whatever the cache size |
 | `PROMIN_TORRENT_METADATA_TIMEOUT` | `30s` | Wait for torrent info after adding a magnet |
 | `PROMIN_WEATHER_PLACE` | empty | Fixed city for the forecast; empty → Cloudflare geo headers, GeoIP, then `CF-IPCountry` capital |
 | `PROMIN_H1_HOST` | empty | HTTP/1.1-only host advertised in `/api/v1/ping` (production `h1.promin.club`) |
@@ -123,7 +124,7 @@ shutdown timeout 15 s, `last_seen` write throttle 5 min, torrent idle drop
 | Backups | `store/backup.go` `StartBackups` | 90 s after boot, then every `PROMIN_BACKUP_INTERVAL` | `VACUUM INTO $BACKUP_DIR/promin-<UTC ts>.db`, then prune to `PROMIN_BACKUP_KEEP`. `.github/workflows/backup.yml` ships the newest snapshot off-box |
 | TMDB cache prune | `main.go` | 5 min after boot, then daily | Deletes expired `list:*` rows from `tmdb_cache`; detail rows are kept for stale-ok reads |
 | Library prewarm | `main.go` + `catalog/prewarm.go` | 2 min after boot, then every 6 h | Ensures every title in any profile's bookmarks/timecodes/history has a cached detail (max 300 per pass, 750 ms apart) |
-| Torrent sweep | `torrent/lru.go` `StartBackgroundWorkers` | every 5 min | Drops torrents idle > 10 min from the swarm; if tracked size > limit, deletes least-recently-accessed torrents (never ones with open readers) down to 90 % |
+| Torrent sweep | `torrent/lru.go` `StartBackgroundWorkers` | at start + every 5 min | Drops torrents idle > 10 min from the swarm; refreshes row sizes from disk (drops rows with no files); deletes torrents untouched > TTL days; if the total still exceeds the limit, deletes least-recently-accessed ones down to 90 %. Never a torrent with an open reader |
 | Remux cleanup | `remux/queue.go` `StartCleanup` | every 1 min | Kills and removes jobs untouched for `PROMIN_REMUX_JOB_TTL`; all job dirs are wiped on startup |
 | Provider id map | background task returned by `providers.Build` | on boot, weekly | Downloads/refreshes the id map that drives VeoVeo, Collaps and HDVB matching |
 | ffmpeg probe | `main.go` | once at boot, async | Logs a warning if ffmpeg/ffprobe are missing; detects `zscale` for HDR tone-mapping |

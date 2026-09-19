@@ -72,7 +72,8 @@ Config (`torrent.Config`, filled from `config.go`):
 |---|---|---|
 | Data dir | `PROMIN_DATA_DIR` → `<DataDir>/torrents/` | `/data` |
 | Max active torrents | `PROMIN_TORRENT_MAX_ACTIVE` | 5 |
-| On-disk cache limit | `PROMIN_TORRENT_CACHE_LIMIT_GB` | 80 GB |
+| On-disk cache limit | `PROMIN_TORRENT_CACHE_LIMIT_GB` | 80 GB (production 150) |
+| Cache TTL | `PROMIN_TORRENT_CACHE_TTL_DAYS` | 7 days |
 | Metadata wait | `PROMIN_TORRENT_METADATA_TIMEOUT` | 30 s |
 | Peer port | `PROMIN_TORRENT_PORT` | 0 → anacrolix default 42069 |
 | Idle drop | — | 10 min |
@@ -90,11 +91,21 @@ Lifecycle:
   sequential download + readahead; each open reader pins the torrent.
 - `Prefetch` marks the whole file wanted so a remux/transcode job muxes the
   full runtime.
-- Background sweep (`StartBackgroundWorkers`): torrents with no reader for
-  `IdleTimeout` are dropped from the client (network stops; files stay); when
-  the tracked total exceeds the cache limit, least-recently-accessed torrents
-  without an open reader are deleted from disk until usage falls under the
-  hysteresis target.
+- Background sweep (`StartBackgroundWorkers`, once at start and every 5 min),
+  in this order:
+  1. torrents with no reader for `IdleTimeout` are dropped from the client
+     (network stops; files stay);
+  2. **sizes are refreshed from disk** — `AddMagnet` records the torrent's full
+     length, so a series pack opened once counted 12 GB while holding 15 MB and
+     the limit tripped on phantoms while sparing nothing real; a row whose files
+     are gone (and that is not being downloaded) is deleted;
+  3. **TTL**: torrents nobody touched for `PROMIN_TORRENT_CACHE_TTL_DAYS`
+     (7) are deleted from disk whatever the total — the cache is "what we
+     watched this week", not an archive;
+  4. when the total still exceeds the cache limit, least-recently-accessed
+     torrents without an open reader are deleted until usage falls under the
+     hysteresis target (90 %).
+  Nothing with an open reader is ever touched.
 - Bookkeeping lives in SQLite table `torrent_cache_meta` (`infohash, name,
   size, last_access`; `store.TorrentCacheRepo`). Data files are stored flat by
   torrent name. At boot `sweepOrphanFiles` deletes files with no row.

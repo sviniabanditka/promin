@@ -81,6 +81,9 @@ type Config struct {
 	// TorrentCacheLimitGB bounds the on-disk torrent LRU cache
 	// (PROMIN_TORRENT_CACHE_LIMIT_GB).
 	TorrentCacheLimitGB int
+	// TorrentCacheTTLDays: torrents untouched this long are deleted whatever
+	// the cache size (PROMIN_TORRENT_CACHE_TTL_DAYS).
+	TorrentCacheTTLDays int
 	// TorrentMetadataTimeout bounds AddMagnet's wait for torrent info
 	// (docs/streaming.md, "~20-30 c").
 	TorrentMetadataTimeout time.Duration
@@ -187,7 +190,8 @@ func Load() Config {
 		RemuxJobTTL:            getenvDuration("PROMIN_REMUX_JOB_TTL", 30*time.Minute),
 		TorrentPort:            getenvInt("PROMIN_TORRENT_PORT", 0),
 		TorrentMaxActive:       getenvInt("PROMIN_TORRENT_MAX_ACTIVE", 5),
-		TorrentCacheLimitGB:    getenvInt("PROMIN_TORRENT_CACHE_LIMIT_GB", 80), // ~80 of 200 GB disk; LRU evicts over this
+		TorrentCacheLimitGB:    getenvInt("PROMIN_TORRENT_CACHE_LIMIT_GB", 80), // LRU evicts over this; production sets its own (k8s/promin.yaml)
+		TorrentCacheTTLDays:    getenvInt("PROMIN_TORRENT_CACHE_TTL_DAYS", 7),
 		TorrentMetadataTimeout: getenvDuration("PROMIN_TORRENT_METADATA_TIMEOUT", 30*time.Second),
 		WeatherPlace:           getenv("PROMIN_WEATHER_PLACE", ""),
 		H1Host:                 getenv("PROMIN_H1_HOST", ""),

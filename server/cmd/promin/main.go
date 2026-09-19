@@ -139,6 +139,7 @@ func main() {
 		DataDir:         cfg.DataDir,
 		MaxActive:       cfg.TorrentMaxActive,
 		CacheLimitBytes: int64(cfg.TorrentCacheLimitGB) * 1_000_000_000,
+		CacheTTL:        time.Duration(cfg.TorrentCacheTTLDays) * 24 * time.Hour,
 		MetadataTimeout: cfg.TorrentMetadataTimeout,
 		ListenPort:      cfg.TorrentPort,
 		Repo:            db.TorrentCache,

@@ -69,6 +69,10 @@ type Config struct {
 	// MetadataTimeout bounds AddMagnet's wait for the swarm to hand over
 	// torrent info (docs/streaming.md, "~20-30 c").
 	MetadataTimeout time.Duration
+	// CacheTTL: a torrent nobody has touched for this long is deleted from disk
+	// whatever the cache size (PROMIN_TORRENT_CACHE_TTL_DAYS, default 7). The
+	// size limit alone let 28 GB of August films sit on the disk in September.
+	CacheTTL time.Duration
 	// IdleTimeout: a torrent with no open reader for this long is Dropped
 	// from the client (network activity stops) but its on-disk data and
 	// torrent_cache_meta row survive until LRU eviction picks it,
@@ -98,6 +102,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.IdleTimeout <= 0 {
 		c.IdleTimeout = 10 * time.Minute
+	}
+	if c.CacheTTL <= 0 {
+		c.CacheTTL = 7 * 24 * time.Hour
 	}
 	if c.Readahead <= 0 {
 		// 64 MB: bigger buffer ahead of the play head so playback rarely catches
@@ -361,17 +368,8 @@ func (m *Manager) dropEntry(ih string) {
 // DataDir/torrents/<infohash>/ which never existed, so evicted torrents leaked
 // their data forever. Idempotent (RemoveAll on a missing path is a no-op).
 func (m *Manager) removeTorrentFiles(name string) {
-	// The name comes from the torrent's own info dict, i.e. from whoever made
-	// the torrent. ".." or "../x" joined onto DataDir/torrents would point the
-	// RemoveAll at the data dir itself (database, pin secret, image cache).
-	// Keep only a single path element and refuse anything that is not one.
-	name = filepath.Base(filepath.Clean(name))
-	if name == "" || name == "." || name == ".." || name == string(filepath.Separator) {
-		return
-	}
-	root := filepath.Join(m.cfg.DataDir, "torrents")
-	base := filepath.Join(root, name)
-	if !strings.HasPrefix(base, root+string(filepath.Separator)) {
+	base, ok := m.torrentPath(name)
+	if !ok {
 		return
 	}
 	for _, p := range []string{base, base + ".part"} {
@@ -379,6 +377,46 @@ func (m *Manager) removeTorrentFiles(name string) {
 			m.cfg.Logger.Warn("torrent: failed to remove on-disk data", "path", p, "error", err)
 		}
 	}
+}
+
+// torrentPath maps a torrent's name to DataDir/torrents/<name>, or refuses.
+// The name comes from the torrent's own info dict, i.e. from whoever made the
+// torrent. ".." or "../x" joined onto DataDir/torrents would point a RemoveAll
+// at the data dir itself (database, pin secret, image cache). Keep only a
+// single path element and refuse anything that is not one.
+func (m *Manager) torrentPath(name string) (string, bool) {
+	name = filepath.Base(filepath.Clean(name))
+	if name == "" || name == "." || name == ".." || name == string(filepath.Separator) {
+		return "", false
+	}
+	root := filepath.Join(m.cfg.DataDir, "torrents")
+	base := filepath.Join(root, name)
+	if !strings.HasPrefix(base, root+string(filepath.Separator)) {
+		return "", false
+	}
+	return base, true
+}
+
+// onDiskSize is what a torrent really occupies: the file or directory under
+// its name plus the in-progress .part. 0 when nothing is there.
+func (m *Manager) onDiskSize(name string) int64 {
+	base, ok := m.torrentPath(name)
+	if !ok {
+		return 0
+	}
+	var total int64
+	for _, p := range []string{base, base + ".part"} {
+		_ = filepath.WalkDir(p, func(_ string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			if info, e := d.Info(); e == nil {
+				total += info.Size()
+			}
+			return nil
+		})
+	}
+	return total
 }
 
 // ListFiles returns every file in an already-added torrent.

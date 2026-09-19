@@ -140,9 +140,9 @@ keeps the directory inside its budget:
 - **Disk**: a recording refuses to start with less than 3 GiB free (the SQLite
   database shares the volume), and the sweep drops the oldest finished
   recordings once everything together passes `PROMIN_DVR_MAX_GB` (default 60;
-  `0` turns recording off entirely). The PVC's 40Gi is nominal — local-path is a
-  directory on the node's disk — so this budget plus the torrent cache must fit
-  the real disk (`k8s/promin.yaml` sets both).
+  `0` turns recording off entirely; production 120). The PVC's 40Gi is nominal
+  — local-path is a directory on the node's 394 GB disk — so this budget plus
+  the torrent cache (150) must fit the real disk (`k8s/promin.yaml` sets both).
 - **Restart-safe**: a row left in `recording` after a restart resumes for
   whatever is left of its window; one whose window passed while the server was
   down is marked `failed: missed`.

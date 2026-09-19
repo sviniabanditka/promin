@@ -68,6 +68,14 @@ func (r *TorrentCacheRepo) Names() ([]string, error) {
 }
 
 // TotalSize returns SUM(size) across all tracked torrents.
+// SetSize stores what the torrent really occupies on disk (the periodic
+// refresh in torrent/lru.go); Upsert writes the torrent's full length, which
+// for a barely-touched torrent is a wild overestimate.
+func (r *TorrentCacheRepo) SetSize(infohash string, size int64) error {
+	_, err := r.db.Exec(`UPDATE torrent_cache_meta SET size = ? WHERE infohash = ?`, size, infohash)
+	return err
+}
+
 func (r *TorrentCacheRepo) TotalSize() (int64, error) {
 	var total int64
 	err := r.db.QueryRow(`SELECT COALESCE(SUM(size), 0) FROM torrent_cache_meta`).Scan(&total)

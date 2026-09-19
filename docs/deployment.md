@@ -24,7 +24,8 @@ Common:
 
 - Linux x86_64 host with a public IP. Reference: ~3 vCPU / 6 GB RAM / 50 GB
   disk for the Promin pod (torrent cache is an LRU bounded by
-  `PROMIN_TORRENT_CACHE_LIMIT_GB`, default 80 GB — lower it on a small disk).
+  `PROMIN_TORRENT_CACHE_LIMIT_GB`, default 80 GB — lower it on a small disk;
+  torrents untouched for `PROMIN_TORRENT_CACHE_TTL_DAYS`, default 7, go anyway).
 - A domain whose A record points at the host. The certificate is issued via
   HTTP-01, so DNS must resolve before the first start.
 - Inbound TCP 80 (ACME challenge + redirect) and 443.
@@ -152,7 +153,8 @@ User-Agent detection.
 Environment set in the manifest (values in git): `PROMIN_HTTP_ADDR=:8080`,
 `PROMIN_DATA_DIR=/data`, `PROMIN_H1_HOST=h1.promin.club`,
 `PROMIN_MAIN_HOST=promin.club`, `PROMIN_JACRED_BASE_URL=http://jac.red`,
-`PROMIN_TORRENT_CACHE_LIMIT_GB=80`, `PROMIN_TORRENT_MAX_ACTIVE=3`,
+`PROMIN_TORRENT_CACHE_LIMIT_GB=150`, `PROMIN_TORRENT_CACHE_TTL_DAYS=7`,
+`PROMIN_DVR_MAX_GB=120` (node disk 394 GB), `PROMIN_TORRENT_MAX_ACTIVE=3`,
 `PROMIN_REMUX_MAX_TRANSCODES=1`, `PROMIN_NATIVE_SOURCES=true`,
 `PROMIN_OMDB_KEY` (public demo key). The rest come from secrets (section 4).
 
@@ -240,7 +242,8 @@ default. Durations use Go syntax (`30s`, `24h`).
 | `PROMIN_REMUX_JOB_TTL` | `30m` | Idle time before a remux job's temp dir is removed. |
 | `PROMIN_TORRENT_PORT` | `0` (library default 42069) | BitTorrent peer port. |
 | `PROMIN_TORRENT_MAX_ACTIVE` | `5` | Torrents kept on disk; oldest inactive is evicted. |
-| `PROMIN_TORRENT_CACHE_LIMIT_GB` | `80` | On-disk torrent LRU cache bound. |
+| `PROMIN_TORRENT_CACHE_LIMIT_GB` | `80` | On-disk torrent LRU cache bound (production 150). |
+| `PROMIN_TORRENT_CACHE_TTL_DAYS` | `7` | Torrents untouched this long are deleted whatever the total. |
 | `PROMIN_TORRENT_METADATA_TIMEOUT` | `30s` | Wait for magnet metadata. |
 | `PROMIN_WEATHER_PLACE` | empty → by visitor country (`CF-IPCountry`) | Screensaver forecast city. |
 | `PROMIN_H1_HOST` | empty | HTTP/1.1-only host devices in old-TV mode move to. |
@@ -254,7 +257,7 @@ default. Durations use Go syntax (`30s`, `24h`).
 | `PROMIN_STABLEPROXY_TOKEN` | empty | Proxy vendor API token; empty → no `promin_proxy_quota_bytes` / expiry metrics. |
 | `PROMIN_YTX_URL` | empty | YouTube sidecar base URL (`http://ytx.promin.svc.cluster.local:8091`, `k8s/ytx.yaml`). Empty → the YouTube section is off. |
 | `PROMIN_TV_COUNTRIES` | iptv-org country codes for the live-TV section, default `UA,RU,UK,US`; empty turns it off (docs/tv.md) | optional |
-| `PROMIN_DVR_MAX_GB` | how much of the data volume recorded live TV may occupy, default `60`; `0` turns recording off (docs/tv.md) | optional |
+| `PROMIN_DVR_MAX_GB` | how much of the data volume recorded live TV may occupy, default `60` (production 120); `0` turns recording off (docs/tv.md) | optional |
 | `PROMIN_TELEGRAM_BOT_TOKEN` | empty (bot off) | Telegram companion bot token; k8s secret `promin-secrets/telegram-bot-token`. See docs/telegram.md |
 | `PROMIN_TELEGRAM_API_BASE_URL` | `https://api.telegram.org` | Telegram API host |
 

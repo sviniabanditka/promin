@@ -21,6 +21,11 @@ func (m *Manager) StartBackgroundWorkers(ctx context.Context) {
 	m.closeWg.Add(1)
 	defer m.closeWg.Done()
 
+	// Once at start: what a restart left behind gets measured and aged out
+	// without waiting for the first tick.
+	m.refreshSizes()
+	m.evictExpired()
+	m.enforceCacheLimit()
 	ticker := time.NewTicker(sweepInterval)
 	defer ticker.Stop()
 	for {
@@ -31,8 +36,70 @@ func (m *Manager) StartBackgroundWorkers(ctx context.Context) {
 			return
 		case <-ticker.C:
 			m.dropIdleTorrents()
+			m.refreshSizes()
+			m.evictExpired()
 			m.enforceCacheLimit()
 		}
+	}
+}
+
+// refreshSizes replaces each row's size with what is really on disk. Upsert
+// records the torrent's full length, so a series pack someone opened once
+// counted 12 GB while holding 15 MB — the limit tripped on phantoms and spared
+// nothing real. A row whose files are gone (and that is not being downloaded
+// right now) is dropped: it was only ever inflating the total.
+func (m *Manager) refreshSizes() {
+	rows, err := m.cfg.Repo.EvictionCandidates()
+	if err != nil {
+		m.cfg.Logger.Warn("torrent: failed to list cache rows", "error", err)
+		return
+	}
+	for _, c := range rows {
+		if c.Name == "" {
+			continue // metadata never arrived; nothing on disk under that name
+		}
+		size := m.onDiskSize(c.Name)
+		if size == 0 {
+			if _, held := m.lookup(c.InfoHash); held {
+				continue // just added, first pieces not written yet
+			}
+			m.cfg.Logger.Info("torrent: dropping cache row with no files", "infohash", c.InfoHash, "name", c.Name)
+			if err := m.cfg.Repo.Delete(c.InfoHash); err != nil {
+				m.cfg.Logger.Warn("torrent: failed to delete phantom cache row", "infohash", c.InfoHash, "error", err)
+			}
+			continue
+		}
+		if size != c.Size {
+			if err := m.cfg.Repo.SetSize(c.InfoHash, size); err != nil {
+				m.cfg.Logger.Warn("torrent: failed to refresh cache size", "infohash", c.InfoHash, "error", err)
+			}
+		}
+	}
+}
+
+// evictExpired deletes torrents nobody has touched for CacheTTL, regardless of
+// how much room is left — a household's cache is "what we watched this week",
+// not an archive. Anything with an open reader is left alone.
+func (m *Manager) evictExpired() {
+	cutoff := time.Now().Add(-m.cfg.CacheTTL).Unix()
+	rows, err := m.cfg.Repo.EvictionCandidates()
+	if err != nil {
+		return
+	}
+	for _, c := range rows {
+		if c.LastAccess >= cutoff {
+			break // ordered by last_access: the rest are fresher
+		}
+		if m.isActive(c.InfoHash) {
+			continue
+		}
+		m.dropEntry(c.InfoHash)
+		if err := m.cfg.Repo.Delete(c.InfoHash); err != nil {
+			m.cfg.Logger.Warn("torrent: failed to delete expired cache meta", "infohash", c.InfoHash, "error", err)
+		}
+		m.removeTorrentFiles(c.Name)
+		m.cfg.Logger.Info("torrent: expired torrent removed", "infohash", c.InfoHash, "name", c.Name, "size", c.Size,
+			"idle_days", (time.Now().Unix()-c.LastAccess)/86400)
 	}
 }
 
