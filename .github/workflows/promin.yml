@@ -23,9 +23,13 @@ jobs:
           git submodule update --init --recursive
       - uses: actions/setup-go@v5
         with: { go-version-file: server/go.mod, cache-dependency-path: server/go.sum }
-      - name: Go vet + test
+      - name: Go vet + test (race detector on)
         working-directory: server
-        run: go vet -tags providers ./... && go test -tags providers ./...
+        run: go vet -tags providers ./... && go test -race -tags providers ./...
+      # Known vulnerabilities in the modules we actually call (not just list).
+      - name: govulncheck
+        working-directory: server
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest -tags providers ./...
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: web/package-lock.json }
       - name: Web typecheck + unit tests + ES5 bundle check

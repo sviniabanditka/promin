@@ -49,6 +49,7 @@ import { preferNativeHls, canDecodeHevc } from '../capabilities';
 import { getDefaultQuality, getPlayerEngine, getPlayerSpeed, setPlayerSpeed, getSubSize, setSubSize, SubSize, isNightMode, setNightMode, getPreferredVoice, setPreferredVoice } from '../settings';
 import { pickPreferredVoice } from './voices';
 import { followCorrection } from './follow';
+import { scrubStep, speedLabel, fmtTime, qualityOf, playableStream, pickQuality } from './pure';
 import { isResumable } from '../progress';
 import { report as diag } from '../diag';
 import { setRemoteHandler, RemoteAction } from './remote';
@@ -163,30 +164,12 @@ export interface EpisodeMeta {
   resume?: { position_sec: number; duration_sec: number } | null;
 }
 
-// Scrub step by consecutive-press count: predictable ladder instead of
-// Lampa's 10s×1.03^n (20 presses ≈ 4.5 min, 50 ≈ 19 min — nobody can tell how
-// long to hold). 1–5 → 10s, 6–15 → 30s, 16–30 → 1 min, then 5 min.
-function scrubStep(n: number): number {
-  return n <= 5 ? 10 : n <= 15 ? 30 : n <= 30 ? 60 : 300;
-}
 // Delay after the last press before the seek is actually applied (rewindEnd).
 // 600ms: enough to absorb key repeat, short enough not to read as lag.
 const SEEK_APPLY_MS = 600;
 // Panel auto-hide after inactivity.
 const PANEL_HIDE_MS = 3500;
 
-function speedLabel(rate: number): string {
-  return (Math.round(rate * 100) / 100) + '×';
-}
-
-function fmtTime(sec: number): string {
-  if (!isFinite(sec) || sec < 0) sec = 0;
-  const s = Math.floor(sec % 60);
-  const m = Math.floor((sec / 60) % 60);
-  const h = Math.floor(sec / 3600);
-  if (h > 0) return h + ':' + pad2(m) + ':' + pad2(s);
-  return pad2(m) + ':' + pad2(s);
-}
 
 function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance {
   container.className += ' player-screen';
@@ -258,33 +241,13 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   // engine without it) is never auto-picked; on 'auto' the ceiling is 1080p —
   // native sources now hand out 2160p files, and 4K over home Wi-Fi into a TV
   // webview is a gamble the user should opt into via the quality menu.
+  // The pure versions live in player/pure.ts (unit tested); these bind them
+  // to this device's decoder and the profile's quality setting.
   function playable(s: Stream): boolean {
-    const hay = ((s.quality || '') + ' ' + (s.label || '')).toUpperCase();
-    return !(hay.indexOf('HEVC') !== -1 && !canDecodeHevc());
-  }
-  function qualityOf(s: Stream): number {
-    const m = /(\d{3,4})p?/.exec((s.quality || '') + ' ' + (s.label || ''));
-    return m ? parseInt(m[1], 10) : 0;
+    return playableStream(s, canDecodeHevc());
   }
   function pickQualityIndex(streams: Stream[]): number {
-    const pref = getDefaultQuality();
-    if (pref === 'auto') {
-      let fallback = -1;
-      for (let i = 0; i < streams.length; i++) {
-        if (!playable(streams[i])) continue;
-        if (fallback < 0) fallback = i;
-        const q = qualityOf(streams[i]);
-        if (q === 0 || q <= 1080) return i;
-      }
-      return fallback < 0 ? 0 : fallback;
-    }
-    for (let i = 0; i < streams.length; i++) {
-      const s = streams[i];
-      const hay = (s.quality || '') + ' ' + (s.label || '');
-      if (hay.indexOf(pref) !== -1 && playable(s)) return i;
-    }
-    for (let i = 0; i < streams.length; i++) if (playable(streams[i])) return i;
-    return 0;
+    return pickQuality(streams, getDefaultQuality(), canDecodeHevc());
   }
 
   let streamIndex = pickQualityIndex(media.streams); // index into media.streams (quality)

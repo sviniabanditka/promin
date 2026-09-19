@@ -1,0 +1,23 @@
+# Weekly dependency bumps as PRs. For ytx this is not hygiene but the repair
+# mechanism: YouTube changes break playback and the fix is a new youtubei.js /
+# googlevideo / bgutils-js — an open PR with the bump is the alert AND the fix.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /ytx
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+    groups:
+      youtube:
+        patterns: ["youtubei.js", "googlevideo", "bgutils-js", "jsdom"]
+  - package-ecosystem: gomod
+    directory: /server
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: /web
+    schedule: { interval: monthly }
+    open-pull-requests-limit: 3
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: monthly }
