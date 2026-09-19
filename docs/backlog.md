@@ -46,29 +46,23 @@ system itself is described in the other documents.
 Picked by the owner after a repo audit. Ordered by value/cost; every item names
 the machinery it stands on, because none of them starts from zero.
 
-1. **Search inside a film by its lines.** Subtitles are already fetched and
-   converted (`internal/subtitles/opensubtitles.go`, cached on disk). Index the
-   cues in SQLite FTS5 (modernc ships it), add "find a line" on the title
-   screen and jump to the timecode. Later: one search across every subtitle the
-   library has ("which film had that line about…").
-
-2. **Automatic skip intro.** The player already implements skip segments end to
+1. **Automatic skip intro.** The player already implements skip segments end to
    end (`PlayerContext.skipSegments`, the auto-skip loop at
    `web/src/core/player/index.ts:2807`) and nothing feeds them for films and
    series. Producer: an offline ffmpeg audio fingerprint over the first ~6
    minutes of two episodes of a season, the common stretch is the intro; store
    per show, compute once. Manual marking stays the fallback.
 
-3. **Night audio (loudnorm).** Night mode dims the picture; the sound is
+2. **Night audio (loudnorm).** Night mode dims the picture; the sound is
    untouched. `internal/remux/ffmpeg.go:194` already assembles a video filter
    chain and no audio filter at all — add `loudnorm`/compression behind a
    profile flag so explosions do not wake the house and whispers stay audible.
 
-4. **Remembered dub.** The viewer picks the same Ukrainian voice every time.
+3. **Remembered dub.** The viewer picks the same Ukrainian voice every time.
    Store the chosen voice / audio track per profile and preselect it at resolve
    time, falling back to the nearest match.
 
-5. **Two TVs in sync, one account.** Not "watch together with a friend" — the
+4. **Two TVs in sync, one account.** Not "watch together with a friend" — the
    same account driving two sets in one home so they play the same frame.
    Everything needed exists: `EventRemote` is already a playback command aimed
    at one device (`internal/sync/hub.go:42`), the TV reports position, pause and
@@ -80,7 +74,7 @@ the machinery it stands on, because none of them starts from zero.
    seek past that. Pause/seek from any member fans out to the rest; ignore the
    echo of your own command by `device_id`.
 
-6. **Timeshift and recording for Live TV (nDVR).** The biggest of the seven and
+5. **Timeshift and recording for Live TV (nDVR).** The biggest of the seven and
    the most distinctive. EPG is already stored whole per feed
    (`internal/tv/epg.go`) and the remux queue already writes HLS segments: keep
    a rolling 30–60 min window for favourite channels → "start this programme
@@ -88,7 +82,7 @@ the machinery it stands on, because none of them starts from zero.
    straight off the guide, with the recording appearing as an ordinary title.
    Needs the free-disk gate from *Torrents* above to land first.
 
-7. **Live TV in the Telegram Mini App.** The Mini App has home, search,
+6. **Live TV in the Telegram Mini App.** The Mini App has home, search,
    youtube, remote, library and settings (`web/miniapp/src/router.ts`) and no
    TV tab at all, while the backend already serves the catalogue, the EPG and
    the logo proxy (`internal/httpapi/handlers_tv.go`). Add a TV tab: channel
@@ -137,6 +131,13 @@ Reliability and operations:
 17. **Dependabot** for actions and Go modules.
 
 See also `docs/proposals/youtube.md`.
+
+## Sources / subtitles
+
+- **Search every subtitle in the library, not just the open film.** Line search
+  inside the player is done (`docs/player.md`); the cross-title half needs the
+  cached subtitle files indexed in SQLite FTS5 (modernc ships it) and a screen
+  to ask "which film had that line".
 
 ## Live TV (docs/tv.md)
 - EPG from the iptv-org/epg grabber for the configured countries ("now / next").

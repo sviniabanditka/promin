@@ -51,6 +51,8 @@ import { isResumable } from '../progress';
 import { report as diag } from '../diag';
 import { setRemoteHandler, RemoteAction } from './remote';
 import { ensureHls, HlsInstance, HlsCtor } from './hls';
+import { CueLine } from './cues';
+import { LineSearch, openLineSearch } from './lineSearch';
 import { Stream, Subtitle, Voice, mediaUrl, postPlayerState, PlayerStateReport, searchSubtitles, subtitleFileUrl, SubtitleResult, buildHeaders } from '../api';
 
 export interface PlayerMedia {
@@ -1342,7 +1344,59 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       if (ctx.imdb_id) opts.push({ label: t('player.subs_find'), active: false, onSelect: openExtSubsMenu });
     }
     opts.push({ label: t('player.subs_offset'), sub: fmtOffset(subOffset), active: false, onSelect: openSubOffsetMenu });
+    opts.push({ label: t('player.line_search'), active: false, onSelect: openLineSearchOverlay });
     return opts;
+  }
+
+  // ---- find a line (search the loaded subtitle track) ----
+  let lineSearch: LineSearch | null = null;
+  // Cues of every hidden track (ours and hls.js's), in play order.
+  function collectCues(): CueLine[] {
+    const out: CueLine[] = [];
+    const tracks = video.textTracks;
+    if (!tracks) return out;
+    for (let i = 0; i < tracks.length; i++) {
+      const tr = tracks[i] as unknown as { mode: string; cues: ArrayLike<Cue> | null };
+      if (tr.mode !== 'hidden' || !tr.cues) continue;
+      for (let j = 0; j < tr.cues.length; j++) {
+        const cue = tr.cues[j];
+        if (cue.text) out.push({ start: cue.startTime, text: cue.text });
+      }
+    }
+    out.sort(function (a, b) {
+      return a.start - b.start;
+    });
+    return out;
+  }
+  function openLineSearchOverlay(): void {
+    if (lineSearch) return; // already open (a second Enter on the menu row)
+    const cues = collectCues();
+    if (!cues.length) {
+      toast({ kind: 'info', title: t('player.line_search'), text: t('player.line_search_no_subs') });
+      return;
+    }
+    const returnMode = popupReturnMode;
+    closeMenu(true);
+    if (hideTimer) {
+      window.clearTimeout(hideTimer);
+      hideTimer = 0;
+    }
+    lineSearch = openLineSearch({
+      root: root,
+      cues: cues,
+      fmtTime: fmtTime,
+      onPick: function (cue) {
+        // Cue clocks are the <video>'s; seekTo wants the absolute position, and
+        // a shifted subtitle must land the viewer where the line is HEARD.
+        seekTo(cue.start + subOffset + timeBase);
+        showPanel();
+      },
+      onClose: function () {
+        lineSearch = null;
+        setMode(returnMode);
+        armHide();
+      },
+    });
   }
   function openSubsMenu(): void {
     openMenu(t('player.subs'), subtitleMenuOptions());
@@ -3645,7 +3699,19 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       empty(root);
       // Release the mode registrations: their closures held root/video/hls of a
       // destroyed player until the next one registered the same names.
-      const modes = ['player', 'player_rewind', 'player_panel', 'player_menu', 'player_error', 'player_next'];
+      // The overlay's DOM goes with empty(root) below; drop the handle so its
+      // closure (cues of a destroyed player) is not held.
+      lineSearch = null;
+      const modes = [
+        'player',
+        'player_rewind',
+        'player_panel',
+        'player_menu',
+        'player_error',
+        'player_next',
+        'player_lines_kb',
+        'player_lines_results',
+      ];
       for (let i = 0; i < modes.length; i++) Controller.remove(modes[i]);
     },
   };

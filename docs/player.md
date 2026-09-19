@@ -118,6 +118,21 @@ Rendering is the player's own: every text track stays `mode = 'hidden'` (hls.js 
 
 **Offset.** The "Зсув субтитрів" row opens −2…+2 s in 0.5 s steps; `subOffset` (+ = cues appear later) resets on every voice/episode switch. With a non-zero offset `renderCues()` ignores the browser's `activeCues` and picks cues from each hidden track's `cues` list against `currentTime − subOffset`, so it applies to sidecar, in-stream (hls.js) and external tracks alike.
 
+**Find a line.** The last row of the subtitle menu ("Пошук репліки") opens a
+search over the cues of whatever track is loaded — the ones `renderCues()`
+already paints, so nothing is fetched. The overlay
+(`web/src/core/player/lineSearch.ts`) is the on-screen keyboard on the left and
+the matching lines on the right, with two controller modes:
+`player_lines_kb` (Right at the last column, or the current query being empty on
+Back, hands over) and `player_lines_results` (Left/Back return to the keyboard,
+Enter seeks). Matching is in `player/cues.ts`: markup, `{\anN}` tags, case and
+punctuation are normalised away, and every cue is also tested joined with the
+next one so a phrase spanning two cues is found where it starts (unit tests in
+`web/test/cues.test.ts`). The seek target is `cue.start + subOffset + timeBase`
+— the cue clock is the `<video>`'s, and a shifted subtitle must land the viewer
+where the line is heard. With no subtitle on, the row answers with a toast
+instead of an empty overlay.
+
 ## Playback speed
 
 Speeds 0.5–2× in seven steps. The rate is a **global per-user setting** (`player_speed`, synced), applied after every load because `<video>` resets it; when the element refuses the rate (some native pipelines) a toast says so and the pill/badge show the rate actually in effect.

@@ -2888,6 +2888,43 @@ body.reduce-motion .toast__progress::after {
   overflow-y: auto; /* long voice/subtitle/audio lists must scroll — focused item was landing off-screen */
 }
 .player__popup--strip { overflow: hidden; }
+
+/* "Find a line": keyboard left, matching subtitle lines right. */
+.player__lines { overflow: hidden; max-height: 70%; bottom: 9em; }
+.player__lines-query {
+  padding: 0 0.2em 0.6em;
+  font-size: 1.1em;
+  color: #fff;
+}
+.player__lines-query--empty { color: rgba(255, 255, 255, 0.45); }
+.player__lines-cols { display: flex; flex-direction: row; }
+.player__lines-kb { flex: 0 0 52%; padding-right: 1.2em; }
+.player__lines-results {
+  flex: 1 1 auto;
+  max-height: 24em;
+  overflow-y: auto;
+}
+.player__lines-row {
+  display: flex;
+  flex-direction: row;
+  padding: 0.5em 0.7em;
+  border-radius: 0.4em;
+  color: rgba(255, 255, 255, 0.82);
+}
+.player__lines-row.focus {
+  background-color: var(--accent);
+  color: #000;
+}
+.player__lines-time {
+  flex: 0 0 5em;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+.player__lines-text { flex: 1 1 auto; }
+.player__lines-hint {
+  padding: 1em 0.7em;
+  color: rgba(255, 255, 255, 0.6);
+}
 .player__popup-viewport { overflow: hidden; }
 
 /* Episode strip: cards slide horizontally (transform), focused one centred. */
