@@ -34,6 +34,18 @@ func TestSweepMeasuresAgesAndKeepsFresh(t *testing.T) {
 	write("Pack.S02/e02.mkv", 500)
 	write("Fresh.mkv.part", 300)
 	write("Old.mkv", 700)
+	// anacrolix writes sparse files: a huge apparent size, little allocated.
+	sparse, err := os.Create(filepath.Join(torrents, "Sparse.mkv.part"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sparse.WriteAt(make([]byte, 4096), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := sparse.Truncate(5 << 30); err != nil {
+		t.Fatal(err)
+	}
+	sparse.Close()
 
 	now := time.Now().Unix()
 	week := int64(7 * 24 * 3600)
@@ -50,6 +62,9 @@ func TestSweepMeasuresAgesAndKeepsFresh(t *testing.T) {
 	if err := db.TorrentCache.Upsert("phantom", "Gone.mkv", 8_700_000_000, now-30*86400); err != nil {
 		t.Fatal(err)
 	}
+	if err := db.TorrentCache.Upsert("sparse", "Sparse.mkv", 5<<30, now-3600); err != nil {
+		t.Fatal(err)
+	}
 
 	m := &Manager{cfg: Config{DataDir: dir, Repo: db.TorrentCache, Logger: slog.Default(), CacheTTL: 7 * 24 * time.Hour}, entries: map[string]*entry{}}
 
@@ -62,17 +77,30 @@ func TestSweepMeasuresAgesAndKeepsFresh(t *testing.T) {
 	if _, ok := sizes["phantom"]; ok {
 		t.Fatal("a row with no files on disk must be dropped")
 	}
-	if sizes["pack"] != 1500 || sizes["fresh"] != 300 || sizes["old"] != 700 {
-		t.Fatalf("sizes must be what is on disk (dir sum, .part counted): %+v", sizes)
+	// Sizes are allocated blocks, so tiny files round up to a block or two; the
+	// point is that they are real disk usage, not the multi-GB lengths the rows
+	// were created with.
+	for _, k := range []string{"pack", "fresh", "old", "sparse"} {
+		if sizes[k] <= 0 || sizes[k] > 1<<20 {
+			t.Fatalf("%s: size must be what is on disk, got %d (%+v)", k, sizes[k], sizes)
+		}
 	}
-	if total, _ := db.TorrentCache.TotalSize(); total != 2500 {
-		t.Fatalf("tracked total %d, want 2500", total)
+	if sizes["pack"] <= sizes["fresh"] {
+		t.Fatalf("a two-file directory must sum its files: pack=%d fresh=%d", sizes["pack"], sizes["fresh"])
+	}
+	// The sparse .part has a 5 GB apparent size — that is exactly what must NOT
+	// be counted.
+	if sizes["sparse"] >= 5<<30 {
+		t.Fatalf("sparse file counted by apparent size: %d", sizes["sparse"])
+	}
+	if total, _ := db.TorrentCache.TotalSize(); total != sizes["pack"]+sizes["fresh"]+sizes["old"]+sizes["sparse"] {
+		t.Fatalf("tracked total %d does not match the rows %+v", total, sizes)
 	}
 
 	m.evictExpired()
 	rows, _ = db.TorrentCache.EvictionCandidates()
-	if len(rows) != 2 {
-		t.Fatalf("want pack+fresh left, got %+v", rows)
+	if len(rows) != 3 {
+		t.Fatalf("want pack+fresh+sparse left, got %+v", rows)
 	}
 	if _, err := os.Stat(filepath.Join(torrents, "Old.mkv")); !os.IsNotExist(err) {
 		t.Fatal("the week-old torrent's file must be deleted")

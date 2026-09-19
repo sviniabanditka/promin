@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	anacrolix "github.com/anacrolix/torrent"
@@ -411,12 +412,23 @@ func (m *Manager) onDiskSize(name string) int64 {
 				return nil
 			}
 			if info, e := d.Info(); e == nil {
-				total += info.Size()
+				total += allocatedBytes(info)
 			}
 			return nil
 		})
 	}
 	return total
+}
+
+// allocatedBytes is what a file really takes on disk. anacrolix writes sparse
+// files: a barely-touched 20 GB .part has a 20 GB apparent size and 3 GB of
+// blocks, and the apparent size is exactly the phantom the sweep exists to
+// get rid of.
+func allocatedBytes(info os.FileInfo) int64 {
+	if st, ok := info.Sys().(*syscall.Stat_t); ok && st != nil {
+		return int64(st.Blocks) * 512
+	}
+	return info.Size()
 }
 
 // ListFiles returns every file in an already-added torrent.
