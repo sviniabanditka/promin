@@ -86,7 +86,9 @@ type Config struct {
 	TorrentMetadataTimeout time.Duration
 	// DVRMaxGB bounds what recorded live TV may occupy on the data volume
 	// (PROMIN_DVR_MAX_GB, docs/tv.md); the oldest finished recordings are
-	// dropped first. 0 = no recording budget, i.e. recording is off.
+	// dropped first. 0 = no recording budget, i.e. recording is off. The PVC is
+	// nominal (local-path = a directory on the node's disk), so this and
+	// PROMIN_TORRENT_CACHE_LIMIT_GB together must fit the real disk.
 	DVRMaxGB int
 	// WeatherPlace is the city for the screensaver forecast
 	// (PROMIN_WEATHER_PLACE, e.g. "Kyiv"). Empty → guessed from the visitor's
@@ -198,7 +200,7 @@ func Load() Config {
 		RelayBlockIPs:          getenvList("PROMIN_RELAY_BLOCK_IPS", ""),
 		YTXURL:                 strings.TrimRight(getenv("PROMIN_YTX_URL", ""), "/"),
 		TVCountries:            splitCSV(getenv("PROMIN_TV_COUNTRIES", "UA,RU,UK,US")),
-		DVRMaxGB:               getenvInt("PROMIN_DVR_MAX_GB", 20),
+		DVRMaxGB:               getenvInt("PROMIN_DVR_MAX_GB", 60),
 		StableProxyToken:       getenv("PROMIN_STABLEPROXY_TOKEN", ""),
 		OpenSubtitlesAPIKey:    getenv("PROMIN_OPENSUBTITLES_API_KEY", ""),
 		OpenSubtitlesUser:      getenv("PROMIN_OPENSUBTITLES_USER", ""),

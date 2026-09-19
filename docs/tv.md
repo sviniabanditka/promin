@@ -139,8 +139,10 @@ keeps the directory inside its budget:
   MP4: the player's strongest path, seekable, and deleting is one `RemoveAll`.
 - **Disk**: a recording refuses to start with less than 3 GiB free (the SQLite
   database shares the volume), and the sweep drops the oldest finished
-  recordings once everything together passes `PROMIN_DVR_MAX_GB` (default 20;
-  `0` turns recording off entirely).
+  recordings once everything together passes `PROMIN_DVR_MAX_GB` (default 60;
+  `0` turns recording off entirely). The PVC's 40Gi is nominal — local-path is a
+  directory on the node's disk — so this budget plus the torrent cache must fit
+  the real disk (`k8s/promin.yaml` sets both).
 - **Restart-safe**: a row left in `recording` after a restart resumes for
   whatever is left of its window; one whose window passed while the server was
   down is marked `failed: missed`.
@@ -158,7 +160,7 @@ chosen TV. The TV resolves the channel by id and opens the live player.
 ## Timeshift
 
 While a channel is being watched the same recorder keeps a **rolling window** of
-it (`internal/dvr/buffer.go`): 200 × 6 s segments ≈ 20 minutes, old ones deleted
+it (`internal/dvr/buffer.go`): 600 × 6 s segments = 60 minutes, old ones deleted
 as they fall out (`-hls_flags delete_segments+omit_endlist`). The window belongs
 to the channel, not to the viewer — two TVs on one channel share one ffmpeg.
 

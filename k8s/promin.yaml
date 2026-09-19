@@ -84,6 +84,9 @@ spec:
                   name: promin-secrets
                   key: admin-password
             - { name: PROMIN_TORRENT_CACHE_LIMIT_GB, value: "80" }
+            # Recorded live TV (docs/tv.md). 80 + 60 + system ≈ 170 of the node's
+            # 197 GB disk; a recording refuses to start under 3 GiB free anyway.
+            - { name: PROMIN_DVR_MAX_GB, value: "60" }
             # Держати максимум 3 торренти на диску (диск не безмежний). Понад
             # ліміт — витісняється найстаріший неактивний + видаляються файли.
             - { name: PROMIN_TORRENT_MAX_ACTIVE, value: "3" }

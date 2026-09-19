@@ -15,8 +15,10 @@ import (
 // is already running. The buffer belongs to the channel, not to the viewer —
 // two TVs on the same channel share one ffmpeg.
 const (
-	// Segments kept in the sliding playlist: 200 × 6 s ≈ 20 minutes.
-	bufferSegments = 200
+	// Segments kept in the sliding playlist: 600 × 6 s = 60 minutes — long
+	// enough to go back to the start of a film or a match that is on now.
+	// Disk per watched channel: ~1 GB at SD bitrates, 2–3 GB for HD.
+	bufferSegments = 600
 	// A buffer with no heartbeat for this long is nobody's: stop and delete.
 	bufferIdle = 2 * time.Minute
 	// Nothing buffers for longer than this in one run (a TV left on all night

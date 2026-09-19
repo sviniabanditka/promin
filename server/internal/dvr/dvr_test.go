@@ -221,7 +221,7 @@ func TestTimeshiftBuffer(t *testing.T) {
 
 func TestBufferArgsSlidingWindow(t *testing.T) {
 	args := strings.Join(bufferArgs("http://x/live.m3u8", "", "", "/d"), " ")
-	for _, want := range []string{"-hls_list_size 200", "delete_segments", "omit_endlist", "-c copy"} {
+	for _, want := range []string{"-hls_list_size 600", "delete_segments", "omit_endlist", "-c copy"} {
 		if !strings.Contains(args, want) {
 			t.Errorf("buffer args missing %q:\n%s", want, args)
 		}

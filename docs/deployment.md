@@ -254,7 +254,7 @@ default. Durations use Go syntax (`30s`, `24h`).
 | `PROMIN_STABLEPROXY_TOKEN` | empty | Proxy vendor API token; empty → no `promin_proxy_quota_bytes` / expiry metrics. |
 | `PROMIN_YTX_URL` | empty | YouTube sidecar base URL (`http://ytx.promin.svc.cluster.local:8091`, `k8s/ytx.yaml`). Empty → the YouTube section is off. |
 | `PROMIN_TV_COUNTRIES` | iptv-org country codes for the live-TV section, default `UA,RU,UK,US`; empty turns it off (docs/tv.md) | optional |
-| `PROMIN_DVR_MAX_GB` | how much of the data volume recorded live TV may occupy, default `20`; `0` turns recording off (docs/tv.md) | optional |
+| `PROMIN_DVR_MAX_GB` | how much of the data volume recorded live TV may occupy, default `60`; `0` turns recording off (docs/tv.md) | optional |
 | `PROMIN_TELEGRAM_BOT_TOKEN` | empty (bot off) | Telegram companion bot token; k8s secret `promin-secrets/telegram-bot-token`. See docs/telegram.md |
 | `PROMIN_TELEGRAM_API_BASE_URL` | `https://api.telegram.org` | Telegram API host |
 
