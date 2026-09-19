@@ -322,6 +322,24 @@ export interface TvNowNext {
 export const getTvChannels = (q: { fav?: string; recent?: string; q?: string; limit?: number }) =>
   get<{ items: TvChannel[] }>('/tv/channels', q);
 export const getTvNow = () => get<{ items: Record<string, TvNowNext>; at: number }>('/tv/now');
+// Recorded live TV (docs/tv.md). POST toggles: the same programme again
+// cancels its pending recording and answers {cancelled:true}.
+export interface TvRecord {
+  id: string;
+  channel_id: string;
+  channel_title: string;
+  title: string;
+  start_at: number;
+  end_at: number;
+  program_end?: number;
+  state: 'scheduled' | 'recording' | 'done' | 'failed';
+  error?: string;
+  bytes: number;
+}
+export const getTvRecords = () => get<{ records: TvRecord[] }>('/tv/records');
+export const addTvRecord = (body: { channel_id: string; channel_title: string; title: string; start_at: number; end_at: number }) =>
+  post<Partial<TvRecord> & { id: string; cancelled?: boolean }>('/tv/records', body);
+export const deleteTvRecord = (id: string) => del<unknown>('/tv/records/' + encodeURIComponent(id));
 export const tvFavorite = (id: string, on: boolean) =>
   on ? put<unknown>('/tv/favorites/' + encodeURIComponent(id)) : del<unknown>('/tv/favorites/' + encodeURIComponent(id));
 

@@ -205,7 +205,11 @@ channel's logo, quality and what is on now from one `GET /api/v1/tv/now` fetch,
 with a progress bar for the running programme. The star toggles
 `PUT/DELETE /api/v1/tv/favorites/{id}`; tapping a row sends
 `open_tv {channel_id}` to the chosen TV, which looks the channel up by id
-(`/tv/channels?id=`) and opens the live player on it.
+(`/tv/channels?id=`) and opens the live player on it. ⏺ on a row records the
+programme that is on now (`POST /api/v1/tv/records`, lit when a recording of it
+is pending; the same tap again cancels — the server toggles). A fourth segment,
+**Записи**, lists the profile's recordings with their state; a tap cancels a
+scheduled one or deletes any other, after a Telegram confirm.
 
 The phone deliberately does not play the stream itself: half the channels need
 the relay's UA/Referer and hls.js, which this bundle does not carry.

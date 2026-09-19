@@ -298,6 +298,10 @@ h1, h2, p { margin: 0; }
 .tvrow-sub { font-size: 12px; color: var(--hint); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tvrow-prog { height: 3px; margin-top: 5px; border-radius: 2px; background: var(--bg2); overflow: hidden; }
 .tvrow-prog div { height: 100%; background: var(--link); }
+.tvrow-rec { flex: 0 0 auto; background: none; border: 0; font-size: 16px; line-height: 1; padding: 6px 4px; color: var(--hint); }
+.tvrow-rec.on { color: #d33; }
+.tvrow-record { text-align: left; background: none; color: inherit; padding: 4px 0; }
+.tvrow-record.is-live .tvrow-title::before { content: '⏺ '; color: #d33; }
 .tvrow-fav { flex: 0 0 auto; background: none; border: 0; font-size: 20px; line-height: 1; padding: 6px; color: var(--hint); }
 .tvrow-fav.on { color: #f2c14e; }
 
