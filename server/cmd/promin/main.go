@@ -18,6 +18,7 @@ import (
 	"github.com/sviniabanditka/promin/server/internal/auth"
 	"github.com/sviniabanditka/promin/server/internal/catalog"
 	"github.com/sviniabanditka/promin/server/internal/config"
+	"github.com/sviniabanditka/promin/server/internal/dvr"
 	"github.com/sviniabanditka/promin/server/internal/httpapi"
 	"github.com/sviniabanditka/promin/server/internal/logbuf"
 	"github.com/sviniabanditka/promin/server/internal/metrics"
@@ -248,6 +249,15 @@ func main() {
 	tvSvc := tv.New(db.TV, cfg.TVCountries, httpapi.RelayURL, logger)
 	go tvSvc.Run(ctx)
 
+	// Recording live TV off the guide (docs/tv.md): one ffmpeg per recording,
+	// scheduled from the EPG, kept inside PROMIN_DVR_MAX_GB.
+	var dvrSvc *dvr.Service
+	if tvSvc.Enabled() && cfg.DVRMaxGB > 0 {
+		dvrSvc = dvr.New(db.Recordings, filepath.Join(cfg.DataDir, "dvr"), cfg.FFmpegPath,
+			int64(cfg.DVRMaxGB)<<30, tvSvc.StreamFor, logger)
+		go dvrSvc.Run(ctx)
+	}
+
 	// Prometheus on its own listener: never on the public mux (the ingress
 	// would expose it). PROMIN_METRICS_ADDR="" turns it off.
 	if cfg.MetricsAddr != "" {
@@ -271,7 +281,7 @@ func main() {
 		logger.Info("sessions: legacy tokens hashed", "count", n)
 	}
 	httpapi.SetRelayBlockedIPs(cfg.RelayBlockIPs)
-	handler := httpapi.NewServer(version, logger, cfg.DataDir, catalogSvc, sourcesSvc, remuxQueue, torrentMgr, authSvc, syncSvc, cfg.HTTPAddr, logBuf, cfg.LogsPassword, weatherSvc, cfg.WeatherPlace, cfg.H1Host, cfg.MainHost, tgBot, subsClient, ytClient, tvSvc, db.Telegram, db.Skips)
+	handler := httpapi.NewServer(version, logger, cfg.DataDir, catalogSvc, sourcesSvc, remuxQueue, torrentMgr, authSvc, syncSvc, cfg.HTTPAddr, logBuf, cfg.LogsPassword, weatherSvc, cfg.WeatherPlace, cfg.H1Host, cfg.MainHost, tgBot, subsClient, ytClient, tvSvc, db.Telegram, db.Skips, dvrSvc, db.Recordings)
 	srv := &http.Server{
 		Addr:    cfg.HTTPAddr,
 		Handler: handler,

@@ -4321,6 +4321,31 @@ body.night-mode #night-shade { display: block; }
 .tvs .yt-side { flex: 0 0 24rem; width: 24rem; margin-right: 2.4rem; }
 .tvs__list { flex: 0 0 38%; min-width: 0; margin-right: 2.4rem; position: relative; }
 .tvs__list > .scroll { width: 100%; height: 100%; }
+.tvs__records {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.tvs-rec {
+  padding: 0.7em 0.9em;
+  border-radius: 0.5em;
+  color: var(--ink-2);
+}
+.tvs-rec.focus {
+  background-color: var(--accent);
+  color: #000;
+}
+.tvs-rec__title {
+  font-size: 1.05em;
+}
+.tvs-rec__sub {
+  font-size: 0.85em;
+  opacity: 0.75;
+}
+.tvs-rec.is-live .tvs-rec__title::before {
+  content: '⏺ ';
+  color: var(--danger-fill);
+}
+
 .tvs__state { position: absolute; left: 0; top: 0; right: 0; bottom: 0; }
 .tvs__prog { flex: 1 1 auto; min-width: 0; }
 

@@ -26,6 +26,7 @@ system itself is described in the other documents.
 
 - Season picker on the torrents tab (today all packs of a series are one list).
 - Free-disk gate before a full prefetch (LRU + `PROMIN_TORRENT_MAX_ACTIVE` only).
+  `internal/dvr/disk.go` already has the `freeBytes` helper the gate needs.
 
 ## Frontend
 

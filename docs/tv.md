@@ -109,9 +109,51 @@ section to a subset of the configured countries.
 | GET | `/channels/{id}/epg` | `{items:[{start,stop,title,desc?}]}`, unix seconds, −12 h … +36 h |
 | GET | `/now` | `{items:{<id>:{now:{start,stop,title},next:{…}}}, at}` for every channel with a guide — the overlay's channel column |
 | PUT / DELETE | `/favorites/{id}` | |
+| GET | `/records` | `{records:[{id, channel_id, channel_title, title, start_at, end_at, state, error?, bytes}]}` for this profile |
+| POST | `/records` | `{channel_id, channel_title, title, start_at, end_at}` — the programme's own times; the server pads them |
+| DELETE | `/records/{id}` | stops it if running and deletes the files |
+
+The media itself is `GET /tv/records/{id}/playlist.m3u8` + `seg-NNNNN.ts`,
+behind the same `?t=` media token as `/remux` and `/stream` (the playlist's
+relative child URIs are stamped with it on the way out).
+
+## Recording (`server/internal/dvr`)
+
+Long-press OK on a programme row in the guide records it. The row is stored in
+`tv_recordings` and a 30 s scheduler starts what is due, stops what is over and
+keeps the directory inside its budget:
+
+- **Padding**: one minute before, three after — broadcasters are never on time.
+  A programme already on air starts recording immediately; nothing may record
+  for more than 6 hours.
+- **One ffmpeg per recording**, `-c copy` from the channel's upstream URL with
+  its UA/Referer as ffmpeg headers. The recorder does **not** go through
+  `/relay`: it runs on the server, so it fetches the origin itself — one hop
+  less and no media token to mint for a job nobody is watching. `-t` bounds the
+  process even if the scheduler never gets to stop it, and the stop is a SIGINT
+  so ffmpeg closes the playlist with an `#EXT-X-ENDLIST` and leaves a normal VOD
+  behind.
+- **Output is HLS** (`<data>/dvr/<id>/playlist.m3u8` + `seg-*.ts`), not a single
+  MP4: the player's strongest path, seekable, and deleting is one `RemoveAll`.
+- **Disk**: a recording refuses to start with less than 3 GiB free (the SQLite
+  database shares the volume), and the sweep drops the oldest finished
+  recordings once everything together passes `PROMIN_DVR_MAX_GB` (default 20;
+  `0` turns recording off entirely).
+- **Restart-safe**: a row left in `recording` after a restart resumes for
+  whatever is left of its window; one whose window passed while the server was
+  down is marked `failed: missed`.
+
+Recordings are per profile, like bookmarks. On the TV they are a section of the
+left rail ("Записи"): OK plays the recording in the ordinary player, long-press
+deletes it.
 
 ## Not done yet
 
+- **Timeshift**: pausing live TV and starting the running programme from its
+  beginning. Recording covers "I will not be home for it", not "I sat down ten
+  minutes late" — that needs a rolling buffer running while the channel is
+  watched, i.e. the recorder started on tune-in and the player reading behind
+  the live edge.
 - "Now" on the grid tiles (the overlay has it; the grid does not yet).
 - Import of a provider's M3U / Xtream Codes (catchup, archive).
 - Mini App / bot surfaces ("switch the TV to this channel").

@@ -632,7 +632,13 @@ export function mediaUrl(url: string): string {
   if (!url) return url;
   const token = getToken();
   if (!token) return url;
-  if (url.indexOf('/relay') === 0 || url.indexOf('/remux') === 0 || url.indexOf('/stream') === 0 || url.indexOf(API_BASE + '/subtitles/') === 0) {
+  if (
+    url.indexOf('/relay') === 0 ||
+    url.indexOf('/remux') === 0 ||
+    url.indexOf('/stream') === 0 ||
+    url.indexOf('/tv/records/') === 0 ||
+    url.indexOf(API_BASE + '/subtitles/') === 0
+  ) {
     // Match the token param specifically — a bare 't=' also matches ?st=/format=ts
     // etc., which would skip stamping and 401 the media request.
     if (/[?&]t=/.test(url)) return url;
@@ -1280,6 +1286,46 @@ export function tvFail(id: string): Promise<void> {
 export function tvFavorite(id: string, on: boolean): Promise<void> {
   const path = '/tv/favorites/' + encodeURIComponent(id);
   return on ? put<void>(path) : del<void>(path);
+}
+
+// ---- recorded live TV (docs/tv.md) --------------------------------------
+
+export interface TvRecord {
+  id: string;
+  channel_id: string;
+  channel_title: string;
+  title: string;
+  start_at: number;
+  end_at: number;
+  // scheduled | recording | done | failed
+  state: string;
+  error?: string;
+  bytes: number;
+}
+
+export function getTvRecords(): Promise<{ records: TvRecord[] }> {
+  return get<{ records: TvRecord[] }>('/tv/records');
+}
+
+// start_at/end_at are the programme's own times; the server adds the padding.
+export function addTvRecord(body: {
+  channel_id: string;
+  channel_title: string;
+  title: string;
+  start_at: number;
+  end_at: number;
+}): Promise<TvRecord> {
+  return post<TvRecord>('/tv/records', body);
+}
+
+export function deleteTvRecord(id: string): Promise<void> {
+  return del<void>('/tv/records/' + encodeURIComponent(id));
+}
+
+// The recording plays as ordinary HLS off a media route (token stamped by
+// mediaUrl, which knows the /tv/records/ prefix).
+export function tvRecordUrl(id: string): string {
+  return mediaUrl('/tv/records/' + encodeURIComponent(id) + '/playlist.m3u8');
 }
 
 export function ytSegments(id: string): Promise<{ segments: YtSegment[] }> {

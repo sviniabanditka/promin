@@ -9,9 +9,26 @@ import Controller, { on } from '../../core/controller';
 import { Scroll } from '../../core/scroll';
 import { t } from '../../core/i18n';
 import { ScreenInstance } from '../../core/activity';
-import { getTvMeta, getTvChannels, getTvNow, tvFavorite, TvChannel, TvCategory, TvCountry, ApiError } from '../../core/api';
+import {
+  getTvMeta,
+  getTvChannels,
+  getTvNow,
+  tvFavorite,
+  getTvRecords,
+  addTvRecord,
+  deleteTvRecord,
+  tvRecordUrl,
+  TvChannel,
+  TvCategory,
+  TvCountry,
+  TvRecord,
+  ApiError,
+} from '../../core/api';
 import { openLivePlayer } from '../../core/player/live';
-import { el, empty } from '../../ui/dom';
+import { openPlayer } from '../../core/player';
+import { openConfirm } from '../../ui/confirm';
+import { TvProgram } from '../../core/api';
+import { el, empty, pad2 } from '../../ui/dom';
 import { Background } from '../../ui/background';
 import { buildMenu, Menu } from '../../ui/menu';
 import { buildHead, Head } from '../../ui/head';
@@ -20,7 +37,7 @@ import { buildState } from '../../ui/state';
 import { toast } from '../../ui/toast';
 import { ChannelList, ProgramPane, GuideChannel, loadNowNext } from './guide';
 
-export type TvSection = 'fav' | 'recent' | 'all' | 'country' | 'category';
+export type TvSection = 'fav' | 'recent' | 'all' | 'country' | 'category' | 'records';
 
 export interface TvParams {
   section: TvSection;
@@ -89,10 +106,21 @@ export function mountTv(container: HTMLElement, params: TvParams): ScreenInstanc
   listCol.appendChild(list.render());
   const listState = el('div', 'tvs__state hide');
   listCol.appendChild(listState);
+  // Recordings live in the same middle column as the channels (docs/tv.md):
+  // one section of the rail, one list, nothing new to learn.
+  const recordsBox = el('div', 'tvs__records hide');
+  const recordsScroll = new Scroll({ mask: true, over: true });
+  recordsBox.appendChild(recordsScroll.render());
+  listCol.appendChild(recordsBox);
+  let records: TvRecord[] = [];
+  let lastRecord: HTMLElement | false = false;
   const prog = new ProgramPane({
     onEnter: function (ch) {
       const i = list.indexOfId(ch.id);
       if (i >= 0) play(i);
+    },
+    onLong: function (ch, p) {
+      record(ch, p);
     },
   });
   progCol.appendChild(prog.el);
@@ -112,6 +140,11 @@ export function mountTv(container: HTMLElement, params: TvParams): ScreenInstanc
     const my = ++seq;
     current = def;
     prog.show(null);
+    if (def.section === 'records') {
+      loadRecords(my);
+      return;
+    }
+    recordsBox.classList.add('hide');
     showListState('loading');
     const req =
       def.section === 'fav'
@@ -149,6 +182,136 @@ export function mountTv(container: HTMLElement, params: TvParams): ScreenInstanc
     );
   }
 
+  // ---- recordings ----
+  function recordState(rec: TvRecord): string {
+    if (rec.state === 'scheduled') return t('tv.rec_scheduled');
+    if (rec.state === 'recording') return t('tv.rec_running');
+    if (rec.state === 'failed') return t('tv.rec_failed');
+    const mb = Math.round(rec.bytes / (1024 * 1024));
+    return mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : mb + ' MB';
+  }
+
+  function loadRecords(my: number): void {
+    list.render().classList.add('hide');
+    listState.classList.add('hide');
+    recordsBox.classList.remove('hide');
+    getTvRecords().then(
+      function (r) {
+        if (destroyed || my !== seq) return;
+        records = r.records || [];
+        renderRecords();
+      },
+      function () {
+        if (destroyed || my !== seq) return;
+        records = [];
+        renderRecords();
+      }
+    );
+  }
+
+  function renderRecords(): void {
+    const body = recordsScroll.body();
+    empty(body);
+    lastRecord = false;
+    if (!records.length) {
+      body.appendChild(buildState({ kind: 'empty', text: t('tv.no_records') }));
+      recordsScroll.reset();
+      return;
+    }
+    for (let i = 0; i < records.length; i++) {
+      (function (rec: TvRecord) {
+        const row = el('div', 'tvs-rec selector' + (rec.state === 'recording' ? ' is-live' : ''));
+        row.appendChild(el('div', 'tvs-rec__title', rec.title || rec.channel_title));
+        const sub = el('div', 'tvs-rec__sub');
+        const when = new Date(rec.start_at * 1000);
+        sub.textContent =
+          (rec.channel_title ? rec.channel_title + ' · ' : '') +
+          pad2(when.getDate()) + '.' + pad2(when.getMonth() + 1) + ' ' +
+          pad2(when.getHours()) + ':' + pad2(when.getMinutes()) +
+          ' · ' + recordState(rec);
+        row.appendChild(sub);
+        on(row, 'hover:focus', function () {
+          lastRecord = row;
+          recordsScroll.update(row);
+        });
+        on(row, 'hover:enter', function () {
+          playRecord(rec);
+        });
+        on(row, 'hover:long', function () {
+          removeRecord(rec);
+        });
+        body.appendChild(row);
+      })(records[i]);
+    }
+    recordsScroll.reset();
+  }
+
+  function playRecord(rec: TvRecord): void {
+    if (rec.state === 'scheduled') {
+      toast({ kind: 'info', icon: '⏺', text: t('tv.rec_scheduled') });
+      return;
+    }
+    if (rec.state === 'failed') {
+      toast({ kind: 'warning', icon: '⏺', text: t('tv.rec_failed') });
+      return;
+    }
+    openPlayer({
+      title: rec.title || rec.channel_title,
+      subtitle: rec.channel_title,
+      media: { type: 'hls', streams: [{ url: tvRecordUrl(rec.id) }], subtitles: [], voices: [], currentVoice: null },
+    });
+  }
+
+  function removeRecord(rec: TvRecord): void {
+    openConfirm(container, {
+      text: t('tv.rec_delete_confirm'),
+      yesLabel: t('action.confirm'),
+      mode: 'tv_rec_confirm',
+      returnMode: 'tv_list',
+      onYes: function () {
+        deleteTvRecord(rec.id).then(
+          function () {
+            if (destroyed) return;
+            const next: TvRecord[] = [];
+            for (let i = 0; i < records.length; i++) {
+              if (records[i].id !== rec.id) next.push(records[i]);
+            }
+            records = next;
+            renderRecords();
+            Controller.toggle('tv_list');
+          },
+          function () {
+            if (!destroyed) toast({ kind: 'error', text: t('error.load') });
+          }
+        );
+      },
+    });
+  }
+
+  // Long-press OK on a programme row: record it. The server pads the bounds and
+  // schedules; a programme already on air starts recording at once.
+  function record(ch: GuideChannel, p: TvProgram): void {
+    if (p.stop <= Math.floor(Date.now() / 1000)) {
+      toast({ kind: 'warning', icon: '⏺', text: t('tv.rec_past') });
+      return;
+    }
+    addTvRecord({
+      channel_id: ch.id,
+      channel_title: ch.name,
+      title: p.title || ch.name,
+      start_at: p.start,
+      end_at: p.stop,
+    }).then(
+      function () {
+        if (!destroyed) toast({ kind: 'success', icon: '⏺', title: t('tv.rec_added'), text: p.title || ch.name });
+      },
+      function (e: ApiError) {
+        if (destroyed) return;
+        toast({ kind: 'error', icon: '⏺', text: e && e.code === 'dvr_disabled' ? t('tv.rec_disabled') : t('error.load') });
+      }
+    );
+  }
+
   // ---- sidebar ----
   function sideItem(def: SectionDef, isCurrent: boolean): HTMLElement {
     const item = el('div', 'yt-side__item selector' + (isCurrent ? ' is-current' : ''), def.label);
@@ -167,7 +330,7 @@ export function mountTv(container: HTMLElement, params: TvParams): ScreenInstanc
         sideTimer = 0;
       }
       if (def.section !== current.section || (def.id || '') !== (current.id || '')) selectSection(def, item);
-      if (list.count()) Controller.toggle('tv_list');
+      if (def.section === 'records' || list.count()) Controller.toggle('tv_list');
     });
     sideBody.appendChild(item);
     if (isCurrent) lastSide = item;
@@ -189,6 +352,7 @@ export function mountTv(container: HTMLElement, params: TvParams): ScreenInstanc
     sideItem({ section: 'fav', label: t('tv.favorites') }, is('fav'));
     sideItem({ section: 'recent', label: t('tv.recent') }, is('recent'));
     sideItem({ section: 'all', label: t('tv.all') }, is('all'));
+    sideItem({ section: 'records', label: t('tv.records') }, is('records'));
     sideBody.appendChild(el('div', 'tv-side__heading', t('tv.countries')));
     for (let i = 0; i < countries.length; i++) {
       const c = countries[i];
@@ -212,7 +376,7 @@ export function mountTv(container: HTMLElement, params: TvParams): ScreenInstanc
       Controller.toggle('menu');
     },
     right: function () {
-      if (list.count()) Controller.toggle('tv_list');
+      if (current.section === 'records' || list.count()) Controller.toggle('tv_list');
     },
     up: function () {
       Controller.moveOr('up');
@@ -226,6 +390,11 @@ export function mountTv(container: HTMLElement, params: TvParams): ScreenInstanc
   });
   Controller.add('tv_list', {
     toggle: function () {
+      if (current.section === 'records') {
+        Controller.collectionSet(recordsScroll.render());
+        Controller.collectionFocus(lastRecord || false, recordsScroll.render());
+        return;
+      }
       Controller.collectionSet(list.render());
       Controller.collectionFocus(list.focusTarget(), list.render());
     },
@@ -233,7 +402,7 @@ export function mountTv(container: HTMLElement, params: TvParams): ScreenInstanc
       Controller.toggle('tv_side');
     },
     right: function () {
-      if (prog.hasRows()) Controller.toggle('tv_prog');
+      if (current.section !== 'records' && prog.hasRows()) Controller.toggle('tv_prog');
     },
     up: function () {
       Controller.moveOr('up');

@@ -84,6 +84,10 @@ type Config struct {
 	// TorrentMetadataTimeout bounds AddMagnet's wait for torrent info
 	// (docs/streaming.md, "~20-30 c").
 	TorrentMetadataTimeout time.Duration
+	// DVRMaxGB bounds what recorded live TV may occupy on the data volume
+	// (PROMIN_DVR_MAX_GB, docs/tv.md); the oldest finished recordings are
+	// dropped first. 0 = no recording budget, i.e. recording is off.
+	DVRMaxGB int
 	// WeatherPlace is the city for the screensaver forecast
 	// (PROMIN_WEATHER_PLACE, e.g. "Kyiv"). Empty → guessed from the visitor's
 	// country via Cloudflare's CF-IPCountry header.
@@ -194,6 +198,7 @@ func Load() Config {
 		RelayBlockIPs:          getenvList("PROMIN_RELAY_BLOCK_IPS", ""),
 		YTXURL:                 strings.TrimRight(getenv("PROMIN_YTX_URL", ""), "/"),
 		TVCountries:            splitCSV(getenv("PROMIN_TV_COUNTRIES", "UA,RU,UK,US")),
+		DVRMaxGB:               getenvInt("PROMIN_DVR_MAX_GB", 20),
 		StableProxyToken:       getenv("PROMIN_STABLEPROXY_TOKEN", ""),
 		OpenSubtitlesAPIKey:    getenv("PROMIN_OPENSUBTITLES_API_KEY", ""),
 		OpenSubtitlesUser:      getenv("PROMIN_OPENSUBTITLES_USER", ""),

@@ -16,6 +16,7 @@ import (
 
 	"github.com/sviniabanditka/promin/server/internal/auth"
 	"github.com/sviniabanditka/promin/server/internal/catalog"
+	"github.com/sviniabanditka/promin/server/internal/dvr"
 	"github.com/sviniabanditka/promin/server/internal/logbuf"
 	"github.com/sviniabanditka/promin/server/internal/metrics"
 	"github.com/sviniabanditka/promin/server/internal/remux"
@@ -59,6 +60,8 @@ func NewServer(
 	tvSvc *tv.Service,
 	tgLinks *store.TelegramRepo, // admin panel: a profile's linked Telegram chats
 	skipsRepo *store.SkipsRepo, // learned intro segments (docs/player.md)
+	dvrSvc *dvr.Service, // nil when PROMIN_DVR_MAX_GB=0 or live TV is off
+	recordings *store.RecordingsRepo,
 ) http.Handler {
 	mux := http.NewServeMux()
 
@@ -258,6 +261,14 @@ func NewServer(
 	mux.HandleFunc("POST /api/v1/tv/channels/{id}/fail", requireAuth(authSvc, requireFeature("tv", tvH.report)))
 	mux.HandleFunc("PUT /api/v1/tv/favorites/{id}", requireAuth(authSvc, requireFeature("tv", tvH.favorite(true))))
 	mux.HandleFunc("DELETE /api/v1/tv/favorites/{id}", requireAuth(authSvc, requireFeature("tv", tvH.favorite(false))))
+
+	// Recording live TV off the guide (docs/tv.md). The media route carries the
+	// same ?t= token as /remux and /stream.
+	dvrH := &dvrHandlers{svc: dvrSvc, repo: recordings}
+	mux.HandleFunc("GET /api/v1/tv/records", requireAuth(authSvc, requireFeature("tv", dvrH.list)))
+	mux.HandleFunc("POST /api/v1/tv/records", requireAuth(authSvc, requireFeature("tv", dvrH.add)))
+	mux.HandleFunc("DELETE /api/v1/tv/records/{id}", requireAuth(authSvc, requireFeature("tv", dvrH.remove)))
+	mux.HandleFunc("GET /tv/records/{id}/{file}", requireAuthMedia(authSvc, dvrH.serveFile))
 
 	tgApp := &tgAppHandlers{bot: tgBot, auth: authSvc, sync: syncSvc, cat: catalogSvc}
 	mux.HandleFunc("POST /api/v1/tg/auth", tgApp.login) // open pre-gate: initData is the credential

@@ -244,6 +244,9 @@ export class ChannelList {
 
 export interface ProgramPaneHooks {
   onEnter: (ch: GuideChannel, p: TvProgram) => void;
+  // Long-press OK on a programme row — the TV screen records it (docs/tv.md).
+  // Absent (the player's overlay) → the row has no long press.
+  onLong?: (ch: GuideChannel, p: TvProgram) => void;
 }
 
 export class ProgramPane {
@@ -390,6 +393,11 @@ export class ProgramPane {
         on(row, 'hover:enter', function () {
           self.hooks.onEnter(ch, p);
         });
+        if (self.hooks.onLong) {
+          on(row, 'hover:long', function () {
+            if (self.hooks.onLong) self.hooks.onLong(ch, p);
+          });
+        }
         body.appendChild(row);
         if (isNow) {
           self.nowRow = row;

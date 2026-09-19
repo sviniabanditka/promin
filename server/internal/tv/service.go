@@ -537,6 +537,31 @@ func (s *Service) Play(userID int64, channelID string) (Play, error) {
 	return p, nil
 }
 
+// StreamFor hands the recorder (internal/dvr) the raw upstream URL of a
+// channel plus its headers. Unlike Play this never wraps the URL in /relay:
+// ffmpeg runs on the server, so it fetches the origin itself — one hop less
+// and no media token to mint for a job nobody is watching.
+func (s *Service) StreamFor(channelID string) (url, userAgent, referer string, err error) {
+	sts, err := s.repo.Streams(channelID)
+	if err != nil {
+		return "", "", "", err
+	}
+	var pick *store.TVStream
+	for i := range sts {
+		if sts[i].Alive {
+			pick = &sts[i]
+			break
+		}
+	}
+	if pick == nil && len(sts) > 0 {
+		pick = &sts[0]
+	}
+	if pick == nil {
+		return "", "", "", ErrNoStream
+	}
+	return pick.URL, pick.UserAgent, pick.Referrer, nil
+}
+
 // Report marks the stream the player could not start; the next Check decides.
 func (s *Service) Report(channelID string) {
 	sts, err := s.repo.Streams(channelID)
