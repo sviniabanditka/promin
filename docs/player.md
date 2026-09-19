@@ -196,6 +196,26 @@ Resume deep into such a file, an audio-track switch and a seek far past the muxe
 | M | mute |
 | ⏯ ▶ ⏸ ⏹ ⏪ ⏩ ⏭ ⏮ | matching transport action; ⏹ exits |
 
+## Night audio
+
+The "more" sheet's **Нічний звук** puts a WebAudio `DynamicsCompressor`
+(threshold −28 dB, knee 24, ratio 6, attack 5 ms, release 300 ms) plus a ×1.5
+makeup gain between the `<video>` and the speakers
+(`web/src/core/player/nightAudio.ts`): the explosions stop waking the house and
+the whispered dialogue stays audible. Measured on a test tone that alternates
+loud and quiet seconds — quiet 0.049 → 0.164, loud 0.879 → 0.895, i.e. the
+range narrows from 18:1 to 5.5:1 with the peak untouched.
+
+Not a server-side `loudnorm`: that would re-encode the audio, need its own
+remux job (and cache key) per stream, and would not reach progressive mp4 or
+live TV at all. The compressor costs nothing and can be flipped mid-film.
+
+The flag is **device-local** (`promin:night_audio` in localStorage), unlike the
+synced `night_mode` dimming: `createMediaElementSource` is one-way and an old
+panel can get it wrong, and a synced flag would break every set at once. The
+row only appears where `AudioContext` exists, and if wiring the graph throws,
+the player falls back to the direct connection, turns the flag off and says so.
+
 ## Sleep timer
 
 In the "more" menu: off / 15 / 30 / 45 / 60 / 90 minutes / after this episode.

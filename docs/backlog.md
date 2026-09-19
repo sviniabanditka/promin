@@ -46,16 +46,11 @@ system itself is described in the other documents.
 Picked by the owner after a repo audit. Ordered by value/cost; every item names
 the machinery it stands on, because none of them starts from zero.
 
-1. **Night audio (loudnorm).** Night mode dims the picture; the sound is
-   untouched. `internal/remux/ffmpeg.go:194` already assembles a video filter
-   chain and no audio filter at all — add `loudnorm`/compression behind a
-   profile flag so explosions do not wake the house and whispers stay audible.
-
-2. **Remembered dub.** The viewer picks the same Ukrainian voice every time.
+1. **Remembered dub.** The viewer picks the same Ukrainian voice every time.
    Store the chosen voice / audio track per profile and preselect it at resolve
    time, falling back to the nearest match.
 
-3. **Two TVs in sync, one account.** Not "watch together with a friend" — the
+2. **Two TVs in sync, one account.** Not "watch together with a friend" — the
    same account driving two sets in one home so they play the same frame.
    Everything needed exists: `EventRemote` is already a playback command aimed
    at one device (`internal/sync/hub.go:42`), the TV reports position, pause and
@@ -67,7 +62,7 @@ the machinery it stands on, because none of them starts from zero.
    seek past that. Pause/seek from any member fans out to the rest; ignore the
    echo of your own command by `device_id`.
 
-4. **Timeshift and recording for Live TV (nDVR).** The biggest of the seven and
+3. **Timeshift and recording for Live TV (nDVR).** The biggest of the seven and
    the most distinctive. EPG is already stored whole per feed
    (`internal/tv/epg.go`) and the remux queue already writes HLS segments: keep
    a rolling 30–60 min window for favourite channels → "start this programme
@@ -75,7 +70,7 @@ the machinery it stands on, because none of them starts from zero.
    straight off the guide, with the recording appearing as an ordinary title.
    Needs the free-disk gate from *Torrents* above to land first.
 
-5. **Live TV in the Telegram Mini App.** The Mini App has home, search,
+4. **Live TV in the Telegram Mini App.** The Mini App has home, search,
    youtube, remote, library and settings (`web/miniapp/src/router.ts`) and no
    TV tab at all, while the backend already serves the catalogue, the EPG and
    the logo proxy (`internal/httpapi/handlers_tv.go`). Add a TV tab: channel

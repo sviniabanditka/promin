@@ -51,6 +51,7 @@ import { isResumable } from '../progress';
 import { report as diag } from '../diag';
 import { setRemoteHandler, RemoteAction } from './remote';
 import { ensureHls, HlsInstance, HlsCtor } from './hls';
+import { attachNightAudio, isNightAudio, nightAudioSupported, setNightAudioStored, NightAudio } from './nightAudio';
 import { CueLine } from './cues';
 import { LineSearch, openLineSearch } from './lineSearch';
 import { Stream, Subtitle, Voice, mediaUrl, postPlayerState, PlayerStateReport, searchSubtitles, subtitleFileUrl, SubtitleResult, buildHeaders, getSkips, reportSkip } from '../api';
@@ -728,6 +729,26 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   let curEpisode: number | null = ctx.episode != null ? ctx.episode : null;
   let curSeason: number | null = ctx.season != null ? ctx.season : null;
 
+  // ---- night audio (compressor on the <video>, docs/player.md) ----
+  let nightAudio: NightAudio | null = null;
+  let nightAudioOn = isNightAudio();
+  function applyNightAudio(): void {
+    if (!nightAudioOn && !nightAudio) return; // off and never attached: no graph
+    if (!nightAudio) nightAudio = attachNightAudio(video);
+    if (nightAudio.apply(nightAudioOn)) return;
+    // The panel could not route its audio through WebAudio — forget the flag
+    // instead of leaving a viewer with a switch that does nothing.
+    nightAudioOn = false;
+    setNightAudioStored(false);
+    toast({ kind: 'warning', title: t('player.night_audio'), text: t('player.night_audio_failed') });
+  }
+  function toggleNightAudio(): void {
+    nightAudioOn = !nightAudioOn;
+    setNightAudioStored(nightAudioOn);
+    applyNightAudio();
+    if (nightAudioOn) toast({ kind: 'info', title: t('player.night_audio'), text: t('toggle.on'), duration: 2000 });
+  }
+
   // ---- skip intro (learned from what viewers actually skip) ----
   // ctx.skipSegments is what the caller knew up front (YouTube sponsor spans);
   // for a series the server adds what the household already skipped in other
@@ -1114,6 +1135,14 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
         setNightMode(!isNightMode());
       },
     });
+    if (nightAudioSupported()) {
+      opts.push({
+        label: t('player.night_audio'),
+        sub: t(nightAudioOn ? 'toggle.on' : 'toggle.off'),
+        active: false,
+        onSelect: toggleNightAudio,
+      });
+    }
     opts.push({
       label: t('player.sleep'),
       sub: sleepLabel(),
@@ -3697,6 +3726,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   loadCtxAudio();
   loadEpisodes();
   loadSkips();
+  applyNightAudio();
   applyStoredExt();
 
   return {
@@ -3740,6 +3770,10 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       video.removeEventListener('ended', onEnded);
       video.removeEventListener('error', onVideoError);
       teardownEngine();
+      if (nightAudio) {
+        nightAudio.destroy();
+        nightAudio = null;
+      }
       empty(root);
       // Release the mode registrations: their closures held root/video/hls of a
       // destroyed player until the next one registered the same names.
