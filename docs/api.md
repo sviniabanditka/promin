@@ -251,6 +251,13 @@ Sync events added: `player_state` (`PlayerState` + `device_id`, or `{device_id, 
 | GET | `/api/v1/subtitles/search?imdb_id=&season=&episode=&langs=uk,ru,en` | bearer | `{enabled, results:[{file_id, lang, release, downloads, hearing_impaired, fps, uploader}]}` — most downloaded first; `enabled:false` when no API key |
 | GET | `/api/v1/subtitles/{file_id}.vtt` | media token `?t=` | The subtitle as WebVTT; downloaded once per file id (anonymous quota) and cached under `/data/subs/` |
 
+### Two TVs in sync
+
+The TV uses the same two routes as the Mini App: `GET /api/v1/tg/devices` for
+the profile's online devices and `POST /api/v1/tg/send` for one-device commands.
+Two actions exist for this: `sync_state` (`value` = the leader's absolute
+position, `str` = `playing` | `paused`) and `sync_stop`. See `docs/player.md`.
+
 ## Skip intro (`handlers_skips.go`, see `docs/player.md`)
 
 | Method | Path | Auth | Effect |

@@ -207,6 +207,37 @@ Resume deep into such a file, an audio-track switch and a seek far past the muxe
 | M | mute |
 | ⏯ ▶ ⏸ ⏹ ⏪ ⏩ ⏭ ⏮ | matching transport action; ⏹ exits |
 
+## Two TVs in sync
+
+One account, two sets in the same home, same frame. No new transport: the
+leading player drives the follower through the **one-device remote channel the
+Mini App already uses** (`GET /api/v1/tg/devices`, `POST /api/v1/tg/send` —
+plain bearer routes despite the `tg` in the path), and the remux queue reuses
+one job for several clients, so the second set does not start a second
+transcode.
+
+- **Leader.** "more" → **Два телевізори** lists the profile's *online* devices
+  (`current` and offline ones filtered out). Picking one sends `open`
+  (tmdb/type/season/episode, `resume:false`) unless that device's last player
+  report says it is already on this title, then ticks
+  `remote {action:"sync_state", value:<absolute position>, str:"playing"|"paused"}`
+  every 2 s from the 1 s stats tick, plus immediately on play/pause and on an
+  applied scrub. Closing the player sends `sync_stop`.
+- **Follower.** Any player that receives `sync_state` starts following: it
+  mirrors play/pause and closes the gap per `core/player/follow.ts` — over 3 s
+  is a hard `seekClamped`, 0.4–3 s is a ±3 % `playbackRate` nudge (the panel
+  pitch-corrects, so it is inaudible), under 0.4 s nothing happens. `sync_stop`
+  or 30 s without a tick ends it and restores the viewer's own speed. A set that
+  is leading never follows back.
+
+The two sets may play different sources or containers — positions are compared
+in the absolute title clock (`absTime()`, i.e. including each side's own remux
+`timeBase`), not in stream time.
+
+Not yet run on two real sets: the drift maths and the server's validation have
+unit tests (`web/test/follow.test.ts`, `TestTGSendValidation`), the rest is on
+the "verify on real devices" list in `docs/backlog.md`.
+
 ## Night audio
 
 The "more" sheet's **Нічний звук** puts a WebAudio `DynamicsCompressor`

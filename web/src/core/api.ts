@@ -937,6 +937,54 @@ export function getDevices(): Promise<DevicesResponse> {
   return get<DevicesResponse>('/auth/devices');
 }
 
+// Two TVs of one account playing the same frame (docs/player.md). Both
+// endpoints below are the ones the Telegram Mini App drives the TV with — they
+// are plain bearer routes, not Telegram-specific, so the leading TV uses them
+// as they are instead of growing a second copy on the server.
+export interface LiveDevice {
+  id: string;
+  name?: string;
+  type?: string;
+  current?: boolean;
+  online?: boolean;
+  state?: { tmdb_id?: number; season?: number; episode?: number; position_sec?: number } | null;
+}
+
+export function getLiveDevices(): Promise<{ devices: LiveDevice[] }> {
+  return get<{ devices: LiveDevice[] }>('/tg/devices', undefined, 8000);
+}
+
+// One playback command to one device (the follower ignores everything that is
+// not addressed to it).
+export function sendRemote(deviceId: string, action: string, value?: number, str?: string): Promise<void> {
+  return post<void>('/tg/send', { device_id: deviceId, remote: { action: action, value: value || 0, str: str || '' } }, undefined, 6000);
+}
+
+// Make another device open a title (the follower may be sitting on Home).
+export function sendOpen(
+  deviceId: string,
+  tmdbID: number,
+  mediaType: string,
+  season?: number | null,
+  episode?: number | null
+): Promise<void> {
+  return post<void>(
+    '/tg/send',
+    {
+      device_id: deviceId,
+      open: {
+        tmdb_id: tmdbID,
+        media_type: mediaType,
+        season: season || 0,
+        episode: episode || 0,
+        resume: false,
+      },
+    },
+    undefined,
+    8000
+  );
+}
+
 // Revoking the current session needs ?force=true (docs/api.md — a guard against
 // self-eviction); the devices screen never passes force for the current row.
 export function deleteDevice(tokenId: string, force?: boolean): Promise<void> {

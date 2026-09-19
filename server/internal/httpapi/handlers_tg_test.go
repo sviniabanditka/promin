@@ -135,6 +135,11 @@ func TestTGSendValidation(t *testing.T) {
 		{`{"device_id":"` + tvID + `","remote":{"action":"seek_to","value":1234.5}}`, 204},
 		{`{"device_id":"` + tvID + `","open":{"tmdb_id":1399,"media_type":"tv","season":2,"episode":6}}`, 204},
 		{`{"device_id":"` + tvID + `","open":{"tmdb_id":550,"media_type":"movie","resume":true}}`, 204},
+		// Two TVs in sync: a tick needs a position and a state, nothing else passes.
+		{`{"device_id":"` + tvID + `","remote":{"action":"sync_state","value":120.5,"str":"playing"}}`, 204},
+		{`{"device_id":"` + tvID + `","remote":{"action":"sync_state","value":120.5,"str":"buffering"}}`, 400},
+		{`{"device_id":"` + tvID + `","remote":{"action":"sync_state","value":-1,"str":"playing"}}`, 400},
+		{`{"device_id":"` + tvID + `","remote":{"action":"sync_stop"}}`, 204},
 	}
 	for _, c := range cases {
 		if rr := tgCall(mux, http.MethodPost, "/api/v1/tg/send", phone, c.body); rr.Code != c.want {
@@ -146,8 +151,8 @@ func TestTGSendValidation(t *testing.T) {
 	for len(ch) > 0 {
 		got = append(got, <-ch)
 	}
-	if len(got) != 3 {
-		t.Fatalf("published %d events, want 3", len(got))
+	if len(got) != 5 {
+		t.Fatalf("published %d events, want 5", len(got))
 	}
 	js := func(ev sync.Event) string { b, _ := json.Marshal(ev.Payload); return string(b) }
 	if got[0].Type != sync.EventRemote || js(got[0]) != `{"device_id":"`+tvID+`","action":"seek_to","value":1234.5}` {
@@ -158,6 +163,12 @@ func TestTGSendValidation(t *testing.T) {
 	}
 	if js(got[2]) != `{"tmdb_id":550,"media_type":"movie","device_id":"`+tvID+`","title":"","resume":true}` {
 		t.Fatalf("open resume: %s", js(got[2]))
+	}
+	if got[3].Type != sync.EventRemote || js(got[3]) != `{"device_id":"`+tvID+`","action":"sync_state","value":120.5,"str":"playing"}` {
+		t.Fatalf("sync tick: %s %s", got[3].Type, js(got[3]))
+	}
+	if got[4].Type != sync.EventRemote || js(got[4]) != `{"device_id":"`+tvID+`","action":"sync_stop","value":0}` {
+		t.Fatalf("sync stop: %s %s", got[4].Type, js(got[4]))
 	}
 	if _, ok := got[2].Payload.(telegram.OpenTitlePayload); !ok {
 		t.Fatal("payload type")

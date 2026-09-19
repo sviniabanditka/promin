@@ -10,7 +10,9 @@ system itself is described in the other documents.
   set. Delete it and the CI step once confirmed.
 - Verify on the real devices what was shipped blind: episode strip and seek
   ladder on Tizen, spinner centering and torrent resume on Xiaomi/MSX, the
-  source matrix (every provider on one movie and one series).
+  source matrix (every provider on one movie and one series), and **two TVs in
+  sync** end to end (the drift maths and the server validation have tests, two
+  real sets have never run it).
 
 ## Player
 
@@ -46,19 +48,7 @@ system itself is described in the other documents.
 Picked by the owner after a repo audit. Ordered by value/cost; every item names
 the machinery it stands on, because none of them starts from zero.
 
-1. **Two TVs in sync, one account.** Not "watch together with a friend" — the
-   same account driving two sets in one home so they play the same frame.
-   Everything needed exists: `EventRemote` is already a playback command aimed
-   at one device (`internal/sync/hub.go:42`), the TV reports position, pause and
-   duration every 5 s (`internal/sync/player_state.go`), and the remux queue
-   reuses one job for several clients (`queue_reuse_test.go`), so the second set
-   does not start a second transcode. Design: a watch group inside the account,
-   one member leads; followers open the same title/source/position, then hold
-   the drift with `playbackRate` 0.98/1.02 while |Δ| is 0.3–1.5 s and a hard
-   seek past that. Pause/seek from any member fans out to the rest; ignore the
-   echo of your own command by `device_id`.
-
-2. **Timeshift and recording for Live TV (nDVR).** The biggest of the seven and
+1. **Timeshift and recording for Live TV (nDVR).** The biggest of the seven and
    the most distinctive. EPG is already stored whole per feed
    (`internal/tv/epg.go`) and the remux queue already writes HLS segments: keep
    a rolling 30–60 min window for favourite channels → "start this programme
@@ -66,7 +56,7 @@ the machinery it stands on, because none of them starts from zero.
    straight off the guide, with the recording appearing as an ordinary title.
    Needs the free-disk gate from *Torrents* above to land first.
 
-3. **Live TV in the Telegram Mini App.** The Mini App has home, search,
+2. **Live TV in the Telegram Mini App.** The Mini App has home, search,
    youtube, remote, library and settings (`web/miniapp/src/router.ts`) and no
    TV tab at all, while the backend already serves the catalogue, the EPG and
    the logo proxy (`internal/httpapi/handlers_tv.go`). Add a TV tab: channel

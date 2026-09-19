@@ -27,6 +27,9 @@ var remoteActions = map[string]bool{
 	"toggle_play": true, "seek": true, "seek_to": true, "prev": true, "next": true, "set_local": true,
 	"mute": true, "night": true, "sleep": true,
 	"set_voice": true, "set_subtitle": true, "volume": true,
+	// Two TVs of one account playing the same frame (docs/player.md): the
+	// leading player ticks its position, the follower holds on to it.
+	"sync_state": true, "sync_stop": true,
 	// D-pad relayed to the TV UI (works on any screen, not just the player).
 	"nav_up": true, "nav_down": true, "nav_left": true, "nav_right": true, "nav_ok": true, "nav_back": true,
 }
@@ -167,6 +170,11 @@ func (h *tgAppHandlers) send(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Remote != nil && req.Remote.Action == "volume" && (req.Remote.Value < 0 || req.Remote.Value > 100) {
 		writeBadRequest(w, "volume: value 0..100")
+		return
+	}
+	if req.Remote != nil && req.Remote.Action == "sync_state" &&
+		(req.Remote.Value < 0 || (req.Remote.Str != "playing" && req.Remote.Str != "paused")) {
+		writeBadRequest(w, "sync_state: value ≥ 0, str ∈ {playing, paused}")
 		return
 	}
 	hub := h.sync.Hub()

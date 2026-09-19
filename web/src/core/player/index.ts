@@ -48,6 +48,7 @@ import { ScreenInstance } from '../activity';
 import { preferNativeHls, canDecodeHevc } from '../capabilities';
 import { getDefaultQuality, getPlayerEngine, getPlayerSpeed, setPlayerSpeed, getSubSize, setSubSize, SubSize, isNightMode, setNightMode, getPreferredVoice, setPreferredVoice } from '../settings';
 import { pickPreferredVoice } from './voices';
+import { followCorrection } from './follow';
 import { isResumable } from '../progress';
 import { report as diag } from '../diag';
 import { setRemoteHandler, RemoteAction } from './remote';
@@ -55,7 +56,7 @@ import { ensureHls, HlsInstance, HlsCtor } from './hls';
 import { attachNightAudio, isNightAudio, nightAudioSupported, setNightAudioStored, NightAudio } from './nightAudio';
 import { CueLine } from './cues';
 import { LineSearch, openLineSearch } from './lineSearch';
-import { Stream, Subtitle, Voice, mediaUrl, postPlayerState, PlayerStateReport, searchSubtitles, subtitleFileUrl, SubtitleResult, buildHeaders, getSkips, reportSkip } from '../api';
+import { Stream, Subtitle, Voice, mediaUrl, postPlayerState, PlayerStateReport, searchSubtitles, subtitleFileUrl, SubtitleResult, buildHeaders, getSkips, reportSkip, getLiveDevices, sendOpen, sendRemote, LiveDevice } from '../api';
 
 export interface PlayerMedia {
   type: 'hls' | 'mp4';
@@ -730,6 +731,129 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   let curEpisode: number | null = ctx.episode != null ? ctx.episode : null;
   let curSeason: number | null = ctx.season != null ? ctx.season : null;
 
+  // ---- two TVs in sync (docs/player.md) ----
+  // Leader: the set the viewer drives. It pushes its position to ONE follower
+  // through the same one-device remote channel the Mini App uses.
+  let syncTarget: LiveDevice | null = null;
+  let syncSentAt = 0;
+  const SYNC_TICK_MS = 2000;
+  // Follower: obeys the ticks until they stop coming.
+  let followUntil = 0;
+  const FOLLOW_TIMEOUT_MS = 30000;
+
+  function syncTick(force: boolean): void {
+    if (!syncTarget) return;
+    const now = Date.now();
+    if (!force && now - syncSentAt < SYNC_TICK_MS) return;
+    syncSentAt = now;
+    sendRemote(syncTarget.id, 'sync_state', absTime(), video.paused ? 'paused' : 'playing').then(
+      function () {
+        /* fire and forget */
+      },
+      function () {
+        /* the other set went away; the next tick will fail too — harmless */
+      }
+    );
+  }
+  function startSync(dev: LiveDevice): void {
+    syncTarget = dev;
+    syncSentAt = 0;
+    followUntil = 0; // a set that starts leading stops following
+    toast({ kind: 'info', icon: '📺', title: t('player.sync_tvs'), text: dev.name || dev.id });
+    // The other set may be sitting on Home: tell it what to open, then tick.
+    // Already on this title (its last player report says so) → don't restart it
+    // from zero, the first tick will pull it to our position.
+    const already = !!dev.state && Number(dev.state.tmdb_id) === Number(ctx.tmdb_id);
+    if (!already && ctx.tmdb_id && ctx.media_type) {
+      sendOpen(dev.id, Number(ctx.tmdb_id), ctx.media_type, curSeason, curEpisode).then(
+        function () {
+          syncTick(true);
+        },
+        function () {
+          toast({ kind: 'warning', title: t('player.sync_tvs'), text: t('player.sync_failed') });
+        }
+      );
+    } else {
+      syncTick(true);
+    }
+  }
+  function stopSync(silent: boolean): void {
+    if (!syncTarget) return;
+    const dev = syncTarget;
+    syncTarget = null;
+    sendRemote(dev.id, 'sync_stop').then(
+      function () {
+        /* fire and forget */
+      },
+      function () {
+        /* fire and forget */
+      }
+    );
+    if (!silent) toast({ kind: 'info', icon: '📺', title: t('player.sync_tvs'), text: t('toggle.off') });
+  }
+  function openSyncMenu(): void {
+    if (syncTarget) {
+      stopSync(false);
+      return;
+    }
+    getLiveDevices().then(
+      function (res) {
+        if (destroyed) return;
+        const opts: MenuOption[] = [];
+        const list = res && res.devices ? res.devices : [];
+        for (let i = 0; i < list.length; i++) {
+          (function (d: LiveDevice) {
+            if (d.current || !d.online) return;
+            opts.push({
+              label: d.name || d.id,
+              sub: d.type || '',
+              active: false,
+              onSelect: function () {
+                startSync(d);
+              },
+            });
+          })(list[i]);
+        }
+        if (!opts.length) {
+          toast({ kind: 'warning', title: t('player.sync_tvs'), text: t('player.sync_no_devices') });
+          return;
+        }
+        openMenu(t('player.sync_tvs'), opts);
+      },
+      function () {
+        if (!destroyed) toast({ kind: 'error', title: t('player.sync_tvs'), text: t('error.load') });
+      }
+    );
+  }
+  // Follower side: hold on to the leader's clock. A hard jump for a real gap,
+  // a 3% rate nudge for drift (docs/player.md, core/player/follow.ts).
+  function onSyncState(pos: number, playing: boolean): void {
+    if (syncTarget) return; // this set is the leader; it does not follow back
+    if (!followUntil) toast({ kind: 'info', icon: '📺', title: t('player.sync_following'), text: t('toggle.on') });
+    followUntil = Date.now() + FOLLOW_TIMEOUT_MS;
+    if (!playing && !video.paused) {
+      try {
+        video.pause();
+      } catch (e) {
+        /* ignore */
+      }
+    }
+    if (playing && video.paused) tryPlay();
+    const act = followCorrection(pos, absTime(), getPlayerSpeed());
+    if (act.seek != null) seekClamped(act.seek);
+    try {
+      video.playbackRate = act.rate;
+    } catch (e) {
+      /* a webview that refuses the rate still gets the hard seeks */
+    }
+  }
+  function stopFollowing(): void {
+    if (!followUntil) return;
+    followUntil = 0;
+    applyPlaybackSpeed(); // back to the viewer's own rate
+    toast({ kind: 'info', icon: '📺', title: t('player.sync_following'), text: t('toggle.off') });
+  }
+
   // ---- night audio (compressor on the <video>, docs/player.md) ----
   let nightAudio: NightAudio | null = null;
   let nightAudioOn = isNightAudio();
@@ -1142,6 +1266,14 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
         sub: t(nightAudioOn ? 'toggle.on' : 'toggle.off'),
         active: false,
         onSelect: toggleNightAudio,
+      });
+    }
+    if (!ctx.live) {
+      opts.push({
+        label: t('player.sync_tvs'),
+        sub: syncTarget ? syncTarget.name || syncTarget.id : t('toggle.off'),
+        active: false,
+        onSelect: openSyncMenu,
       });
     }
     opts.push({
@@ -1850,11 +1982,15 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     if (resume) tryPlay();
     else refreshCenter();
     emitProgress(); // a jump followed by exit within 10s used to be lost
+    syncTick(true); // carry the jump to the other set immediately
     armHide();
   }
 
   function togglePlay(): void {
     if (scrubbing) return;
+    window.setTimeout(function () {
+      syncTick(true); // the follower should pause with us, not two seconds later
+    }, 0);
     if (video.paused) {
       tryPlay();
     } else {
@@ -2972,6 +3108,8 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     stallWatch();
     sleepTick();
     skipWatch();
+    syncTick(false);
+    if (followUntil && Date.now() > followUntil) stopFollowing();
     // Reveal the audio-track button once hls.js has parsed its tracks.
     updateAudioTracks();
     if (!panelVisible) return; // the stats line is invisible — skip its DOM work
@@ -3713,6 +3851,12 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
         return pickMenuOption(voiceMenuOptions(), str, '🎙', t('player.voice'));
       case 'set_subtitle':
         return pickMenuOption(subtitleMenuOptions(), str, '💬', t('player.subs'));
+      case 'sync_state':
+        onSyncState(Math.max(0, value || 0), str !== 'paused');
+        break;
+      case 'sync_stop':
+        stopFollowing();
+        break;
       case 'volume': {
         const v = Math.max(0, Math.min(100, Math.round(value || 0)));
         video.volume = v / 100;
@@ -3792,6 +3936,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       video.removeEventListener('loadedmetadata', onLoadedMeta);
       video.removeEventListener('ended', onEnded);
       video.removeEventListener('error', onVideoError);
+      stopSync(true); // the other set stops following instead of freezing on us
       teardownEngine();
       if (nightAudio) {
         nightAudio.destroy();

@@ -5,7 +5,22 @@
 // (str = subtitle id | "off") | volume (value 0..100). Night mode is global
 // and handled in app.ts.
 
-export type RemoteAction = 'toggle_play' | 'seek' | 'seek_to' | 'prev' | 'next' | 'mute' | 'sleep' | 'night' | 'set_voice' | 'set_subtitle' | 'volume';
+export type RemoteAction =
+  | 'toggle_play'
+  | 'seek'
+  | 'seek_to'
+  | 'prev'
+  | 'next'
+  | 'mute'
+  | 'sleep'
+  | 'night'
+  | 'set_voice'
+  | 'set_subtitle'
+  | 'volume'
+  // Two TVs of one account: the leading player's position tick, and the
+  // "stop following" it sends when it closes (docs/player.md).
+  | 'sync_state'
+  | 'sync_stop';
 
 let handler: ((action: RemoteAction, value: number, str: string) => boolean) | null = null;
 
