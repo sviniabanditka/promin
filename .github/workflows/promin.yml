@@ -30,7 +30,7 @@ jobs:
       - name: govulncheck
         working-directory: server
         run: go run golang.org/x/vuln/cmd/govulncheck@latest -tags providers ./...
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: { node-version: 22, cache: npm, cache-dependency-path: web/package-lock.json }
       - name: Web typecheck + unit tests + ES5 bundle check
         working-directory: web
