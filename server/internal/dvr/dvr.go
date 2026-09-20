@@ -22,10 +22,12 @@ import (
 )
 
 const (
-	// Broadcasters are never on time: start a minute early, stay three minutes
-	// late so the last goal of the match is on the recording.
-	PadBeforeSec = 60
-	PadAfterSec  = 180
+	// Broadcasters are never on time and the guide's slots are round numbers:
+	// start ten minutes early, stay ten minutes late (owner's call after the
+	// first recordings cut the ends off). Two back-to-back programmes on one
+	// channel then overlap — two recordings, two directories, fine.
+	PadBeforeSec = 600
+	PadAfterSec  = 600
 	// The scheduler wakes up this often; a minute of padding absorbs the jitter.
 	tickInterval = 30 * time.Second
 	// Refuse to start a recording with less than this much free space: the

@@ -125,7 +125,8 @@ Long-press OK on a programme row in the guide records it. The row is stored in
 `tv_recordings` and a 30 s scheduler starts what is due, stops what is over and
 keeps the directory inside its budget:
 
-- **Padding**: one minute before, three after — broadcasters are never on time.
+- **Padding**: ten minutes before, ten after — broadcasters are never on time
+  and guide slots are round numbers.
   A programme already on air starts recording immediately; nothing may record
   for more than 6 hours.
 - **One ffmpeg per recording**, `-c copy` from the channel's upstream URL with
@@ -161,7 +162,32 @@ has a pending recording of the same channel + `program_end`); a guide row that
 is scheduled or recording carries a ⏺ (`ProgramPane.isRecording`, fed from
 `GET /records` on the TV screen and refreshed after every toggle).
 `program_end` is the guide's own end time, kept unpadded beside the padded
-`end_at`, precisely so the client never has to know the padding.
+`end_at`, precisely so the client never has to know the padding (10 min each
+side).
+
+## Ads inserted by the restreamer
+
+Some channels in the catalogue are restreams whose operator splices their own
+ads into the HLS every half hour or so: the broadcast keeps running underneath
+(a piece of the film is lost), and the pre-2022 Samsung webview often dies on
+the splice (black screen, restart). Before doing anything about it we count
+what the playlist actually shows at those moments:
+
+- every relayed live playlist is scanned (`scanAdMarkers`) for
+  `#EXT-X-DISCONTINUITY`, `#EXT-X-CUE-OUT` / `CUE-IN`, `#EXT-X-DATERANGE` and
+  segment URIs on a host other than the playlist's;
+- the counts go to `promin_tv_ad_markers_total{channel,kind}` and, once a
+  minute per channel, to the log (`msg="tv: ad markers in playlist"`). The
+  channel id rides on the relay URL as `c=` (`RelayURL`), which the upstream
+  never sees. Direct-play channels (CORS `*`) bypass the relay and are not
+  counted.
+
+What the data can unlock, in order of value: recordings and the timeshift
+window without the ads (the recorder reads the playlist; the marked segments
+can be dropped before ffmpeg sees them), a "provider ad" badge with muted
+audio in the live player, switching to another alive stream of the same
+channel for the duration. Ads burned into the picture (re-encoded, no markers)
+stay out of scope.
 
 ## From the phone
 

@@ -224,16 +224,19 @@ export function mountTv(container: HTMLElement, params: TvParams): ScreenInstanc
         records = r.records || [];
         indexPending(records);
         renderRecords();
+        // The viewer may already have pressed Right into an empty column.
+        if (Controller.enabled().name === 'tv_list') Controller.toggle('tv_list');
       },
       function () {
         if (destroyed || my !== seq) return;
         records = [];
         renderRecords();
+        if (Controller.enabled().name === 'tv_list') Controller.toggle('tv_list');
       }
     );
   }
 
-  function renderRecords(): void {
+  function renderRecords(focusIndex?: number): void {
     const body = recordsScroll.body();
     empty(body);
     lastRecord = false;
@@ -265,6 +268,7 @@ export function mountTv(container: HTMLElement, params: TvParams): ScreenInstanc
           removeRecord(rec);
         });
         body.appendChild(row);
+        if (focusIndex != null && i === Math.min(focusIndex, records.length - 1)) lastRecord = row;
       })(records[i]);
     }
     recordsScroll.reset();
@@ -297,14 +301,18 @@ export function mountTv(container: HTMLElement, params: TvParams): ScreenInstanc
           function () {
             if (destroyed) return;
             const next: TvRecord[] = [];
+            let at = 0;
             for (let i = 0; i < records.length; i++) {
               if (records[i].id !== rec.id) next.push(records[i]);
+              else at = i;
             }
             records = next;
             indexPending(records);
-            renderRecords();
+            renderRecords(at); // focus lands on the neighbour, not the top
             if (cancel) toast({ kind: 'info', icon: '⏺', text: t('tv.rec_cancelled') });
-            Controller.toggle('tv_list');
+            // An emptied list has nothing to focus: back to the rail, like the
+            // favourites section does.
+            Controller.toggle(records.length ? 'tv_list' : 'tv_side');
           },
           function () {
             if (!destroyed) toast({ kind: 'error', text: t('error.load') });

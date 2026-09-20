@@ -10,6 +10,7 @@ import (
 	"net/url"
 	pathpkg "path"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -288,6 +289,7 @@ func relayManifest(w http.ResponseWriter, resp *http.Response, base *url.URL, to
 		return
 	}
 
+	noteAdMarkers(body, base, channelOf(extra), logger)
 	rewritten := rewriteManifest(body, base, token+extra)
 
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
@@ -350,7 +352,9 @@ func relayResolve(ref string, base *url.URL, token string) string {
 // keep them ("" when absent). Returned with a leading "&".
 func relayExtra(q url.Values) string {
 	var sb strings.Builder
-	for _, k := range []string{"ua", "ref"} {
+	// c = the live-TV channel id, carried only so ad markers in the playlist
+	// can be attributed to a channel (noteAdMarkers); the upstream never sees it.
+	for _, k := range []string{"ua", "ref", "c"} {
 		if v := q.Get(k); v != "" {
 			sb.WriteString("&" + k + "=" + url.QueryEscape(v))
 		}
@@ -359,8 +363,9 @@ func relayExtra(q url.Values) string {
 }
 
 // RelayURL is the /relay path for an upstream stream URL with optional
-// User-Agent / Referer the upstream insists on (live TV).
-func RelayURL(rawURL, ua, ref string) string {
+// User-Agent / Referer the upstream insists on (live TV). channel, when set,
+// tags the playlist fetches for the ad-marker statistics.
+func RelayURL(channel, rawURL, ua, ref string) string {
 	out := sources.EncodeRelayURL(rawURL)
 	if ua != "" {
 		out += "&ua=" + url.QueryEscape(ua)
@@ -368,5 +373,86 @@ func RelayURL(rawURL, ua, ref string) string {
 	if ref != "" {
 		out += "&ref=" + url.QueryEscape(ref)
 	}
+	if channel != "" {
+		out += "&c=" + url.QueryEscape(channel)
+	}
 	return out
+}
+
+// channelOf pulls the channel id back out of the extra query the manifest
+// request carried ("" for online sources).
+func channelOf(extra string) string {
+	q, err := url.ParseQuery(strings.TrimPrefix(extra, "&"))
+	if err != nil {
+		return ""
+	}
+	return q.Get("c")
+}
+
+// Provider-inserted ads in live TV (docs/tv.md, "Ads"): a restreamer swaps in
+// its own segments and the playlist shows it — a discontinuity, SCTE-35 style
+// cue tags, or segment URIs on another host. Before doing anything about them
+// we count what actually shows up, per channel.
+type adMarkers struct {
+	discontinuity, cueOut, cueIn, daterange, foreignHost int
+}
+
+func scanAdMarkers(body []byte, base *url.URL) adMarkers {
+	var m adMarkers
+	for _, line := range strings.Split(string(body), "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case line == "":
+		case strings.HasPrefix(line, "#EXT-X-DISCONTINUITY"):
+			// #EXT-X-DISCONTINUITY-SEQUENCE is bookkeeping, not a splice.
+			if !strings.HasPrefix(line, "#EXT-X-DISCONTINUITY-SEQUENCE") {
+				m.discontinuity++
+			}
+		case strings.HasPrefix(line, "#EXT-X-CUE-OUT"):
+			m.cueOut++
+		case strings.HasPrefix(line, "#EXT-X-CUE-IN"):
+			m.cueIn++
+		case strings.HasPrefix(line, "#EXT-X-DATERANGE"):
+			m.daterange++
+		case strings.HasPrefix(line, "#"):
+		default:
+			if u, err := base.Parse(line); err == nil && u.Host != "" && base.Host != "" && !strings.EqualFold(u.Host, base.Host) {
+				m.foreignHost++
+			}
+		}
+	}
+	return m
+}
+
+// adMarkerLogAt rate-limits the log line per channel (the playlist is
+// refetched every few seconds; the metric counts every time, the log once a
+// minute).
+var adMarkerLogMu sync.Mutex
+var adMarkerLogAt = map[string]time.Time{}
+
+func noteAdMarkers(body []byte, base *url.URL, channel string, logger *slog.Logger) {
+	if channel == "" {
+		return // online sources: not what this is about
+	}
+	m := scanAdMarkers(body, base)
+	if m.discontinuity == 0 && m.cueOut == 0 && m.cueIn == 0 && m.daterange == 0 && m.foreignHost == 0 {
+		return
+	}
+	for kind, n := range map[string]int{
+		"discontinuity": m.discontinuity, "cue_out": m.cueOut, "cue_in": m.cueIn, "daterange": m.daterange, "foreign_host": m.foreignHost,
+	} {
+		if n > 0 {
+			metrics.TVAdMarkers.WithLabelValues(channel, kind).Add(float64(n))
+		}
+	}
+	adMarkerLogMu.Lock()
+	last := adMarkerLogAt[channel]
+	if time.Since(last) < time.Minute {
+		adMarkerLogMu.Unlock()
+		return
+	}
+	adMarkerLogAt[channel] = time.Now()
+	adMarkerLogMu.Unlock()
+	logger.Info("tv: ad markers in playlist", "channel", channel, "host", base.Host,
+		"discontinuity", m.discontinuity, "cue_out", m.cueOut, "cue_in", m.cueIn, "daterange", m.daterange, "foreign_host", m.foreignHost)
 }

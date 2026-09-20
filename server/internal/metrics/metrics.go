@@ -60,6 +60,13 @@ var (
 		Name: "promin_torrent_search_total", Help: "Torrent indexer searches: ok|error|rate_limited.",
 	}, []string{"outcome"})
 
+	// TVAdMarkers counts what a live channel's relayed playlist carries that
+	// smells like provider ad insertion (docs/tv.md, "Ads"): discontinuity,
+	// cue_out, cue_in, daterange, foreign_host. Per channel id.
+	TVAdMarkers = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "promin_tv_ad_markers_total", Help: "Ad-like markers seen in relayed live-TV playlists, by channel and kind.",
+	}, []string{"channel", "kind"})
+
 	// RelayRequests counts /relay responses by kind: manifest|segment|subtitle|other.
 	RelayRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "promin_relay_requests_total", Help: "/relay requests by payload kind.",

@@ -63,7 +63,7 @@ type Service struct {
 	http      *http.Client
 	log       *slog.Logger
 	countries []string
-	relay     func(rawURL, ua, ref string) string // builds the /relay path
+	relay     func(channel, rawURL, ua, ref string) string // builds the /relay path
 
 	mu         sync.Mutex
 	countries_ []Country // names/flags from countries.json, cached
@@ -111,7 +111,7 @@ func (s *Service) Resync(kind string) bool {
 
 // New: countries is the ISO list to keep (e.g. UA,RU,GB,US); relay wraps an
 // upstream URL into our relay path (httpapi owns the encoding).
-func New(repo *store.TVRepo, countries []string, relay func(rawURL, ua, ref string) string, logger *slog.Logger) *Service {
+func New(repo *store.TVRepo, countries []string, relay func(channel, rawURL, ua, ref string) string, logger *slog.Logger) *Service {
 	return &Service{
 		repo:      repo,
 		http:      &http.Client{Timeout: 90 * time.Second},
@@ -532,7 +532,7 @@ func (s *Service) Play(userID int64, channelID string) (Play, error) {
 	if direct {
 		p.URL = pick.URL
 	} else {
-		p.URL = s.relay(pick.URL, pick.UserAgent, pick.Referrer)
+		p.URL = s.relay(channelID, pick.URL, pick.UserAgent, pick.Referrer)
 	}
 	return p, nil
 }

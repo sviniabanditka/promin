@@ -263,6 +263,8 @@ export class ProgramPane {
   private detailTitle: HTMLElement;
   private detailDesc: HTMLElement;
   private cache: { [id: string]: TvProgram[] } = {};
+  // Rendered rows of the current channel by programme start (refresh()).
+  private rows: { [start: string]: { el: HTMLElement; p: TvProgram } } = {};
   private timer = 0;
   private destroyed = false;
   channel: GuideChannel | null = null;
@@ -358,6 +360,7 @@ export class ProgramPane {
     empty(body);
     this.nowRow = null;
     this.lastFocused = false;
+    this.rows = {};
     if (!ch) return;
     if (!items.length) {
       body.appendChild(el('div', 'tvg-pr__empty', t('tv.no_epg')));
@@ -378,6 +381,7 @@ export class ProgramPane {
         const isNow = p.start <= now && p.stop > now;
         const rec = !!(self.hooks.isRecording && self.hooks.isRecording(ch, p));
         const row = el('div', 'tvg-pr selector' + (isNow ? ' is-now' : p.stop <= now ? ' is-past' : '') + (rec ? ' is-rec' : ''));
+        self.rows[String(p.start)] = { el: row, p: p };
         row.appendChild(el('div', 'tvg-pr__time', hhmm(p.start)));
         const txt = el('div', 'tvg-pr__text');
         txt.appendChild(el('div', 'tvg-pr__title', p.title));
@@ -413,9 +417,18 @@ export class ProgramPane {
     if (this.nowRow) this.scroll.immediate(this.nowRow, true);
   }
 
-  // Repaint the current channel from the cache (a ⏺ marker changed).
+  // A ⏺ marker changed: repaint the markers IN PLACE. Rebuilding the rows here
+  // used to detach the focused one right after a long-press, and the D-pad
+  // then navigated from a ghost rect — "the guide died after scheduling".
   refresh(): void {
-    if (this.channel && this.cache[this.channel.id]) this.renderList(this.cache[this.channel.id]);
+    const ch = this.channel;
+    if (!ch) return;
+    for (const start in this.rows) {
+      if (!Object.prototype.hasOwnProperty.call(this.rows, start)) continue;
+      const r = this.rows[start];
+      const rec = !!(this.hooks.isRecording && this.hooks.isRecording(ch, r.p));
+      r.el.classList.toggle('is-rec', rec);
+    }
   }
 
   hasRows(): boolean {
