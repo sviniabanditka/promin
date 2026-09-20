@@ -37,5 +37,5 @@ spec:
           sendResolved: true
           message: |-
             {{ if eq .Status "firing" }}🔴{{ else }}🟢{{ end }} <b>{{ .CommonLabels.alertname }}</b> ({{ .Status }})
-            {{ range .Alerts }}{{ if .Annotations.summary }}{{ .Annotations.summary }}{{ end }}{{ if .Labels.instance }} — {{ .Labels.instance }}{{ end }}
+            {{ range .Alerts }}{{ if .Annotations.summary }}{{ .Annotations.summary }}{{ end }}{{ if .Labels.namespace }} — {{ .Labels.namespace }}{{ if .Labels.deployment }}/{{ .Labels.deployment }}{{ else if .Labels.pod }}/{{ .Labels.pod }}{{ else if .Labels.job }}/{{ .Labels.job }}{{ end }}{{ else if .Labels.instance }} — {{ .Labels.instance }}{{ end }}
             {{ end }}
