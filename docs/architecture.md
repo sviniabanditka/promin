@@ -21,7 +21,7 @@ across devices. Clients open it through Media Station X (MSX) or any browser.
 - **Playback** — the browser `<video>` element (plus a bundled hls.js), with a
   server-side ffmpeg remux/transcode path for TVs that cannot play a source as-is.
 - **Extras** — idle screensaver with random backdrops and an open-meteo weather
-  strip, a `/logs` live log viewer, an `/onboarding` help page.
+  strip, an `/admin` panel with a live log tab, an `/onboarding` help page.
 
 ## 2. Runtime components
 
@@ -78,7 +78,7 @@ flowchart TB
 | Torrent engine | `github.com/anacrolix/torrent` in-process, data under `/data/torrents` | `server/internal/torrent` |
 | Traefik + cert-manager | Ingress for `promin.club`; second Ingress with a `TLSOption` advertising only `http/1.1` for `h1.promin.club` | `k8s/promin.yaml` |
 | Cloudflare | Fronts `promin.club` (h2, compression, `CF-IPCountry`) | DNS |
-| Secrets | `promin-secrets` (admin password, native source base URL), `promin-logs`, `lampac-proxy` (residential proxy URL, historical name) | k8s namespace `promin` |
+| Secrets | `promin-secrets` (admin password, native source base URL), `lampac-proxy` (residential proxy URL, historical name) | k8s namespace `promin` |
 
 Deployment is a single `Deployment` with `strategy: Recreate` (RWO volume),
 a 40 Gi `local-path` PVC and a `/healthz` readiness probe. The image is built by

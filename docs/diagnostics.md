@@ -76,8 +76,8 @@ kubectl -n promin logs deploy/promin | grep msg=diag | grep 'kind=key'
 
 Deployment `promin`, namespace `promin`, single replica (`k8s/promin.yaml`).
 Filter by `ip=` or `ua=` to isolate one TV. The same log is also served by the
-`/logs` page (Basic Auth, password from the `promin-logs` secret via
-`PROMIN_LOGS_PASSWORD`; the page is disabled when the secret is absent).
+admin panel's «Логи» tab (`/admin#logs`, admin session; history + live SSE
+from `/admin/logs/*`).
 
 Things already found this way: an Android TV WebView whose Back key arrives as
 `keyCode 145` / `"ScrollLock"`, and a device whose `window.innerWidth` (960)

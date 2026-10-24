@@ -50,7 +50,6 @@ func NewServer(
 	syncSvc *sync.Service,
 	httpAddr string,
 	logBuf *logbuf.Buffer,
-	logsPassword string,
 	weatherSvc *weather.Service,
 	weatherPlace string,
 	h1Host string,
@@ -136,21 +135,20 @@ func NewServer(
 	mux.HandleFunc("GET /remux", requireAuthMedia(authSvc, rmx.create))
 	mux.HandleFunc("GET /remux/{job}/{file}", requireAuthMedia(authSvc, rmx.serveFile))
 
-	// /logs web UI (Basic Auth gated by PROMIN_LOGS_PASSWORD). Disabled when the
-	// password is unset — the routes simply aren't registered.
-	if logsPassword != "" && logBuf != nil {
-		lh := &logsHandlers{buf: logBuf, password: logsPassword}
-		mux.HandleFunc("GET /logs", lh.page)
-		mux.HandleFunc("GET /logs/api/history", lh.history)
-		mux.HandleFunc("GET /logs/api/stream", lh.stream)
-	}
-
 	// Admin panel (phone, FORM login → admin session cookie). Open pre-gate:
 	// it's a separate credential system and how the operator manages profiles.
 	adminH := &adminHandlers{svc: authSvc, logger: logger, tg: tgLinks, tv: tvSvc, version: version, youtubeOn: ytClient != nil}
 	mux.HandleFunc("GET /admin", adminH.page)
 	mux.HandleFunc("POST /admin/login", adminH.login)
 	mux.HandleFunc("POST /admin/logout", adminH.logout)
+	// Server log: history + live SSE for the admin panel's "Логи" tab. The
+	// old standalone /logs page (Basic Auth) is gone; its URL lands on the tab.
+	if logBuf != nil {
+		lh := &logsHandlers{buf: logBuf, gate: adminH.gate}
+		mux.HandleFunc("GET /admin/logs/history", lh.history)
+		mux.HandleFunc("GET /admin/logs/stream", lh.stream)
+		mux.HandleFunc("GET /logs", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/admin#logs", http.StatusFound) })
+	}
 	mux.HandleFunc("GET /admin/profiles", adminH.listProfiles)
 	mux.HandleFunc("POST /admin/profiles", adminH.createProfile)
 	mux.HandleFunc("PATCH /admin/profiles/{id}", adminH.patchProfile)

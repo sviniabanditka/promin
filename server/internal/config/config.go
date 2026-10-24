@@ -42,9 +42,6 @@ type Config struct {
 	OMDbAPIKey string
 	// LogLevel controls slog verbosity (debug|info|warn|error).
 	LogLevel string
-	// LogsPassword gates the /logs web UI (Basic Auth). Empty disables /logs
-	// entirely (404). Set PROMIN_LOGS_PASSWORD to enable.
-	LogsPassword string
 	// AdminPassword bootstraps the admin (user 1) password. When set and it
 	// differs from the stored hash, the admin password is reset on boot
 	// (PROMIN_ADMIN_PASSWORD). Empty + no admin user → /admin is unconfigured.
@@ -180,7 +177,6 @@ func Load() Config {
 		TMDBFallbackURLs:       getenvList("PROMIN_TMDB_FALLBACK_URLS", "-"),
 		OMDbAPIKey:             getenv("PROMIN_OMDB_KEY", ""),
 		LogLevel:               getenv("PROMIN_LOG_LEVEL", "info"),
-		LogsPassword:           getenv("PROMIN_LOGS_PASSWORD", ""),
 		AdminPassword:          getenv("PROMIN_ADMIN_PASSWORD", ""),
 		PinSecret:              getenv("PROMIN_PIN_SECRET", ""),
 		FFmpegPath:             getenv("PROMIN_FFMPEG_PATH", "ffmpeg"),

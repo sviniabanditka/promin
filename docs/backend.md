@@ -24,7 +24,7 @@ then the torrent client is closed. No `WriteTimeout` is set on the server —
 | `store` | The only package with SQL: opens SQLite, runs embedded migrations, exposes repositories, `VACUUM INTO` backups | `db.go`, `migrations.go`, `migrations/*.sql`, `*_repo.go`, `backup.go` |
 | `config` | Reads every `PROMIN_*` env var into `Config` | `config.go` |
 | `weather` | open-meteo forecast + geocoding, GeoIP (ipwho.is, ip-api.com fallback), all cached in the shared KV table | `weather.go` |
-| `logbuf` | `slog.Handler` wrapper: ring buffer of the last 5000 records + live subscribers for `/logs` | `logbuf.go` |
+| `logbuf` | `slog.Handler` wrapper: ring buffer of the last 5000 records + live subscribers for the admin log tab | `logbuf.go` |
 | `proxymon` | Watches the residential proxy: a liveness fetch through it plus the vendor's traffic package, both as `promin_proxy_*` gauges | `proxymon.go` |
 | `synthmon` | Hourly synthetic user: TMDB search → online source → resolve → first bytes, and YouTube playback via the sidecar's `/v1/check`; `promin_synthetic_*` gauges, alerts `ProminSourcesBroken` / `ProminYouTubeBroken` / `ProminSyntheticStale` | `synthmon.go` |
 | `tv` | Live TV: iptv-org catalogue sync (daily), stream liveness sweep, channel queries, direct-vs-relay play decision (docs/tv.md) | `service.go` |
@@ -52,7 +52,7 @@ All routes are registered in `server/internal/httpapi/server.go`.
 | Images | `GET /img/{size}/{file}` | open (paths only discoverable via the gated catalog) |
 | MSX / pages | `GET /msx/start.json`, `GET /onboarding`, `GET /` + SPA fallback | open |
 | Admin | `GET /admin`, `POST /admin/login`, `POST /admin/logout`, `GET|POST /admin/profiles`, `PATCH|DELETE /admin/profiles/{id}` | `promin_admin` cookie (admin session, 2 h) |
-| Logs | `GET /logs`, `GET /logs/api/history`, `GET /logs/api/stream` (SSE) | Basic Auth `PROMIN_LOGS_PASSWORD`; unregistered when empty |
+| Logs | `GET /admin/logs/history`, `GET /admin/logs/stream` (SSE); `GET /logs` → `/admin#logs` | admin session cookie (`adminHandlers.gate`) |
 
 Conventions:
 
@@ -79,7 +79,6 @@ All configuration is environment variables. Durations use Go syntax (`30s`, `24h
 | `PROMIN_DATA_DIR` | `/data` | Root for `img/`, `torrents/`, `remux/`, `backups/`, `pin_secret`, `veoveo.json.gz` |
 | `PROMIN_DB_PATH` | `$PROMIN_DATA_DIR/promin.db` | SQLite file |
 | `PROMIN_LOG_LEVEL` | `info` | slog level: `debug`, `info`, `warn`, `error` |
-| `PROMIN_LOGS_PASSWORD` | empty | Enables `/logs` (Basic Auth). Empty → routes not registered |
 | `PROMIN_ADMIN_PASSWORD` | empty | Bootstraps/resets user 1 (admin) password on boot. Empty → admin left as-is |
 | `PROMIN_PIN_SECRET` | empty | HMAC key for PIN lookup hashes. Empty → random 32 bytes generated once at `$DATA_DIR/pin_secret`. Rotating it invalidates every PIN |
 | `PROMIN_TMDB_API_KEY` | — (required) | TMDB v3 key; the binary exits at start without it. Production: secret `promin-secrets/tmdb-api-key` |
@@ -132,7 +131,7 @@ shutdown timeout 15 s, `last_seen` write throttle 5 min, torrent idle drop
 ## 5. Logging and diagnostics
 
 - `log/slog` text handler to stdout, level from `PROMIN_LOG_LEVEL`. The handler
-  is wrapped by `logbuf` so the same records feed the `/logs` page (history of
+  is wrapped by `logbuf` so the same records feed the admin log tab (history of
   the last 5000 records + SSE live stream). History is in-memory and resets on
   restart.
 - `withLogging` logs one line per request after the handler returns (`method`,

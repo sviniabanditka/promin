@@ -188,7 +188,6 @@ kubectl -n promin create secret generic promin-secrets \
   --from-literal=tmdb-api-key='...' \
   --from-literal=native-source-base-url='...'
 kubectl -n promin create secret generic lampac-proxy --from-literal=url='...'
-kubectl -n promin create secret generic promin-logs  --from-literal=password='...'   # optional
 kubectl apply -f k8s/promin-h1.yaml
 ```
 
@@ -209,7 +208,6 @@ Never committed. Names and keys only:
 | `promin-secrets` | `native-source-base-url` | `PROMIN_NATIVE_SOURCE_BASE_URL` | optional — without it the corresponding provider is off |
 | `lampac-proxy` | `url` | `PROMIN_NATIVE_PROXY_URL` — residential HTTP proxy URL used only for provider catalog pages that block datacenter IPs | optional — without it those providers are off |
 | `promin-secrets` | `stableproxy-token` | `PROMIN_STABLEPROXY_TOKEN` — read-only API token of the proxy vendor, used only to publish the traffic package as metrics | optional — without it the proxy is still probed, just without quota numbers |
-| `promin-logs` | `password` | `PROMIN_LOGS_PASSWORD` | optional — without it `/logs` is disabled |
 
 GitHub Actions repository secrets: `SSH_PRIVATE_KEY` (deploy key for
 `root@ssh.sviniabanditka.com`), `BACKUP_PASSPHRASE` (section 8).
@@ -232,7 +230,6 @@ default. Durations use Go syntax (`30s`, `24h`).
 | `PROMIN_TMDB_FALLBACK_URLS` | `-` (none) | Comma-separated full TMDB mirrors tried after the primary fails. |
 | `PROMIN_OMDB_KEY` | empty | OMDb key for IMDb ratings; empty disables. |
 | `PROMIN_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`. |
-| `PROMIN_LOGS_PASSWORD` | empty | Basic Auth password for the `/logs` web UI; empty disables (404). |
 | `PROMIN_ADMIN_PASSWORD` | empty | Bootstraps/resets the admin (user 1) password on boot. |
 | `PROMIN_PIN_SECRET` | empty → random, stored in `$PROMIN_DATA_DIR/pin_secret` | Keys the PIN lookup hash; rotating invalidates every PIN. |
 | `PROMIN_FFMPEG_PATH` | `ffmpeg` | ffmpeg binary. |
@@ -352,8 +349,8 @@ docker compose start promin
   nginx front). Structured `slog` lines; level via `PROMIN_LOG_LEVEL`.
 - Compose: `docker compose logs -f promin`, `docker compose logs -f caddy`
   (Caddy writes JSON access logs to stdout).
-- Web: `https://<host>/logs` shows the in-memory ring buffer behind Basic Auth
-  when `PROMIN_LOGS_PASSWORD` is set (secret `promin-logs` in k3s).
+- Web: the admin panel's «Логи» tab (`https://<host>/admin#logs`) shows the
+  in-memory ring buffer with live tail; it needs only the admin password.
 - Client-side probes posted by the UI are logged under `msg=diag`:
   `kubectl -n promin logs deploy/promin | grep diag`.
 

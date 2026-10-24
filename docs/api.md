@@ -11,7 +11,6 @@ responses are JSON (UTF-8).
 | bearer | `requireAuth`: `Authorization: Bearer <token>` header only |
 | media | `requireAuthMedia`: header **or** `?t=<token>` query parameter |
 | admin | `promin_admin` cookie from `POST /admin/login` |
-| basic | HTTP Basic Auth with `PROMIN_LOGS_PASSWORD`, or the `logs_auth` cookie the `/logs` page sets after a successful challenge |
 | none | open |
 
 **Error envelope** (`httpapi/errors.go`): `{"error": {"code": "...", "message": "..."}}`.
@@ -203,13 +202,16 @@ Event `type` values: `bookmark_added`, `bookmark_removed` (payload: bookmark),
 (timecode), `settings_updated` (`{key, value}`), `queue_updated` (`{items}` — the
 full watch queue).
 
-## 9. Logs (`logs.go`; registered only when `PROMIN_LOGS_PASSWORD` is set)
+## 9. Logs (`logs.go`; part of the admin panel)
+
+Served under `/admin/logs/*` behind the admin session cookie (same gate as every
+`/admin/*` route); the panel's «Логи» tab is the UI. `GET /logs` redirects to
+`/admin#logs`.
 
 | Method | Path | Auth | Params | Response |
 |---|---|---|---|---|
-| GET | `/logs` | basic | — | HTML viewer |
-| GET | `/logs/api/history` | basic | `limit?=1000` (≤ 5000), `level?`, `q?` | `{records: [...]}` from the in-memory ring buffer |
-| GET | `/logs/api/stream` | basic | `level?`, `q?` | `text/event-stream` of new records, keepalive every 20 s |
+| GET | `/admin/logs/history` | admin cookie | `limit?=1000` (≤ 5000), `level?` (`debug`/`info`/`warn`/`error`), `q?` | `{records: [...]}` from the in-memory ring buffer |
+| GET | `/admin/logs/stream` | admin cookie | `level?`, `q?` | `text/event-stream` of new records, keepalive every 20 s |
 
 ## Profile data (Danger zone)
 

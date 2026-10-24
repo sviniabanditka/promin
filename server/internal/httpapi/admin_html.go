@@ -1,9 +1,9 @@
 package httpapi
 
 // adminHTML is the self-contained phone-first admin panel (modern mobile Chrome,
-// no ES5 constraint). Login form → three tabs: profiles (CRUD, per-profile
+// no ES5 constraint). Login form → four tabs: profiles (CRUD, per-profile
 // feature access, devices, Telegram chats), live TV (maintenance + manual EPG
-// mapping), status. All state via fetch to /admin/* (cookie session).
+// mapping), status, server log (history + SSE from /admin/logs/*). All state via fetch to /admin/* (cookie session).
 const adminHTML = `<!doctype html>
 <html lang="uk">
 <head>
@@ -43,6 +43,15 @@ const adminHTML = `<!doctype html>
   .err { color:var(--danger); font-size:14px; min-height:20px; margin-top:8px; }
   .muted { color:var(--muted); font-size:14px; }
   .hidden { display:none !important; }
+  .lg { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:8px; }
+  .lg .chip.err { color:var(--danger); border-color:var(--danger); } .lg .chip.wrn { color:var(--warn); border-color:var(--warn); }
+  .lg input { flex:1; min-width:140px; padding:7px 11px; font-size:14px; }
+  #logOut { height:60vh; overflow:auto; font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; background:#0e121a; border:1px solid var(--line); border-radius:10px; padding:4px 0; }
+  .lr { padding:1px 8px; white-space:pre-wrap; word-break:break-word; border-left:3px solid transparent; }
+  .lr.warn { border-left-color:var(--warn); } .lr.error { border-left-color:var(--danger); }
+  .lr .t { color:var(--muted); } .lr .l { font-weight:700; padding:0 5px; }
+  .lr.debug .l { color:var(--muted); } .lr.info .l { color:var(--accent); } .lr.warn .l { color:var(--warn); } .lr.error .l { color:var(--danger); }
+  .lr .a { color:var(--muted); } .lr .a b { color:#c3cad6; font-weight:400; }
   .top { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
   .tabs { display:flex; gap:6px; margin-bottom:14px; }
   .tabs button { flex:1; background:#0e121a; color:var(--muted); border:1px solid var(--line); }
@@ -76,7 +85,7 @@ const adminHTML = `<!doctype html>
 
   <div id="panelView" class="hidden">
     <div class="top"><h1 style="margin:0">Promin · Адмін</h1><button class="btn sec sm" id="logoutBtn">Вийти</button></div>
-    <div class="tabs"><button data-tab="profiles" class="on">Профілі</button><button data-tab="tv">ТВ</button><button data-tab="status">Стан</button></div>
+    <div class="tabs"><button data-tab="profiles" class="on">Профілі</button><button data-tab="tv">ТВ</button><button data-tab="status">Стан</button><button data-tab="logs">Логи</button></div>
 
     <div id="tab-profiles">
       <div class="card">
@@ -129,6 +138,14 @@ const adminHTML = `<!doctype html>
     <div id="tab-status" class="hidden">
       <div class="card" id="statusCard"></div>
     </div>
+
+    <div id="tab-logs" class="hidden">
+      <div class="card">
+        <div class="lg" id="logLvls"><button class="chip" data-l="debug">debug</button><button class="chip on" data-l="info">info</button><button class="chip wrn" data-l="warn">warn</button><button class="chip err" data-l="error">error</button></div>
+        <div class="lg"><input id="logQ" placeholder="фільтр по тексту / атрибутах…" autocomplete="off"><button class="chip on" id="logLive">● live</button><button class="chip" id="logClear">очистити</button><span class="muted" id="logStatus" style="font-size:13px"></span></div>
+        <div id="logOut"></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -151,9 +168,10 @@ function errMsg(code){ return code==='login_taken'?"Таке ім'я вже є":
 // ---- tabs ----
 document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
   document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x===b));
-  ['profiles','tv','status'].forEach(t => $('#tab-'+t).classList.toggle('hidden', t!==b.dataset.tab));
+  ['profiles','tv','status','logs'].forEach(t => $('#tab-'+t).classList.toggle('hidden', t!==b.dataset.tab));
   if (b.dataset.tab==='tv') { loadStatus(); loadChannels(); }
   if (b.dataset.tab==='status') loadStatus(true);
+  if (b.dataset.tab==='logs') logsOpen(); else logsClose();
 });
 
 // ---- login ----
@@ -166,7 +184,7 @@ $('#loginBtn').onclick = async () => {
   else $('#loginErr').textContent = 'Невірний пароль';
 };
 $('#pw').addEventListener('keydown', e => { if (e.key === 'Enter') $('#loginBtn').click(); });
-$('#logoutBtn').onclick = async () => { await api('POST', '/admin/logout'); show('login'); };
+$('#logoutBtn').onclick = async () => { logsClose(); await api('POST', '/admin/logout'); show('login'); };
 
 // ---- profiles ----
 async function refresh() {
@@ -338,6 +356,49 @@ $('#titleSave').onclick = async () => {
   if (r.ok) { $('#titleSave').textContent = '✓'; setTimeout(() => { $('#titleSave').textContent = 'Зберегти'; }, 1500); loadChannels(); } else alert('Помилка');
 };
 $('#mapClose').onclick = () => { $('#mapCard').classList.add('hidden'); mapCh = null; };
+
+// ---- server log (history + SSE) ----
+let logLevel = 'info', logLiveOn = true, logES = null;
+const logOut = $('#logOut'), logQ = $('#logQ'), logStatus = $('#logStatus');
+function logTime(t){ const d = new Date(t); return d.toLocaleTimeString('uk',{hour12:false})+'.'+String(d.getMilliseconds()).padStart(3,'0'); }
+function logRow(r){
+  const lv = (r.level||'INFO').toLowerCase();
+  const cls = lv.startsWith('err') ? 'error' : lv.startsWith('warn') ? 'warn' : lv.startsWith('debug') ? 'debug' : 'info';
+  const a = (r.attrs||[]).map(x => ' <span class=a><b>'+esc(x.k)+'</b>='+esc(x.v)+'</span>').join('');
+  return '<div class="lr '+cls+'"><span class=t>'+logTime(r.time)+'</span><span class=l>'+esc((r.level||'INFO').slice(0,4))+'</span>'+esc(r.msg)+a+'</div>';
+}
+function logFilter(){ const q = logQ.value.toLowerCase(); for (const el of logOut.children) el.style.display = (!q || el.textContent.toLowerCase().includes(q)) ? '' : 'none'; }
+async function logHistory(){
+  logStatus.textContent = 'завантаження…';
+  const r = await api('GET', '/admin/logs/history?limit=2000&level='+logLevel);
+  if (r.status === 401) { show('login'); return; }
+  const recs = (r.data && r.data.records) || [];
+  logOut.innerHTML = recs.map(logRow).join(''); logFilter(); logOut.scrollTop = logOut.scrollHeight;
+  logStatus.textContent = recs.length+' рядків';
+}
+function logConnect(){
+  if (logES) { logES.close(); logES = null; }
+  if (!logLiveOn) return;
+  logES = new EventSource('/admin/logs/stream?level='+logLevel);
+  logES.onopen = () => { logStatus.textContent = '● live'; };
+  logES.onerror = () => { logStatus.textContent = '⟳ reconnect…'; };
+  logES.onmessage = e => {
+    let r; try { r = JSON.parse(e.data); } catch (x) { return; }
+    const stick = logOut.scrollHeight - logOut.scrollTop - logOut.clientHeight < 40;
+    logOut.insertAdjacentHTML('beforeend', logRow(r));
+    const el = logOut.lastElementChild, q = logQ.value.toLowerCase();
+    if (q && !el.textContent.toLowerCase().includes(q)) el.style.display = 'none';
+    while (logOut.children.length > 4000) logOut.removeChild(logOut.firstChild);
+    if (stick) logOut.scrollTop = logOut.scrollHeight;
+  };
+}
+function logsOpen(){ logHistory(); logConnect(); }
+function logsClose(){ if (logES) { logES.close(); logES = null; } }
+$('#logLvls').onclick = e => { const b = e.target.closest('[data-l]'); if (!b) return; logLevel = b.dataset.l; [...$('#logLvls').children].forEach(c => c.classList.toggle('on', c===b)); logsOpen(); };
+logQ.addEventListener('input', logFilter);
+$('#logLive').onclick = function(){ logLiveOn = !logLiveOn; this.classList.toggle('on', logLiveOn); this.textContent = logLiveOn ? '● live' : '❚❚ пауза'; if (logLiveOn) logsOpen(); else logsClose(); };
+$('#logClear').onclick = () => { logOut.innerHTML = ''; logStatus.textContent = 'очищено'; };
+if (location.hash === '#logs') document.querySelector('.tabs button[data-tab=logs]').click();
 
 refresh();
 </script>

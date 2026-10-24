@@ -160,7 +160,8 @@ YouTube tab (`web/src/core/features.ts`, `store.loadPing`).
 - `/admin`, `/admin/*` (own cookie credential)
 - `GET /img/**`, `GET /msx/start.json`, `GET /onboarding`, the static SPA shell
   `/`
-- `/logs*` when `PROMIN_LOGS_PASSWORD` is set (Basic Auth with that password)
+- `GET /logs` (a redirect to `/admin#logs`; the log endpoints themselves live
+  under `/admin/logs/*` behind the admin cookie)
 
 Everything else — catalog, sources, torrents, sync, media — answers 401
 `unauthorized` without a valid session. The SPA shell itself carries no data,

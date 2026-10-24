@@ -96,12 +96,6 @@ spec:
             # 1 паралельний транскод: HEVC→H264 ≈ 2-3 ядра/джоба, дві з'їдять
             # весь CPU-бюджет стека (~3 vCPU). Див. docs/streaming.md Т5.
             - { name: PROMIN_REMUX_MAX_TRANSCODES, value: "1" }
-            # Пароль для /logs веб-морди (Basic Auth). Секрет promin-logs
-            # створюється поза git (kubectl create secret). optional:true — якщо
-            # секрету нема, /logs просто вимкнено, деплой не падає.
-            - name: PROMIN_LOGS_PASSWORD
-              valueFrom:
-                secretKeyRef: { name: promin-logs, key: password, optional: true }
             # OMDb публичный демо-ключ (IMDB-рейтинги). Лимит 1000/день, кэш 7д.
             - { name: PROMIN_OMDB_KEY, value: "872408b" }
             # Власні провайдери джерел.
