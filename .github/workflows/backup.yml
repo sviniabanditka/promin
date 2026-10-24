@@ -95,7 +95,7 @@ jobs:
 
       - name: Upload encrypted backup
         if: steps.gate.outputs.ready == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: promin-db-${{ env.stamp }}
           path: promin-*.db.enc
