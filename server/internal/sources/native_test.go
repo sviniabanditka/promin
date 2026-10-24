@@ -450,3 +450,53 @@ func TestPickByOriginalQueryYear(t *testing.T) {
 		t.Fatal("ambiguous same-year hits must not match")
 	}
 }
+
+// proxyStub answers only when called with the proxy egress: a direct call
+// returns ErrParse (the anti-bot stub page a datacenter IP gets).
+type proxyStub struct {
+	stubProvider
+	proxy  provider.Fetcher
+	direct int
+}
+
+func (s *proxyStub) Search(_ context.Context, _ string, _ int, pc provider.Ctx) ([]provider.SearchItem, error) {
+	if pc.Fetch != s.proxy {
+		s.direct++
+		return nil, provider.ErrParse
+	}
+	s.searches++
+	return s.items, nil
+}
+func (s *proxyStub) Resolve(_ context.Context, _ provider.ResolveRequest, pc provider.Ctx) (provider.ResolvedStream, error) {
+	if pc.Fetch != s.proxy {
+		return provider.ResolvedStream{}, provider.ErrSourceUnavailable
+	}
+	return provider.ResolvedStream{URL: "https://cdn.example/x/hls.m3u8", Kind: "hls"}, nil
+}
+
+// Direct fails with a block-like error → the call is repeated through the
+// proxy; a provider without Proxy keeps failing.
+func TestProxyFallback(t *testing.T) {
+	proxy := provider.NewDirectFetcher()
+	p := &proxyStub{stubProvider: stubProvider{id: "test", items: []provider.SearchItem{item("id-1", "Фільм", 2020)}}, proxy: proxy}
+	svc := NewService(nil, slog.Default())
+	svc.SetNativeProviders(newMemCache(), NativeProvider{P: p, Name: "Promin", Enabled: true, Ctx: provider.Ctx{Fetch: provider.NewDirectFetcher()}, Proxy: proxy})
+	req := OnlineRequest{TMDBID: 9, Type: "movie", Title: "Фільм", Year: 2020}
+
+	id, ok := svc.matchSource(context.Background(), svc.native[0], req)
+	if !ok || id != "id-1" || p.direct != 1 || p.searches != 1 {
+		t.Fatalf("id=%q ok=%v direct=%d proxied=%d", id, ok, p.direct, p.searches)
+	}
+	res, err := svc.resolveNative(context.Background(), svc.native[0], ResolveRequest{TMDBID: 9, Type: "movie", Title: "Фільм", Year: 2020})
+	if err != nil || len(res.Streams) == 0 {
+		t.Fatalf("resolve via proxy: err=%v unresolved=%q", err, res.Unresolved)
+	}
+
+	// No proxy configured: the direct failure is final.
+	p2 := &proxyStub{stubProvider: stubProvider{id: "test2", items: p.items}, proxy: proxy}
+	svc2 := NewService(nil, slog.Default())
+	svc2.SetNativeProviders(newMemCache(), NativeProvider{P: p2, Name: "Promin", Enabled: true})
+	if _, ok := svc2.matchSource(context.Background(), svc2.native[0], req); ok {
+		t.Fatal("must not match without a proxy")
+	}
+}

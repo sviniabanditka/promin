@@ -65,6 +65,17 @@ Rules every provider follows:
 `NewProxyFetcher(url)` is the same fetcher over an HTTP proxy with a desktop
 Chrome UA and a 25 s timeout.
 
+**Direct first, proxy second.** `NativeProvider.Proxy` holds the proxy fetcher
+for every provider that normally goes direct. The aggregator wraps each
+provider call (`withProxyFallback` in `native.go`: lookup, search, title,
+resolve): when the direct call fails with `ErrSourceUnavailable` (403, timeout)
+or `ErrParse` (an anti-bot stub page — cinemar serves one to datacenter IPs),
+the same call runs once more with the proxy as `Ctx.Fetch`, logged as
+`native: retry via proxy`. `ErrResolveFailed` / `ErrPaywalled` are real
+answers and are not retried. Only when both attempts fail does the source list
+show nothing for that provider. The proxy only ever sees catalog pages: the
+stream URL a provider returns is fetched directly by `/relay`.
+
 ## 2. Aggregator
 
 ### Listing: `GET /api/v1/sources/online`
@@ -191,9 +202,10 @@ through the proxy: streams are relayed directly by `/relay`.
    never get a default.
 6. **Wire in `main.go`** inside the `cfg.NativeSourcesEnable` block: append a
    `sources.NativeProvider{P: <id>.New(...), Name: "<Display>", Enabled: true,
-   Ctx: provider.Ctx{Fetch: fetcher | pf, BaseURL: ..., Log: plog}}`. Use `pf`
-   (the proxy fetcher) only for providers whose catalog blocks the VPS, and put
-   them inside the `cfg.NativeProxyURL != ""` branch.
+   Ctx: provider.Ctx{Fetch: fetcher | pf, BaseURL: ..., Log: plog}}`. The
+   default `fetcher` gets the direct→proxy fallback for free (`add` sets
+   `Proxy: pf`). Use `pf` directly only for a catalog known to block the VPS
+   on every page — it skips the wasted direct attempt.
 7. **Bump `matchLogicVersion`** in `native.go` if you touched anything in
    query building or ranking. Run `go test ./internal/sources/...`.
 8. Deploy, open a title the source is known to carry, and check the server log:

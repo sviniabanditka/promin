@@ -89,6 +89,27 @@ type NativeProvider struct {
 	Ctx     provider.Ctx
 	Name    string // display name shown in the source list
 	Enabled bool
+	// Proxy, when set, is the residential egress a failed call is repeated
+	// through (withProxyFallback). Catalog pages only — never video.
+	Proxy provider.Fetcher
+}
+
+// withProxyFallback runs call with the provider's normal egress and, when it
+// fails on the network or on an unparsable page (a datacenter IP often gets a
+// 403 or an anti-bot stub) and a proxy is configured, once more with the proxy
+// as egress. ErrResolveFailed / ErrPaywalled are real answers, not blocks, so
+// they are returned as is. The stream URL a successful call returns is still
+// fetched directly by /relay; the proxy only ever sees pages.
+func (s *Service) withProxyFallback(ctx context.Context, np NativeProvider, op string, call func(pc provider.Ctx) error) error {
+	err := call(np.Ctx)
+	if err == nil || np.Proxy == nil || ctx.Err() != nil ||
+		!(errors.Is(err, provider.ErrSourceUnavailable) || errors.Is(err, provider.ErrParse)) {
+		return err
+	}
+	s.logger.Info("native: retry via proxy", "provider", np.P.ID(), "op", op, "direct_error", err)
+	pc := np.Ctx
+	pc.Fetch = np.Proxy
+	return call(pc)
 }
 
 // --- title matching -------------------------------------------------------
@@ -417,9 +438,14 @@ func (s *Service) matchSource(ctx context.Context, np NativeProvider, req Online
 	// Exact lookup by imdb id when the provider has an id map — no ranking
 	// heuristics can beat a shared identifier.
 	if lk, isLk := np.P.(provider.Lookuper); isLk && req.IMDbID != "" {
-		found, hit, err := lk.Lookup(ctx, provider.ExternalRef{
-			TMDBID: req.TMDBID, IMDbID: req.IMDbID, Title: req.Title, OriginalTitle: req.OriginalTitle, Year: req.Year, Type: req.Type,
-		}, np.Ctx)
+		var found provider.SearchItem
+		var hit bool
+		err := s.withProxyFallback(ctx, np, "lookup", func(pc provider.Ctx) (err error) {
+			found, hit, err = lk.Lookup(ctx, provider.ExternalRef{
+				TMDBID: req.TMDBID, IMDbID: req.IMDbID, Title: req.Title, OriginalTitle: req.OriginalTitle, Year: req.Year, Type: req.Type,
+			}, pc)
+			return err
+		})
 		if err == nil && hit {
 			it, ok, anyReply = found, true, true
 		}
@@ -435,7 +461,11 @@ func (s *Service) matchSource(ctx context.Context, np NativeProvider, req Online
 			break
 		}
 		sctx, cancel := context.WithTimeout(ctx, nativeBudget)
-		items, err := np.P.Search(sctx, query, 1, np.Ctx)
+		var items []provider.SearchItem
+		err := s.withProxyFallback(sctx, np, "search", func(pc provider.Ctx) (err error) {
+			items, err = np.P.Search(sctx, query, 1, pc)
+			return err
+		})
 		cancel()
 		if err != nil {
 			lastErr = err
@@ -580,18 +610,26 @@ func (s *Service) resolveNative(ctx context.Context, np NativeProvider, req Reso
 	// Voice list comes from the title page's tree; fetch it so the client can
 	// offer dubs even on the first resolve.
 	voices := []Voice{}
-	if td, err := np.P.Title(rctx, sourceID, np.Ctx); err == nil {
+	var td provider.TitleDetails
+	if err := s.withProxyFallback(rctx, np, "title", func(pc provider.Ctx) (err error) {
+		td, err = np.P.Title(rctx, sourceID, pc)
+		return err
+	}); err == nil {
 		for _, a := range td.Audio {
 			voices = append(voices, Voice{ID: a.ID, Name: a.Label})
 		}
 	}
 
-	st, err := np.P.Resolve(rctx, provider.ResolveRequest{
-		ID:      sourceID,
-		Season:  req.Season,
-		Episode: req.Episode,
-		Audio:   req.Voice,
-	}, np.Ctx)
+	var st provider.ResolvedStream
+	err := s.withProxyFallback(rctx, np, "resolve", func(pc provider.Ctx) (err error) {
+		st, err = np.P.Resolve(rctx, provider.ResolveRequest{
+			ID:      sourceID,
+			Season:  req.Season,
+			Episode: req.Episode,
+			Audio:   req.Voice,
+		}, pc)
+		return err
+	})
 	if errors.Is(err, provider.ErrPaywalled) {
 		// The source has the title but sells it: a distinct outcome so the
 		// provider-failing alert and the dashboard don't read it as breakage.
