@@ -142,7 +142,7 @@ const adminHTML = `<!doctype html>
     <div id="tab-logs" class="hidden">
       <div class="card">
         <div class="lg" id="logLvls"><button class="chip" data-l="debug">debug</button><button class="chip on" data-l="info">info</button><button class="chip wrn" data-l="warn">warn</button><button class="chip err" data-l="error">error</button></div>
-        <div class="lg"><input id="logQ" placeholder="фільтр по тексту / атрибутах…" autocomplete="off"><button class="chip on" id="logLive">● live</button><button class="chip" id="logClear">очистити</button><span class="muted" id="logStatus" style="font-size:13px"></span></div>
+        <div class="lg"><input id="logQ" placeholder="фільтр по тексту / атрибутах…" autocomplete="off"><button class="chip on" id="logLive">● live</button><button class="chip" id="logClear">очистити</button><button class="chip" id="logSrvDebug" title="Рівень логів процесу: debug показує сегменти та /stream">debug на сервері</button><span class="muted" id="logStatus" style="font-size:13px"></span></div>
         <div id="logOut"></div>
       </div>
     </div>
@@ -392,7 +392,9 @@ function logConnect(){
     if (stick) logOut.scrollTop = logOut.scrollHeight;
   };
 }
-function logsOpen(){ logHistory(); logConnect(); }
+function logsOpen(){ logHistory(); logConnect(); logLevelLoad(); }
+async function logLevelLoad(){ const r = await api('GET', '/admin/logs/level'); if (r.ok) $('#logSrvDebug').classList.toggle('on', r.data.level === 'debug'); }
+$('#logSrvDebug').onclick = async function(){ const toDebug = !this.classList.contains('on'); const r = await api('PUT', '/admin/logs/level', { level: toDebug ? 'debug' : 'info' }); if (r.ok) { this.classList.toggle('on', toDebug); if (toDebug && logLevel !== 'debug') document.querySelector('#logLvls [data-l=debug]').click(); } };
 function logsClose(){ if (logES) { logES.close(); logES = null; } }
 $('#logLvls').onclick = e => { const b = e.target.closest('[data-l]'); if (!b) return; logLevel = b.dataset.l; [...$('#logLvls').children].forEach(c => c.classList.toggle('on', c===b)); logsOpen(); };
 logQ.addEventListener('input', logFilter);

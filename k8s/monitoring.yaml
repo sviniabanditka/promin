@@ -171,6 +171,21 @@ spec:
           labels: { severity: warning }
           annotations:
             summary: "source {{ $labels.provider }} failing: {{ $value | humanizePercentage }} of resolves empty/error over 6h (paywalled ones excluded)"
+        - alert: ProminSourceSearchFailing
+          expr: |
+            (
+              sum by (provider) (increase(promin_source_search_total{outcome="error"}[6h]))
+                / sum by (provider) (increase(promin_source_search_total[6h]))
+            ) > 0.8
+            and sum by (provider) (increase(promin_source_search_total[6h])) >= 3
+          labels: { severity: warning }
+          annotations:
+            summary: "source {{ $labels.provider }} not answering searches: {{ $value | humanizePercentage }} errors over 6h (token expired / blocked / markup changed)"
+        - alert: ProminPlayerErrors
+          expr: sum(increase(promin_player_errors_total{kind=~"player:error|report"}[1h])) > 3
+          labels: { severity: warning }
+          annotations:
+            summary: "{{ $value | humanize }} playback failures reported by TVs in the last hour — see the admin log tab, filter diag"
         - alert: ProminHttp5xx
           expr: |
             sum(rate(promin_http_requests_total{status=~"5.."}[15m]))

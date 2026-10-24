@@ -534,7 +534,10 @@ func (s *Service) nativeSources(ctx context.Context, req OnlineRequest) []Online
 		}
 		n++
 		go func(i int, np NativeProvider) {
-			_, ok := s.matchSource(ctx, np, req)
+			id, ok := s.matchSource(ctx, np, req)
+			if ok && req.Type == "tv" && req.Season > 0 {
+				ok = s.hasSeason(ctx, np, id, req.Season)
+			}
 			ch <- res{idx: i, ok: ok}
 		}(i, np)
 	}
@@ -555,6 +558,59 @@ func (s *Service) nativeSources(ctx context.Context, req OnlineRequest) []Online
 		})
 	}
 	return out
+}
+
+// seasonsTTL: how long a provider's season list for one title is trusted. Short
+// on purpose — a new season must show up the day it airs, not a week later.
+const seasonsTTL = 6 * time.Hour
+
+func seasonsKey(providerID, sourceID string) string {
+	return fmt.Sprintf("nsrc:seasons:v1:%s:%s", providerID, sourceID)
+}
+
+// hasSeason answers "does this catalog entry carry season N" from the
+// provider's Title() (one request per provider per title, cached 6 h). A
+// provider that errors or lists no seasons at all stays visible: hiding on
+// uncertainty would turn every hiccup into a missing source. Only a definite
+// "has seasons, not this one" hides it.
+func (s *Service) hasSeason(ctx context.Context, np NativeProvider, sourceID string, season int) bool {
+	key := seasonsKey(np.P.ID(), sourceID)
+	var seasons []int
+	cached := false
+	if s.nativeCache != nil {
+		if v, ok := s.nativeCache.Get(key); ok && json.Unmarshal([]byte(v), &seasons) == nil {
+			cached = true
+		}
+	}
+	if !cached {
+		var td provider.TitleDetails
+		err := s.withProxyFallback(ctx, np, "title", func(pc provider.Ctx) (err error) {
+			td, err = np.P.Title(ctx, sourceID, pc)
+			return err
+		})
+		if err != nil {
+			return true
+		}
+		seasons = []int{}
+		for _, se := range td.Seasons {
+			seasons = append(seasons, se.Number)
+		}
+		if s.nativeCache != nil {
+			if b, err := json.Marshal(seasons); err == nil {
+				s.nativeCache.Set(key, string(b), seasonsTTL)
+			}
+		}
+	}
+	if len(seasons) == 0 {
+		return true
+	}
+	for _, n := range seasons {
+		if n == season {
+			return true
+		}
+	}
+	s.logger.Info("native: season missing in catalog", "provider", np.P.ID(), "source_id", sourceID, "season", season, "has", seasons)
+	return false
 }
 
 // nativeSourcesAsync starts the native availability lookup immediately and

@@ -49,9 +49,11 @@ import { preferNativeHls, canDecodeHevc, caps } from '../capabilities';
 import { getDefaultQuality, getPlayerEngine, getPlayerSpeed, setPlayerSpeed, getSubSize, setSubSize, SubSize, isNightMode, setNightMode, getPreferredVoice, setPreferredVoice } from '../settings';
 import { pickPreferredVoice } from './voices';
 import { followCorrection } from './follow';
-import { scrubStep, speedLabel, fmtTime, qualityOf, playableStream, pickQuality } from './pure';
+import { scrubStep, speedLabel, fmtTime, qualityOf, playableStream, pickQuality, epLabel, epSub, remuxTrackLabel, audioTrackLabel, classifyHls, ErrKind, RemuxAudioTrack } from './pure';
+import type { PlayerEpisode } from './pure';
+export type { PlayerEpisode } from './pure';
 import { isResumable } from '../progress';
-import { report as diag, send as diagSend } from '../diag';
+import { report as diag, reportAlways as diagAlways, send as diagSend } from '../diag';
 import { setRemoteHandler, RemoteAction } from './remote';
 import { ensureHls, HlsInstance, HlsCtor } from './hls';
 import { attachNightAudio, isNightAudio, nightAudioSupported, setNightAudioStored, NightAudio } from './nightAudio';
@@ -139,14 +141,6 @@ export interface SkipSegment {
   label: string;
 }
 
-export interface PlayerEpisode {
-  episode: number;
-  name?: string;
-  still?: string | null;
-  position_sec?: number;
-  duration_sec?: number;
-}
-
 export interface CtxAudioTrack {
   index: number;
   lang?: string;
@@ -193,11 +187,6 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   // Source audio renditions of a remux stream (X-Remux-Audio). The muxed output
   // carries a single track, so alternatives can't come from the stream itself —
   // switching re-requests /remux with audio=<index> and reloads in place.
-  interface RemuxAudioTrack {
-    index: number;
-    lang?: string;
-    title?: string;
-  }
   let remuxAudio: RemuxAudioTrack[] = [];
   let remuxAudioIndex = 0;
   // In-manifest WebVTT renditions captured off hls.js events (declared up here:
@@ -889,9 +878,6 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     for (let i = 0; i < episodes.length; i++) if (episodes[i].episode === curEpisode + 1) return episodes[i];
     return null;
   }
-  function epLabel(ep: PlayerEpisode): string {
-    return ep.episode + (ep.name ? '. ' + ep.name : '');
-  }
   // "Next: 5. Name" beside the prev/next buttons; "Next season" on the last
   // episode when the source screen can cross the boundary (onNext present).
   function refreshNextName(): void {
@@ -901,13 +887,6 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     else if (ctx.onNext && episodes.length && curEpisode != null) text = t('player.next_season');
     nextName.textContent = text;
     nextName.classList.toggle('hide', !text);
-  }
-  function epSub(ep: PlayerEpisode): string {
-    const d = ep.duration_sec || 0;
-    const p = ep.position_sec || 0;
-    if (d > 0 && p >= d * 0.9) return '\u2713 ' + fmtTime(d);
-    if (p > 0 && d > 0) return fmtTime(p) + ' / ' + fmtTime(d);
-    return d > 0 ? fmtTime(d) : '';
   }
   function openEpisodesMenu(): void {
     if (!ctx.onEpisode || !episodes.length) return;
@@ -2054,34 +2033,6 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     return nat ? nat.length : 0;
   }
 
-  function remuxTrackLabel(tr: RemuxAudioTrack, i: number): string {
-    return tr.title || tr.lang || 'audio ' + (i + 1);
-  }
-  function audioLangName(lang: string | undefined): string {
-    switch ((lang || '').toLowerCase()) {
-      case 'rus':
-      case 'ru':
-        return 'Русский';
-      case 'ukr':
-      case 'uk':
-        return 'Українська';
-      case 'eng':
-      case 'en':
-        return 'English';
-      default:
-        return lang ? lang.toUpperCase() : '';
-    }
-  }
-  // ffmpeg's multi-audio HLS renditions get a generic NAME ("audio_1"); prefer the
-  // track's language (rus→Русский, …) so the menu is readable, not "audio_1/2/3".
-  function audioTrackLabel(name: string | undefined, lang: string | undefined, i: number): string {
-    const generic = !name || /^audio[_ ]?\d+$/i.test(name);
-    if (generic) {
-      const l = audioLangName(lang);
-      if (l) return l;
-    }
-    return name || audioLangName(lang) || 'audio ' + (i + 1);
-  }
   function updateAudioTracks(): void {
     const any = audioTrackCount() > 1 || !!(ctx.onVoice && media.voices && media.voices.length > 0);
     btnVoice.classList.toggle('hide', !any);
@@ -2651,7 +2602,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
         hls = inst;
         inst.on(Hls.Events.ERROR, function (_evt: string, data: unknown) {
           const d = data as { fatal?: boolean; type?: string; details?: string };
-          if (d && d.fatal) diag('player:hls-fatal', { type: d.type, details: d.details, attempts: recoverAttempts });
+          if (d && d.fatal) diagAlways('player:hls-fatal', { type: d.type, details: d.details, attempts: recoverAttempts });
           if (!d || !d.fatal || my !== loadSeq) return;
           // Auto-recover instead of dumping to the error screen: a transcode that
           // runs at ~realtime buffer-stalls on any dip, and warmup network errors
@@ -2673,7 +2624,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
             }, 1200);
             return;
           }
-          showError(classifyHls(d));
+          showError(classifyHls(d, urlIsRemux(), urlIsTorrent()));
         });
         // Capture the audio-track list straight off the manifest events (the
         // reliable source — see captureHlsAudio) and reveal the button. The 1s
@@ -2736,7 +2687,6 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   // title, a hint that says what to do, and the same two actions. The kind is
   // derived from where the stream comes from (relay / torrent remux / native
   // file) and what failed, not from the raw error code.
-  type ErrKind = 'network' | 'upstream' | 'remux' | 'stall' | 'decode' | 'unsupported' | 'generic';
 
   function urlIsTorrent(): boolean {
     const u = currentUrl();
@@ -2750,16 +2700,8 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
   // out a playlist (remux job did not start, or the source's playlist is gone);
   // fragment failures on a torrent are a starving swarm; media errors are the
   // decoder; the rest is the network between the TV and the server.
-  function classifyHls(d: { type?: string; details?: string }): ErrKind {
-    const det = (d.details || '').toLowerCase();
-    if (d.type === 'mediaError') return 'decode';
-    if (det.indexOf('manifest') >= 0 || det.indexOf('level') >= 0) return urlIsRemux() ? 'remux' : 'upstream';
-    if (det.indexOf('frag') >= 0) return urlIsTorrent() ? 'stall' : 'upstream';
-    return 'network';
-  }
-
   function showError(kind: ErrKind): void {
-    diag('player:error', { kind: kind, url: currentUrl().slice(0, 80) });
+    diagAlways('player:error', { kind: kind, url: currentUrl().slice(0, 80) });
     setBuffering(false);
     // Stop the engine: hls.js kept retrying fragments (network + CPU + log
     // noise) behind the overlay. Retry/reload rebuild it from scratch anyway.
@@ -2964,7 +2906,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     stallTicks++;
     if (stallTicks === STALL_WARN_S && !stallWarned) {
       stallWarned = true;
-      diag('player:stall', { cur: Math.round(cur), buffered: Math.round(bufferAheadSec()) });
+      diagAlways('player:stall', { cur: Math.round(cur), buffered: Math.round(bufferAheadSec()) });
       toast({ kind: 'warning', title: t('player.stalled'), text: t('player.stalled_hint') });
     } else if (stallTicks >= STALL_FAIL_S) {
       stallTicks = 0;
@@ -3442,7 +3384,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     if (!video.currentSrc) return;
     const err = video.error;
     const code = err ? err.code : 0;
-    diag('player:video-error', { code: code, msg: err ? (err as unknown as { message?: string }).message : '', cur: Math.round(absTime()), attempts: recoverAttempts, src: (video.currentSrc || '').slice(0, 40) });
+    diagAlways('player:video-error', { code: code, msg: err ? (err as unknown as { message?: string }).message : '', cur: Math.round(absTime()), attempts: recoverAttempts, src: (video.currentSrc || '').slice(0, 40) });
     // Native <video> path (no hls.js): a torrent stream stalls → code 2/3/4 that
     // is really a transient piece wait. Auto-recover by reloading at the current
     // position instead of dumping the user to the error screen (they had to

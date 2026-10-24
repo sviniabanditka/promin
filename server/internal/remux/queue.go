@@ -455,7 +455,8 @@ func (q *Queue) sweep() {
 	q.mu.Unlock()
 
 	for _, j := range expired {
-		q.cfg.Logger.Info("remux: job TTL expired, cleaning up", "job_id", j.ID, "kind", j.Kind)
+		segs, bytes := j.Served()
+		q.cfg.Logger.Info("remux: job TTL expired, cleaning up", "job_id", j.ID, "kind", j.Kind, "segments_served", segs, "mb_served", bytes>>20)
 		go q.destroy(j)
 	}
 }

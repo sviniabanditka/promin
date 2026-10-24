@@ -118,4 +118,7 @@ type OnlineRequest struct {
 	Year          int
 	IMDbID        string
 	TitleRU       string // see ResolveRequest.TitleRU
+	// Season > 0 (series): hide providers whose catalog entry lacks this
+	// season instead of failing at resolve time (nativeSources → hasSeason).
+	Season int
 }

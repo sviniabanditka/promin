@@ -122,7 +122,11 @@ availability is probed once (`HasZscale`); without it HDR transcodes are plain
   `X-Remux-Audio` (source track list, deduped by language, max 12), all listed
   in `Access-Control-Expose-Headers`; `appendRemuxToken` stamps `?t=` on every
   relative child URI (hls.js drops the master's query when resolving them).
-- `seg-*.ts`: `http.ServeFile` (Range for free), immutable 1-year cache.
+- `seg-*.ts`: `http.ServeFile` (Range for free), immutable 1-year cache. Each
+  served segment is counted on the job (`Job.NoteSegment`) and in
+  `promin_remux_segments_served_total`; the TTL cleanup line logs
+  `segments_served` / `mb_served`, so "ffmpeg wrote 439 segments, the TV took
+  one" is visible without Debug logging.
   Playlist and segment names are validated against traversal (`remux/hls_copy.go`).
 
 ## 3. `/stream` — torrents

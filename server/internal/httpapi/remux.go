@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/sviniabanditka/promin/server/internal/metrics"
 	"github.com/sviniabanditka/promin/server/internal/remux"
 	"github.com/sviniabanditka/promin/server/internal/sources"
 )
@@ -286,10 +287,13 @@ func (h *remuxHandlers) serveSegment(w http.ResponseWriter, r *http.Request, job
 		writeBadRequest(w, "невірне ім'я сегмента")
 		return
 	}
-	if _, err := os.Stat(path); err != nil {
+	st, err := os.Stat(path)
+	if err != nil {
 		writeNotFound(w, "segment_not_found", "сегмент не знайдено")
 		return
 	}
+	job.NoteSegment(st.Size())
+	metrics.RemuxSegmentsServed.Inc()
 	w.Header().Set("Content-Type", "video/mp2t")
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	// Stream from disk: a copy_mkv 4K segment is 20–40 MB, and os.ReadFile per

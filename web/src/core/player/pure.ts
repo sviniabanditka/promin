@@ -67,3 +67,77 @@ export function pickQuality(streams: QualityStream[], pref: string, canDecodeHev
   for (let i = 0; i < streams.length; i++) if (playableStream(streams[i], canDecodeHevc)) return i;
   return 0;
 }
+
+// --- labels and error classification (moved out of index.ts 2026-10-24) -----
+
+export interface PlayerEpisode {
+  episode: number;
+  name?: string;
+  still?: string | null;
+  position_sec?: number;
+  duration_sec?: number;
+}
+
+export function epLabel(ep: PlayerEpisode): string {
+  return ep.episode + (ep.name ? '. ' + ep.name : '');
+}
+
+// "✓ 42:10" watched, "12:00 / 42:10" partly, "42:10" untouched, "" unknown.
+export function epSub(ep: PlayerEpisode): string {
+  const d = ep.duration_sec || 0;
+  const p = ep.position_sec || 0;
+  if (d > 0 && p >= d * 0.9) return '\u2713 ' + fmtTime(d);
+  if (p > 0 && d > 0) return fmtTime(p) + ' / ' + fmtTime(d);
+  return d > 0 ? fmtTime(d) : '';
+}
+
+// A remux job's source audio track (X-Remux-Audio); the muxed output carries one.
+export interface RemuxAudioTrack {
+  index: number;
+  lang?: string;
+  title?: string;
+}
+
+export function remuxTrackLabel(tr: RemuxAudioTrack, i: number): string {
+  return tr.title || tr.lang || 'audio ' + (i + 1);
+}
+
+export function audioLangName(lang: string | undefined): string {
+  switch ((lang || '').toLowerCase()) {
+    case 'rus':
+    case 'ru':
+      return 'Русский';
+    case 'ukr':
+    case 'uk':
+      return 'Українська';
+    case 'eng':
+    case 'en':
+      return 'English';
+    default:
+      return lang ? lang.toUpperCase() : '';
+  }
+}
+
+// ffmpeg's multi-audio HLS renditions get a generic NAME ("audio_1"); prefer the
+// track's language (rus→Русский, …) so the menu is readable, not "audio_1/2/3".
+export function audioTrackLabel(name: string | undefined, lang: string | undefined, i: number): string {
+  const generic = !name || /^audio[_ ]?\d+$/i.test(name);
+  if (generic) {
+    const l = audioLangName(lang);
+    if (l) return l;
+  }
+  return name || audioLangName(lang) || 'audio ' + (i + 1);
+}
+
+export type ErrKind = 'network' | 'upstream' | 'remux' | 'stall' | 'decode' | 'unsupported' | 'generic';
+
+// Which error screen an hls.js fatal error maps to. Manifest/level failures on
+// a remux URL are the job's fault; fragment failures on a torrent are a stall
+// (the swarm has not delivered), on anything else the upstream.
+export function classifyHls(d: { type?: string; details?: string }, isRemux: boolean, isTorrent: boolean): ErrKind {
+  const det = (d.details || '').toLowerCase();
+  if (d.type === 'mediaError') return 'decode';
+  if (det.indexOf('manifest') >= 0 || det.indexOf('level') >= 0) return isRemux ? 'remux' : 'upstream';
+  if (det.indexOf('frag') >= 0) return isTorrent ? 'stall' : 'upstream';
+  return 'network';
+}

@@ -39,6 +39,26 @@ export function report(kind: string, data?: { [k: string]: unknown }): void {
   }
 }
 
+// Playback failures are sent regardless of the switch: a TV that cannot play
+// is exactly the device nobody turned diagnostics on. Same throttle as
+// report(); the server rate-limits per IP and counts them as a metric.
+export function reportAlways(kind: string, data?: { [k: string]: unknown }): void {
+  const now = Date.now();
+  if (now - lastAt < MIN_GAP_MS) return;
+  lastAt = now;
+  seq++;
+  try {
+    post('/diag', { kind: kind, seq: seq, host: window.location.host, data: data || {} }).then(
+      function () {},
+      function () {
+        /* best-effort */
+      }
+    );
+  } catch (e) {
+    /* ignore */
+  }
+}
+
 // A probe the viewer asked to send (the error screen's "Повідомити"): not
 // gated by the diagnostics switch — it is the point of the button. Resolves
 // true when the server took it.

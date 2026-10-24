@@ -196,8 +196,8 @@ spec:
 # SNI, поэтому promin.club (h2) не затронут. h1.promin.club — A-запись DNS-only
 # (не через Cloudflare-прокси, иначе edge снова согласует h2). Свой сертификат
 # promin-h1-tls (cert-manager, HTTP-01). promin.sviniabanditka.com оставлен как
-# алиас на переход. Заменяет nginx :8444 (k8s/promin-h1.yaml) — тот удаляется
-# после проверки на ТВ.
+# алиас на переход. nginx :8444 (бывший k8s/promin-h1.yaml) снесён 2026-10-24:
+# ALPN http/1.1 на обоих хостах подтверждён, трафика на нём не было.
 apiVersion: traefik.io/v1alpha1
 kind: TLSOption
 metadata:

@@ -212,6 +212,8 @@ Served under `/admin/logs/*` behind the admin session cookie (same gate as every
 |---|---|---|---|---|
 | GET | `/admin/logs/history` | admin cookie | `limit?=1000` (≤ 5000), `level?` (`debug`/`info`/`warn`/`error`), `q?` | `{records: [...]}` from the in-memory ring buffer |
 | GET | `/admin/logs/stream` | admin cookie | `level?`, `q?` | `text/event-stream` of new records, keepalive every 20 s |
+| GET | `/admin/logs/level` | admin cookie | — | `{level}` — the process log level right now |
+| PUT | `/admin/logs/level` | admin cookie | body `{level: debug\|info\|warn\|error}` | switches the level at runtime (stdout + ring buffer); not persisted, a restart returns to `PROMIN_LOG_LEVEL` |
 
 ## Profile data (Danger zone)
 

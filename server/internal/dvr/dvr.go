@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"github.com/sviniabanditka/promin/server/internal/fsutil"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -204,7 +205,7 @@ func (s *Service) start(parent context.Context, rec store.Recording) {
 	if s.isRunning(rec.ID) {
 		return
 	}
-	free, err := freeBytes(s.dir)
+	free, err := fsutil.FreeBytes(s.dir)
 	if err == nil && free < minFreeBytes {
 		s.logger.Warn("dvr: not enough free space", "id", rec.ID, "free_mb", free>>20)
 		s.fail(rec.ID, "no_disk")

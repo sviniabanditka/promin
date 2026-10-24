@@ -76,6 +76,16 @@ var (
 		Name: "promin_relay_upstream_errors_total", Help: "/relay upstream request failures and 5xx answers.",
 	})
 
+	// PlayerErrors counts playback failures the TVs report through /api/v1/diag
+	// (player:error, player:hls-fatal, player:video-error, player:stall, report).
+	PlayerErrors = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "promin_player_errors_total", Help: "Playback failures reported by clients via /api/v1/diag, by probe kind.",
+	}, []string{"kind"})
+	// RemuxSegmentsServed counts HLS segments handed to players from remux jobs.
+	RemuxSegmentsServed = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "promin_remux_segments_served_total", Help: "Remux/transcode HLS segments served to clients.",
+	})
+
 	RemuxJobsActive = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "promin_remux_jobs_active", Help: "ffmpeg remux/transcode jobs currently running.",
 	})

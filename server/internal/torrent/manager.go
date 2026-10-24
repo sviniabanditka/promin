@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/sviniabanditka/promin/server/internal/fsutil"
 	"io"
 	"log/slog"
 	"os"
@@ -529,7 +530,11 @@ func (m *Manager) FilePath(infoHash string, fileIdx int) (string, error) {
 // downloaded edge (the "seek +10min lands +2min" bug). anacrolix File.Download()
 // only raises piece priority; the sequential Reader still serves playback near
 // the head, so this doesn't starve playback.
-// ponytail: whole-file prefetch, no free-disk gate yet — add one if it bites.
+//
+// Disk gate: the rest of the file must fit with prefetchDiskMargin to spare
+// (SQLite and the remux dirs share the volume). Over the gate the file keeps
+// streaming through the sequential Reader as before — just without the
+// whole-file prefetch — and the skip is logged once per file.
 func (m *Manager) Prefetch(infoHash string, fileIdx int) error {
 	e, ok := m.lookup(infoHash)
 	if !ok {
@@ -539,9 +544,18 @@ func (m *Manager) Prefetch(infoHash string, fileIdx int) error {
 	if fileIdx < 0 || fileIdx >= len(files) {
 		return ErrFileNotFound
 	}
-	files[fileIdx].Download()
+	f := files[fileIdx]
+	need := f.Length() - f.BytesCompleted()
+	if free, err := fsutil.FreeBytes(m.cfg.DataDir); err == nil && free < uint64(need)+prefetchDiskMargin {
+		m.cfg.Logger.Warn("torrent: prefetch skipped, disk too full", "infohash", infoHash, "file", fileIdx, "need_mb", need>>20, "free_mb", free>>20)
+		return nil
+	}
+	f.Download()
 	return nil
 }
+
+// prefetchDiskMargin is what must stay free after a whole-file prefetch.
+const prefetchDiskMargin = 2 << 30 // 2 GiB
 
 // fileReader wraps an anacrolix torrent.Reader, updating Manager
 // bookkeeping (active-reader refcount, last_access) on Close.

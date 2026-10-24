@@ -78,7 +78,7 @@ All configuration is environment variables. Durations use Go syntax (`30s`, `24h
 | `PROMIN_METRICS_ADDR` | `:9100` | Separate Prometheus `/metrics` listener (`promin_*`); empty disables it. Never on the public mux |
 | `PROMIN_DATA_DIR` | `/data` | Root for `img/`, `torrents/`, `remux/`, `backups/`, `pin_secret`, `veoveo.json.gz` |
 | `PROMIN_DB_PATH` | `$PROMIN_DATA_DIR/promin.db` | SQLite file |
-| `PROMIN_LOG_LEVEL` | `info` | slog level: `debug`, `info`, `warn`, `error` |
+| `PROMIN_LOG_LEVEL` | `info` | slog level at start: `debug`, `info`, `warn`, `error`. Switchable at runtime from the admin log tab (`PUT /admin/logs/level`) |
 | `PROMIN_ADMIN_PASSWORD` | empty | Bootstraps/resets user 1 (admin) password on boot. Empty → admin left as-is |
 | `PROMIN_PIN_SECRET` | empty | HMAC key for PIN lookup hashes. Empty → random 32 bytes generated once at `$DATA_DIR/pin_secret`. Rotating it invalidates every PIN |
 | `PROMIN_TMDB_API_KEY` | — (required) | TMDB v3 key; the binary exits at start without it. Production: secret `promin-secrets/tmdb-api-key` |

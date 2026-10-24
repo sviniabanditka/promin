@@ -86,6 +86,13 @@ providers that matched as `OnlineSource{id, name, balanser}`. A provider that
 errors or does not carry the title is simply absent; the listing never fails.
 No stream is resolved at this stage.
 
+For a series with `season=N` the match is followed by a season check
+(`hasSeason`): the provider's `Title()` season list, cached 6 h under
+`nsrc:seasons:v1:<provider>:<source id>`, must contain N, otherwise the
+provider is hidden (`native: season missing in catalog`). Uncertainty keeps
+the source visible — a `Title()` error or an empty season list never hides
+anything; only a definite "has seasons, not this one" does.
+
 The handler enriches the request with `TitleRU` — the Russian TMDB title,
 fetched from the catalog cache (`sourcesHandlers.ruTitle`). Several catalogs
 are Russian-language and know neither the Ukrainian UI title nor the original.

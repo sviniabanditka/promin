@@ -51,6 +51,7 @@ func (h *sourcesHandlers) online(w http.ResponseWriter, r *http.Request) {
 	resp := h.svc.Online(r.Context(), sources.OnlineRequest{
 		TMDBID:        tmdbID,
 		Type:          mediaType,
+		Season:        atoiDefault(q.Get("season"), 0),
 		Title:         q.Get("title"),
 		TitleRU:       h.ruTitle(r.Context(), mediaType, tmdbID),
 		OriginalTitle: q.Get("original_title"),

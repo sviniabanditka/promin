@@ -50,6 +50,7 @@ func NewServer(
 	syncSvc *sync.Service,
 	httpAddr string,
 	logBuf *logbuf.Buffer,
+	logLevel *slog.LevelVar, // runtime log level knob (admin log tab)
 	weatherSvc *weather.Service,
 	weatherPlace string,
 	h1Host string,
@@ -144,9 +145,11 @@ func NewServer(
 	// Server log: history + live SSE for the admin panel's "Логи" tab. The
 	// old standalone /logs page (Basic Auth) is gone; its URL lands on the tab.
 	if logBuf != nil {
-		lh := &logsHandlers{buf: logBuf, gate: adminH.gate}
+		lh := &logsHandlers{buf: logBuf, gate: adminH.gate, level: logLevel, logger: logger}
 		mux.HandleFunc("GET /admin/logs/history", lh.history)
 		mux.HandleFunc("GET /admin/logs/stream", lh.stream)
+		mux.HandleFunc("GET /admin/logs/level", lh.getLevel)
+		mux.HandleFunc("PUT /admin/logs/level", lh.setLevel)
 		mux.HandleFunc("GET /logs", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/admin#logs", http.StatusFound) })
 	}
 	mux.HandleFunc("GET /admin/profiles", adminH.listProfiles)
@@ -440,6 +443,10 @@ func handleDiag(logger *slog.Logger, notifyOwner func(text string)) http.Handler
 			login = info.User.Login
 		}
 		logger.Info("diag", "kind", probe.Kind, "seq", probe.Seq, "user", user, "ip", clientIP(r), "host", probe.Host, "ua", r.UserAgent(), "data", string(probe.Data))
+		switch probe.Kind {
+		case "player:error", "player:hls-fatal", "player:video-error", "player:stall", "report":
+			metrics.PlayerErrors.WithLabelValues(probe.Kind).Inc()
+		}
 		// "Повідомити" on the player's error screen: the one probe that is meant
 		// for a human, not the log. Only a signed-in viewer may page the owner.
 		if probe.Kind == "report" && authed && notifyOwner != nil {

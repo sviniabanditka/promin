@@ -2,6 +2,7 @@ package dvr
 
 import (
 	"context"
+	"github.com/sviniabanditka/promin/server/internal/fsutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -56,7 +57,7 @@ func (s *Service) EnsureBuffer(channelID string) (int, error) {
 		base = context.Background()
 	}
 
-	free, err := freeBytes(s.dir)
+	free, err := fsutil.FreeBytes(s.dir)
 	if err == nil && free < minFreeBytes {
 		return 0, errNoDisk
 	}

@@ -5,9 +5,6 @@ system itself is described in the other documents.
 
 ## Housekeeping
 
-- `k8s/promin-h1.yaml` (nginx HTTP/1.1 front on :8444) is a fallback kept until
-  the pre-2022 Samsung Tizen path via `h1.promin.club` is confirmed on a real
-  set. Delete it and the CI step once confirmed.
 - Verify on the real devices what was shipped blind: episode strip and seek
   ladder on Tizen, spinner centering and torrent resume on Xiaomi/MSX, the
   source matrix (every provider on one movie and one series), and **two TVs in
@@ -25,8 +22,6 @@ system itself is described in the other documents.
 ## Torrents
 
 - Season picker on the torrents tab (today all packs of a series are one list).
-- Free-disk gate before a full prefetch (LRU + `PROMIN_TORRENT_MAX_ACTIVE` only).
-  `internal/dvr/disk.go` already has the `freeBytes` helper the gate needs.
 
 ## Frontend
 
@@ -38,15 +33,12 @@ system itself is described in the other documents.
 
 ## Sources
 
-- Series whose requested season is missing from a catalog still appear in the
-  source list and fail only at resolve time. A season check at listing time
-  costs one extra request per title.
 - Transcode HEVC/HDR → H.264/SDR on the fly for old panels: see `streaming.md`
   for what exists; the on-the-fly path for 4K/HEVC torrents is not complete.
 
 ## Candidates reviewed 2026-09-12 (not started)
 
-Ranked by the owner's value; the top three are 8, 13 and 1 of this list.
+Ranked by the owner's value; the top two left are 13 and 1 of this list (8 shipped 2026-10-24).
 
 For the viewer:
 1. **Series calendar + notifications** — air dates from TMDB for bookmarked
@@ -64,8 +56,6 @@ For the viewer:
    week", "new in your genres"; the data is already in the DB.
 
 Existing behaviour:
-8. **Season check when listing sources** — series without the requested
-   season still appear and fail only at resolve time.
 9. **One popup lifecycle** (`openPopup` + tracked close) instead of the
    per-screen variants that caused several focus bugs.
 10. **Season selector on the torrents tab.**
@@ -81,7 +71,6 @@ Reliability and operations:
 14. **On-the-fly HEVC/HDR → H.264/SDR** for old panels — the 4K torrent path
     is what most often "does not play".
 15. **Remux live-job ceiling per profile** — the last audit item.
-17. **Dependabot** for actions and Go modules.
 
 See also `docs/proposals/youtube.md`.
 

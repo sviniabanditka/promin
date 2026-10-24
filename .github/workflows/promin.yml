@@ -5,7 +5,7 @@ name: promin
 on:
   push:
     branches: [main]
-    paths: ['server/**', 'web/**', 'ytx/**', 'Dockerfile', 'k8s/promin.yaml', 'k8s/promin-h1.yaml', 'k8s/ytx.yaml', 'k8s/monitoring.yaml', 'k8s/alerting.yaml', '.github/workflows/promin.yml']
+    paths: ['server/**', 'web/**', 'ytx/**', 'Dockerfile', 'k8s/promin.yaml', 'k8s/ytx.yaml', 'k8s/monitoring.yaml', 'k8s/alerting.yaml', '.github/workflows/promin.yml']
   workflow_dispatch:
 
 env:
@@ -22,7 +22,7 @@ jobs:
           git config --global url."https://x-access-token:${{ secrets.SUBMODULES_TOKEN }}@github.com/".insteadOf "https://github.com/"
           git submodule update --init --recursive
       - uses: actions/setup-go@v5
-        with: { go-version-file: server/go.mod, cache-dependency-path: server/go.sum }
+        with: { go-version-file: server/go.mod, check-latest: true, cache-dependency-path: server/go.sum }
       - name: Go vet + test (race detector on)
         working-directory: server
         run: go vet -tags providers ./... && go test -race -tags providers ./...
@@ -109,18 +109,16 @@ jobs:
       - name: Deploy to ns promin
         run: |
           scp -i ~/.ssh/id_deploy -o StrictHostKeyChecking=yes \
-            k8s/promin.yaml k8s/promin-h1.yaml k8s/ytx.yaml k8s/monitoring.yaml k8s/alerting.yaml root@ssh.sviniabanditka.com:/tmp/
+            k8s/promin.yaml k8s/ytx.yaml k8s/monitoring.yaml k8s/alerting.yaml root@ssh.sviniabanditka.com:/tmp/
           ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=yes \
             root@ssh.sviniabanditka.com \
             'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml && \
              kubectl apply -f /tmp/promin.yaml && \
-             kubectl apply -f /tmp/promin-h1.yaml && \
              kubectl apply -f /tmp/ytx.yaml && \
              kubectl -n promin set image deploy/ytx ytx=${{ env.YTX_IMAGE }}:${{ github.sha }} && \
              kubectl apply -f /tmp/monitoring.yaml && \
              kubectl apply -f /tmp/alerting.yaml && \
              kubectl -n promin set image deploy/promin promin=${{ env.IMAGE }}:${{ github.sha }} chown-data=${{ env.IMAGE }}:${{ github.sha }} && \
-             kubectl -n promin rollout restart deploy/promin-h1 && \
              kubectl -n promin rollout status deploy/ytx       --timeout=120s && \
              kubectl -n promin rollout status deploy/promin    --timeout=120s && \
-             kubectl -n promin rollout status deploy/promin-h1 --timeout=90s'
+             kubectl -n promin delete deploy/promin-h1 svc/promin-h1 configmap/promin-h1-nginx --ignore-not-found'

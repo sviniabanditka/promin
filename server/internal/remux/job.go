@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -72,6 +73,11 @@ type Job struct {
 	// done is closed when run() returns (ffmpeg exited or never started), so
 	// an evictor can wait for the process to be gone before deleting OutputDir.
 	done chan struct{}
+	// segsServed / bytesServed: segments handed to players (httpapi
+	// serveSegment). Logged at TTL cleanup — "ffmpeg wrote 439 segments, the
+	// TV fetched 1" is the difference between a server and a client problem.
+	segsServed  atomic.Int64
+	bytesServed atomic.Int64
 
 	mu          sync.Mutex
 	state       State
@@ -254,4 +260,15 @@ func (j *Job) idleSince() time.Time {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	return j.lastAccess
+}
+
+// NoteSegment records one served segment of n bytes.
+func (j *Job) NoteSegment(n int64) {
+	j.segsServed.Add(1)
+	j.bytesServed.Add(n)
+}
+
+// Served returns how many segments and bytes players fetched from this job.
+func (j *Job) Served() (segments, bytes int64) {
+	return j.segsServed.Load(), j.bytesServed.Load()
 }

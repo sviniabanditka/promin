@@ -34,7 +34,7 @@ ignored.
 | `key` | `web/src/core/controller.ts` keydown | `keyCode`, `key`, `code`, `mode` (active controller); also a toast `key <code> / <key>` |
 | `input` | `web/src/core/pointer.ts` | first 25 `touchstart/touchend/pointerdown/pointerup/mousedown/mouseup/click` events of the session: `type`, `target` (tag.class), `touches`, `pointerType`, `x`, `y` |
 | `error`, `unhandledrejection` | global hooks installed at boot (`installGlobalHooks`) | `message`, `source`, `line`, `col` / `reason` |
-| `player:*` | `web/src/core/player/index.ts` (`diag()` helper) | `mount`, `engine` (hls/native/growing/startAt), `mux-from`, `seek-restart`, `seek-stash`, `resume-at-base`/`resume-ok`/`resume-retry`/`resume-failed`, `loadedmetadata`, `hls-fatal`, `stall`, `video-error`, `ended` — all with rounded times |
+| `player:*` | `web/src/core/player/index.ts` (`diag()` helper; `player:error`, `player:hls-fatal`, `player:video-error` and `player:stall` go through `reportAlways` — sent **regardless of the switch** and counted as `promin_player_errors_total{kind}`, alert `ProminPlayerErrors`) | `mount`, `engine` (hls/native/growing/startAt), `mux-from`, `seek-restart`, `seek-stash`, `resume-at-base`/`resume-ok`/`resume-retry`/`resume-failed`, `loadedmetadata`, `hls-fatal`, `stall`, `video-error`, `ended` — all with rounded times |
 
 ## 3. `POST /api/v1/diag`
 

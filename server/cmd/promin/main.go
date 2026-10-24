@@ -44,7 +44,7 @@ const shutdownTimeout = 15 * time.Second
 func main() {
 	cfg := config.Load()
 	logBuf := logbuf.NewBuffer(5000)
-	logger := newLogger(cfg.LogLevel, logBuf)
+	logger, logLevel := newLogger(cfg.LogLevel, logBuf)
 	slog.SetDefault(logger)
 
 	logger.Info("starting promin", "version", version, "addr", cfg.HTTPAddr, "data_dir", cfg.DataDir, "db_path", cfg.DBPath)
@@ -283,7 +283,7 @@ func main() {
 		logger.Info("sessions: legacy tokens hashed", "count", n)
 	}
 	httpapi.SetRelayBlockedIPs(cfg.RelayBlockIPs)
-	handler := httpapi.NewServer(version, logger, cfg.DataDir, catalogSvc, sourcesSvc, remuxQueue, torrentMgr, authSvc, syncSvc, cfg.HTTPAddr, logBuf, weatherSvc, cfg.WeatherPlace, cfg.H1Host, cfg.MainHost, tgBot, subsClient, ytClient, tvSvc, db.Telegram, db.Skips, dvrSvc, db.Recordings)
+	handler := httpapi.NewServer(version, logger, cfg.DataDir, catalogSvc, sourcesSvc, remuxQueue, torrentMgr, authSvc, syncSvc, cfg.HTTPAddr, logBuf, logLevel, weatherSvc, cfg.WeatherPlace, cfg.H1Host, cfg.MainHost, tgBot, subsClient, ytClient, tvSvc, db.Telegram, db.Skips, dvrSvc, db.Recordings)
 	srv := &http.Server{
 		Addr:    cfg.HTTPAddr,
 		Handler: handler,
@@ -329,16 +329,20 @@ func main() {
 	logger.Info("promin stopped")
 }
 
-func newLogger(level string, buf *logbuf.Buffer) *slog.Logger {
+// newLogger returns the logger and its level knob: the admin panel's log tab
+// flips it between info and debug at runtime (PUT /admin/logs/level), so
+// segment/stream traffic can be watched without a redeploy.
+func newLogger(level string, buf *logbuf.Buffer) (*slog.Logger, *slog.LevelVar) {
 	var lvl slog.Level
 	if err := lvl.UnmarshalText([]byte(level)); err != nil {
 		lvl = slog.LevelInfo
 	}
+	lv := new(slog.LevelVar)
+	lv.Set(lvl)
 	// Wrap the stdout handler so every emitted record is also captured into the
-	// ring buffer for the /logs UI. Capture level == stdout level (`lvl`); raise
-	// PROMIN_LOG_LEVEL=debug to see debug in both.
-	inner := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: lvl})
-	return slog.New(logbuf.NewHandler(inner, buf))
+	// ring buffer for the admin log tab. Capture level == stdout level.
+	inner := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: lv})
+	return slog.New(logbuf.NewHandler(inner, buf)), lv
 }
 
 // loadOrCreatePinSecret returns the PIN HMAC key: the env value if set, else the
