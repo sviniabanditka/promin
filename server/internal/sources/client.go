@@ -33,6 +33,8 @@ func NewClient(jacredURL, jacredKey string) *Client {
 	}
 }
 
+const browserUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+
 func (c *Client) get(ctx context.Context, base string, q url.Values) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
@@ -45,6 +47,9 @@ func (c *Client) get(ctx context.Context, base string, q url.Values) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
+	// jac.red's nginx answers 403 to the Go default User-Agent (since ~Oct 2026);
+	// a browser UA from the same datacenter IP is fine, no proxy needed.
+	httpReq.Header.Set("User-Agent", browserUA)
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
 		return nil, err

@@ -185,3 +185,7 @@ gone it falls back to the torrent list.
 The **server** stores no per-title torrent choice. It keeps only the engine's
 cache rows (`torrent_cache_meta`) and the downloaded data, both subject to the
 LRU sweep above.
+
+## Indexer quirks
+
+- `jac.red` answers **403** to the Go default `User-Agent` (seen 2026-10; it had been silently breaking every torrent list for weeks — the UI showed «сервіс джерел тимчасово недоступний»). `sources.Client.get` sends a browser UA; the same datacenter IP is otherwise fine, no proxy. Alert `ProminTorrentSearchFailing` fires on an error ratio > 80 % over 6 h.

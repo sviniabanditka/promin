@@ -181,6 +181,14 @@ spec:
           labels: { severity: warning }
           annotations:
             summary: "source {{ $labels.provider }} not answering searches: {{ $value | humanizePercentage }} errors over 6h (token expired / blocked / markup changed)"
+        - alert: ProminTorrentSearchFailing
+          expr: |
+            sum(increase(promin_torrent_search_total{outcome="error"}[6h]))
+              / sum(increase(promin_torrent_search_total[6h])) > 0.8
+            and sum(increase(promin_torrent_search_total[6h])) >= 3
+          labels: { severity: warning }
+          annotations:
+            summary: "torrent indexer (jac.red) failing: {{ $value | humanizePercentage }} of searches error over 6h (403 on UA? rate-limit? host down?)"
         - alert: ProminPlayerErrors
           expr: sum(increase(promin_player_errors_total{kind=~"player:error|report"}[1h])) > 3
           labels: { severity: warning }
