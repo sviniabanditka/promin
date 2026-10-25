@@ -232,6 +232,28 @@ func (h *catalogHandlers) title(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, title)
 }
 
+// trailers implements GET /api/v1/catalog/trailers?type=&tmdb_id=&lang= —
+// YouTube-searched trailers in that language (docs/api.md), for the languages
+// TMDB has no videos in.
+func (h *catalogHandlers) trailers(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	id := atoiDefault(q.Get("tmdb_id"), 0)
+	mediaType := q.Get("type")
+	if id <= 0 || (mediaType != "movie" && mediaType != "tv") {
+		writeBadRequest(w, "потрібні tmdb_id і type (movie|tv)")
+		return
+	}
+	list, err := h.svc.SearchTrailers(r.Context(), mediaType, id, q.Get("lang"))
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	if list == nil {
+		list = []catalog.Trailer{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"trailers": list})
+}
+
 func (h *catalogHandlers) genres(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	mediaType := q.Get("type")

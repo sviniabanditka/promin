@@ -39,6 +39,7 @@ import {
   getPlaylistItems,
   createPlaylist,
   getTitleCached,
+  getTrailers,
 } from '../core/api';
 import { el, empty, fmtBytes } from '../ui/dom';
 import { buildState } from '../ui/state';
@@ -462,10 +463,11 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
   // message plus an "open on YouTube" link (Android TV hands youtube.com off to
   // the YouTube app). Back / the close button remove the overlay and restore
   // focus to whatever mode was active (usually the action buttons).
-  // Trailers modal (redesign B): a language row + a list of the title's YouTube
-  // trailers; picking one opens the embedded player (openTrailer). Reuses the
-  // unified settings-modal look. Languages come from each trailer's `lang`
-  // (backend fetched uk/ru/en in one call).
+  // Trailers modal (redesign B): a language row (always uk/ru/en, plus any
+  // other language TMDB tagged) + a list of the title's YouTube trailers;
+  // picking one opens the embedded player (openTrailer). A language TMDB has
+  // no videos in is searched on YouTube through the backend (getTrailers) when
+  // first selected; results are appended after the TMDB ones.
   function langLabel(code: string): string {
     if (code === 'uk') return 'Українська';
     if (code === 'ru') return 'Русский';
@@ -480,14 +482,20 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
   function openTrailersModal(card: Card, trailers: Trailer[]): void {
     const returnMode = lastMode;
 
-    // Distinct languages present, stable order.
-    const langs: string[] = [];
-    for (let i = 0; i < trailers.length; i++) {
-      const l = trailers[i].lang || '';
-      if (langs.indexOf(l) === -1) langs.push(l);
+    // Untagged TMDB videos count as English.
+    function trLang(tr: Trailer): string {
+      return tr.lang || 'en';
     }
-    let curLang = langs.length ? langs[0] : '';
-    const multiLang = langs.length > 1;
+    const langs: string[] = ['uk', 'ru', 'en'];
+    for (let i = 0; i < trailers.length; i++) {
+      if (langs.indexOf(trLang(trailers[i])) === -1) langs.push(trLang(trailers[i]));
+    }
+    let curLang: string = langs.indexOf(getLang()) >= 0 ? getLang() : 'en';
+    const multiLang = true;
+    // YouTube-searched trailers per language (undefined = not asked yet).
+    const searched: { [lang: string]: Trailer[] | undefined } = {};
+    const searching: { [lang: string]: boolean } = {};
+    let closed = false;
 
     const overlay = el('div', 'action-sheet-overlay');
     const box = el('div', 'action-sheet');
@@ -511,6 +519,7 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
     let lastFilter: HTMLElement | false = false;
 
     function close(): void {
+      closed = true;
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
       Controller.toggle(returnMode);
     }
@@ -594,8 +603,45 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
     function renderList(): void {
       empty(listBody);
       lastItem = false;
+      // TMDB trailers in this language first, then the YouTube-found ones
+      // (deduped by video id). Not searched yet → ask the backend once.
+      const list: Trailer[] = [];
+      const have: { [key: string]: boolean } = {};
       for (let i = 0; i < trailers.length; i++) {
-        if (multiLang && (trailers[i].lang || '') !== curLang) continue;
+        if (trLang(trailers[i]) === curLang && !have[trailers[i].key]) {
+          have[trailers[i].key] = true;
+          list.push(trailers[i]);
+        }
+      }
+      const extra = searched[curLang];
+      if (extra) {
+        for (let i = 0; i < extra.length; i++) {
+          if (!have[extra[i].key]) {
+            have[extra[i].key] = true;
+            list.push(extra[i]);
+          }
+        }
+      } else if (!searching[curLang]) {
+        searching[curLang] = true;
+        (function (lang: string) {
+          getTrailers(card.type, card.tmdb_id, lang).then(
+            function (res) {
+              searched[lang] = (res && res.trailers) || [];
+              searching[lang] = false;
+              if (!closed && curLang === lang) renderList();
+            },
+            function () {
+              searched[lang] = [];
+              searching[lang] = false;
+              if (!closed && curLang === lang) renderList();
+            }
+          );
+        })(curLang);
+      }
+      if (!list.length) {
+        listBody.appendChild(el('div', 'settings-modal__empty', t(extra ? 'title.trailer_unavailable' : 'title.trailer_searching')));
+      }
+      for (let i = 0; i < list.length; i++) {
         (function (tr: Trailer) {
           const item = el('div', 'trailer-card selector');
           const thumb = el('div', 'trailer-card__thumb');
@@ -623,8 +669,10 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
             openTrailer(tr);
           });
           listBody.appendChild(item);
-        })(trailers[i]);
+        })(list[i]);
       }
+      // A late YouTube result must not yank the ring off the language row.
+      if (Controller.enabled().name === 'title_trailers_filters') return;
       Controller.collectionSet(listBody);
       Controller.collectionFocus(lastItem || false, listBody);
     }
@@ -926,12 +974,11 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
     const torrents = torrentsEnabled() ? makeAction(ICON_TORRENT, t('title.torrents'), false).btn : null;
 
     // ---- trailer (YouTube) — only when the backend supplied trailers -------
-    if (card.trailers && card.trailers.length) {
-      const trailerBtn = makeAction(ICON_TRAILER, t('title.trailer'), false).btn;
-      on(trailerBtn, 'hover:enter', function () {
-        openTrailersModal(card, card.trailers as Trailer[]);
-      });
-    }
+    // Always offered: languages TMDB lacks are searched on YouTube in the modal.
+    const trailerBtn = makeAction(ICON_TRAILER, t('title.trailer'), false).btn;
+    on(trailerBtn, 'hover:enter', function () {
+      openTrailersModal(card, (card.trailers || []) as Trailer[]);
+    });
 
     // ---- bookmark toggle ("В обране" / "Прибрати") ----
     let bookmarkBusy = false;

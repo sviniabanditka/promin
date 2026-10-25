@@ -97,6 +97,7 @@ func NewServer(
 	mux.HandleFunc("GET /api/v1/catalog/title/{tmdb_id}", requireAuth(authSvc, cat.title))
 	mux.HandleFunc("GET /api/v1/catalog/person/{id}", requireAuth(authSvc, cat.person))
 	mux.HandleFunc("GET /api/v1/catalog/genres", requireAuth(authSvc, cat.genres))
+	mux.HandleFunc("GET /api/v1/catalog/trailers", requireAuth(authSvc, cat.trailers))
 	mux.HandleFunc("GET /api/v1/catalog/backdrops", requireAuth(authSvc, cat.backdrops))
 
 	// Screensaver forecast strip. Its own endpoint (not part of catalog) and

@@ -420,6 +420,12 @@ export function getTitle(type: string, id: number | string, params?: QueryParams
   return get<Card>('/catalog/title/' + encodeURIComponent(String(id)), p);
 }
 
+// YouTube-searched trailers in `lang` (uk|ru|en) — for the languages TMDB has
+// no videos in. Server-side anonymous results-page search, cached a week.
+export function getTrailers(type: string, id: number | string, lang: string): Promise<{ trailers?: Trailer[] }> {
+  return get<{ trailers?: Trailer[] }>('/catalog/trailers', { type: type, tmdb_id: id, lang: lang }, 12000);
+}
+
 export function getTitleSeason(type: string, id: number | string, season: number): Promise<SeasonResponse> {
   return get<SeasonResponse>('/catalog/title/' + encodeURIComponent(String(id)), {
     type: type,
