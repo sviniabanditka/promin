@@ -31,18 +31,31 @@ const (
 )
 
 // PersonalRows builds the personalized shelves (recommendation + themed) for
-// an authenticated user from their finished-title seeds. seen is the shared
+// an authenticated user from their liked-title and finished-title seeds. seen is the shared
 // exclude+dedup set (starts as the watched-set); each shelf adds its picks so
 // no title repeats across shelves. epochDay drives daily seed rotation.
 // Returns shelves in display order; nil/thin shelves are dropped.
-func (s *Service) PersonalRows(ctx context.Context, lang string, finished []store.Timecode, seen map[int]bool, epochDay int) []Row {
-	if len(finished) == 0 {
+func (s *Service) PersonalRows(ctx context.Context, lang string, liked, finished []store.Timecode, seen map[int]bool, epochDay int) []Row {
+	if len(finished) == 0 && len(liked) == 0 {
 		return nil
 	}
 	if seen == nil {
 		seen = map[int]bool{}
 	}
-	rows := make([]Row, 0, 3)
+	rows := make([]Row, 0, 4)
+
+	// Shelf L: "Because you liked «X»" from a liked title rotated daily — an
+	// explicit 👍 is the strongest signal we have, so it goes first.
+	if len(liked) > 0 {
+		seedL := liked[epochDay%len(liked)]
+		if row := s.recsRow(lang, mediaTypeOr(seedL.MediaType), int(seedL.TMDBID), seen, likedTitle); row != nil {
+			row.ID = "liked:" + mediaTypeOr(seedL.MediaType) + ":" + strconv.FormatInt(seedL.TMDBID, 10)
+			rows = append(rows, *row)
+		}
+	}
+	if len(finished) == 0 {
+		return rows
+	}
 
 	// Shelf A: recommendations from the most-recently-finished title.
 	seedA := finished[0]
@@ -82,6 +95,10 @@ func (s *Service) PersonalRows(ctx context.Context, lang string, finished []stor
 // anything in exclude. Cache-only → nil on cache miss. Adds its picks to
 // exclude (cross-shelf dedup).
 func (s *Service) RecsRow(lang, mediaType string, seedID int, exclude map[int]bool) *Row {
+	return s.recsRow(lang, mediaType, seedID, exclude, recsTitle)
+}
+
+func (s *Service) recsRow(lang, mediaType string, seedID int, exclude map[int]bool, title func(name, lang string) string) *Row {
 	d, ok := s.client.cachedDetail(mediaType, seedID, lang)
 	if !ok {
 		return nil
@@ -98,7 +115,7 @@ func (s *Service) RecsRow(lang, mediaType string, seedID int, exclude map[int]bo
 	if name == "" {
 		name = d.Name
 	}
-	return &Row{ID: "recs:" + mediaType + ":" + strconv.Itoa(seedID), Title: recsTitle(name, lang), Items: picked}
+	return &Row{ID: "recs:" + mediaType + ":" + strconv.Itoa(seedID), Title: title(name, lang), Items: picked}
 }
 
 // ThemedRow builds a "{genre} · {actor}" shelf from a movie seed's top-billed
@@ -213,6 +230,17 @@ func recsTitle(name, lang string) string {
 		return "Because you watched “" + name + "”"
 	default:
 		return "Тому що ви дивилися «" + name + "»"
+	}
+}
+
+func likedTitle(name, lang string) string {
+	switch normalizeLang(lang) {
+	case "ru":
+		return "Потому что вам понравилось «" + name + "»"
+	case "en":
+		return "Because you liked “" + name + "”"
+	default:
+		return "Тому що вам сподобалося «" + name + "»"
 	}
 }
 

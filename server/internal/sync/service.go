@@ -25,6 +25,7 @@ const (
 // docs/backend.md
 type Service struct {
 	bookmarks *store.BookmarksRepo
+	reactions *store.ReactionsRepo
 	playlists *store.PlaylistsRepo
 	timecodes *store.TimecodesRepo
 	settings  *store.SettingsRepo
@@ -37,6 +38,7 @@ type Service struct {
 func NewService(db *store.DB, hub *Hub) *Service {
 	return &Service{
 		bookmarks: db.Bookmarks,
+		reactions: db.Reactions,
 		playlists: db.Playlists,
 		timecodes: db.Timecodes,
 		settings:  db.Settings,
@@ -93,6 +95,39 @@ func (s *Service) RemoveBookmark(userID, tmdbID int64, mediaType string) error {
 	}
 	s.hub.Publish(userID, EventBookmarkRemoved, BookmarkDTO{TMDBID: tmdbID, MediaType: mediaType})
 	return nil
+}
+
+// --- Reactions (like / dislike) --------------------------------------------
+
+func (s *Service) ListReactions(userID int64) ([]ReactionDTO, error) {
+	rows, err := s.reactions.List(userID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ReactionDTO, 0, len(rows))
+	for _, x := range rows {
+		out = append(out, ReactionDTO{TMDBID: x.TMDBID, MediaType: x.MediaType, Value: x.Value, UpdatedAt: x.UpdatedAt})
+	}
+	return out, nil
+}
+
+// SetReaction stores value (1 like, -1 dislike, 0 clear) and publishes it.
+func (s *Service) SetReaction(userID, tmdbID int64, mediaType string, value int) (ReactionDTO, error) {
+	if !validMediaType(mediaType) {
+		return ReactionDTO{}, ErrInvalidMediaType
+	}
+	if value > 0 {
+		value = 1
+	} else if value < 0 {
+		value = -1
+	}
+	now := s.now().Unix()
+	if err := s.reactions.Set(userID, tmdbID, mediaType, value, now); err != nil {
+		return ReactionDTO{}, err
+	}
+	dto := ReactionDTO{TMDBID: tmdbID, MediaType: mediaType, Value: value, UpdatedAt: now}
+	s.hub.Publish(userID, EventReactionSet, dto)
+	return dto, nil
 }
 
 // --- Playlists ------------------------------------------------------------
@@ -294,6 +329,10 @@ func (s *Service) Bootstrap(userID int64) (BootstrapDTO, error) {
 	if err != nil {
 		return BootstrapDTO{}, err
 	}
+	reactions, err := s.ListReactions(userID)
+	if err != nil {
+		return BootstrapDTO{}, err
+	}
 	playlists, err := s.ListPlaylists(userID)
 	if err != nil {
 		return BootstrapDTO{}, err
@@ -321,6 +360,7 @@ func (s *Service) Bootstrap(userID int64) (BootstrapDTO, error) {
 
 	return BootstrapDTO{
 		Bookmarks: bookmarks,
+		Reactions: reactions,
 		Playlists: playlists,
 		Timecodes: timecodes,
 		Settings:  settings,
@@ -358,7 +398,7 @@ func (s *Service) ClearHistory(userID int64) error {
 // (httpapi) then revokes every session so all devices fall back to the PIN gate.
 func (s *Service) ClearAll(userID int64) error {
 	for _, f := range []func(int64) error{
-		s.bookmarks.ClearUser, s.playlists.ClearUser, s.timecodes.ClearUser, s.settings.ClearUser, s.queue.ClearUser,
+		s.bookmarks.ClearUser, s.reactions.ClearUser, s.playlists.ClearUser, s.timecodes.ClearUser, s.settings.ClearUser, s.queue.ClearUser,
 	} {
 		if err := f(userID); err != nil {
 			return err

@@ -407,23 +407,6 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     };
     return b;
   }
-  // Icon + visible caption (+ small state value): the left "what am I
-  // watching" group — Episodes / Audio / Subtitles — reads without focusing.
-  function makeLabeledButton(cls: string, icon: string, labelKey: string, onEnter: () => void): HTMLElement {
-    const b = el('div', 'player-panel__' + cls + ' button button--labeled selector');
-    b.innerHTML = icon;
-    b.appendChild(el('span', 'button__label', t(labelKey)));
-    const value = el('span', 'button__value', '');
-    b.appendChild(value);
-    on(b, 'hover:focus', function () {
-      lastFocused = b;
-    });
-    on(b, 'hover:enter', onEnter);
-    (b as unknown as { _setLabel: (s: string) => void })._setLabel = function (s: string) {
-      value.textContent = s;
-    };
-    return b;
-  }
   // Tooltip-style name shown above a focused icon button (CSS ::after).
   function nameBtn(b: HTMLElement, key: string): void {
     b.setAttribute('data-label', t(key));
@@ -432,19 +415,27 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     const fn = (b as unknown as { _setLabel?: (s: string) => void })._setLabel;
     if (fn) fn(s);
   }
+  // Icon-only Subtitles button: the active track lives in the tooltip.
+  function subsTip(s: string): void {
+    btnSubs.setAttribute('data-label', t('player.subs') + (s ? ': ' + s : ''));
+  }
 
   // Line two: left (episode nav) / center (transport) / right (options) —
   // the full Lampa footer button row. Every button is built once; unavailable
   // ones carry .hide (Navigator skips display:none), toggled by refreshButtons.
   const lineTwo = el('div', 'player-panel__line player-panel__line-two');
 
-  // LEFT — "what am I watching": Episodes / Audio / Subtitles with captions,
-  // plus the next-episode name.
+  // LEFT — "what am I watching": Episodes / Audio / Subtitles as plain icons
+  // (the captioned pills overflowed at 720p); the focused one shows its name
+  // — and for Audio the current dub — in the tooltip. Plus the next-episode name.
   const left = el('div', 'player-panel__left');
-  const btnEpisodes = makeLabeledButton('episodes', ICO_EPISODES, 'player.episodes', openEpisodesMenu);
+  const btnEpisodes = makeIconButton('episodes', ICO_EPISODES, openEpisodesMenu);
   btnEpisodes.classList.add('hide');
-  const btnVoice = makeLabeledButton('voice', ICO_VOICE, 'player.voice', openVoiceMenu);
-  const btnSubs = makeLabeledButton('subs', ICO_SUBS, 'player.subs', openSubsMenu);
+  const btnVoice = makeIconButton('voice', ICO_VOICE, openVoiceMenu);
+  const btnSubs = makeIconButton('subs', ICO_SUBS, openSubsMenu);
+  nameBtn(btnEpisodes, 'player.episodes');
+  nameBtn(btnVoice, 'player.voice');
+  nameBtn(btnSubs, 'player.subs');
   const nextName = el('div', 'player-panel__next-episode-name hide');
   left.appendChild(btnEpisodes);
   left.appendChild(btnVoice);
@@ -662,12 +653,12 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     updateQualityButton();
     updateSubsButton();
     btnEpisodes.classList.toggle('hide', !ctx.onEpisodes);
-    // Caption value: the dub that's playing (from the source's list).
+    // Tooltip: the dub that's playing (from the source's list).
     let vname = '';
     for (let i = 0; i < (media.voices || []).length; i++) {
       if (media.voices[i].id === media.currentVoice) vname = media.voices[i].name;
     }
-    setLabel(btnVoice, vname);
+    btnVoice.setAttribute('data-label', t('player.voice') + (vname ? ': ' + vname : ''));
     const series = seriesNav();
     btnTStart.innerHTML = series ? ICO_PREV : ICO_TSTART;
     btnTEnd.innerHTML = series ? ICO_NEXT : ICO_TEND;
@@ -957,7 +948,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
     } catch (e) {
       /* ignore */
     }
-    setLabel(btnSubs, tr.name || tr.lang || 'sub');
+    subsTip(tr.name || tr.lang || 'sub');
   }
   // Paint the active cues of every hidden TextTrack (ours, or hls.js's). Tags
   // are stripped; line breaks survive via white-space: pre-line.
@@ -1007,7 +998,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       }
     }
     if (!sub) {
-      if (btnSubs) setLabel(btnSubs, t('player.off'));
+      subsTip('');
       return;
     }
     const track = document.createElement('track');
@@ -1021,7 +1012,7 @@ function mountPlayer(container: HTMLElement, ctx: PlayerContext): ScreenInstance
       // hidden, not showing: cues load, the browser doesn't paint them — we do.
       if (track.track) (track.track as unknown as { mode: string }).mode = 'hidden';
     }, 0);
-    if (btnSubs) setLabel(btnSubs, sub.label || sub.lang || 'on');
+    subsTip(sub.label || sub.lang || 'on');
   }
 
   // ---- popup menus (quality / voice / subs) ----

@@ -46,7 +46,7 @@ import { Background } from '../ui/background';
 import { buildMenu, Menu } from '../ui/menu';
 import { buildHead, Head } from '../ui/head';
 import { buildFooter } from '../ui/shell';
-import { iconEl, ICON_PLAY, ICON_TORRENT, ICON_BOOKMARK, ICON_PLAYLIST, ICON_CHECK, ICON_TRAILER, ICON_FOLDER } from '../ui/icons';
+import { iconEl, ICON_PLAY, ICON_TORRENT, ICON_BOOKMARK, ICON_PLAYLIST, ICON_CHECK, ICON_TRAILER, ICON_FOLDER, ICON_THUMB_UP, ICON_THUMB_DOWN } from '../ui/icons';
 import { openLogin, openTitle } from './nav';
 import { toast } from '../ui/toast';
 import { isLogged } from '../core/auth';
@@ -157,6 +157,7 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
   // Track which mode to restore on resume.
   let lastMode = 'title';
   let unsubBookmarks: (() => void) | null = null;
+  let unsubReactions: (() => void) | null = null;
   let destroyed = false;
 
   // Full-screen spinner shown while a source resolves to concrete streams
@@ -291,6 +292,49 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
   }
 
   // Modal (mode 'title_playlist') listing the user's playlists; OK adds this
+  // Full overview in a scrollable modal (the page clamps it to 3 lines).
+  function openOverviewModal(title: string, text: string): void {
+    const returnMode = lastMode;
+    const overlay = el('div', 'settings-modal');
+    const box = el('div', 'settings-modal__box settings-modal__box--text');
+    box.appendChild(el('div', 'settings-modal__title', title || t('title.overview')));
+    const textScroll = new Scroll({ mask: true, over: true });
+    const textWrap = el('div', 'settings-modal__text');
+    textWrap.appendChild(textScroll.render());
+    textScroll.body().appendChild(el('div', 'settings-modal__text-body', text));
+    box.appendChild(textWrap);
+    overlay.appendChild(box);
+    container.appendChild(overlay);
+
+    function close(): void {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      Controller.toggle(returnMode);
+      Controller.remove('title_overview');
+    }
+    on(overlay, 'hover:enter', close);
+
+    Controller.add('title_overview', {
+      toggle: function () {
+        Controller.collectionSet(overlay);
+        Controller.collectionFocus(false, overlay);
+      },
+      up: function () {
+        textScroll.scrollBy(-200, true);
+      },
+      down: function () {
+        textScroll.scrollBy(200, true);
+      },
+      enter: function () {
+        close();
+      },
+      back: function () {
+        close();
+      },
+    });
+    Controller.toggle('title_overview');
+    lastMode = returnMode;
+  }
+
   // title to the chosen one. Returns focus to whatever mode was active.
   function openPlaylistPicker(card: Card): void {
     const returnMode = lastMode;
@@ -838,8 +882,15 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
     }
     if (rateLine.firstChild) right.appendChild(rateLine);
 
+    // Overview is clamped to 3 lines; OK (or Up from the buttons) opens the
+    // full text in a scrollable modal.
+    let desc: HTMLElement | null = null;
     if (card.overview) {
-      right.appendChild(el('div', 'full-start-new__description', card.overview));
+      desc = el('div', 'full-start-new__description selector', card.overview);
+      right.appendChild(desc);
+      on(desc, 'hover:enter', function () {
+        openOverviewModal(card.title || '', card.overview || '');
+      });
     }
 
     // ---- action buttons (Lampa full-start__button) ----
@@ -922,6 +973,33 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
     if (unsubBookmarks) unsubBookmarks();
     unsubBookmarks = sync.subscribe('bookmarks', refreshBookmark);
 
+    // ---- like / dislike (👍 / 👎) — the active one is highlighted; pressing
+    // it again clears. Likes seed home shelves, dislikes hide titles from them.
+    const likeBtn = makeAction(ICON_THUMB_UP, t('title.like'), false).btn;
+    const dislikeBtn = makeAction(ICON_THUMB_DOWN, t('title.dislike'), false).btn;
+    function refreshReaction(): void {
+      const v = sync.getReaction(card.tmdb_id, card.type);
+      likeBtn.classList.toggle('button--active', v > 0);
+      dislikeBtn.classList.toggle('button--active', v < 0);
+    }
+    refreshReaction();
+    function react(value: number): void {
+      if (!isLogged()) {
+        openLogin();
+        return;
+      }
+      sync.toggleReaction(card.tmdb_id, card.type, value);
+      refreshReaction();
+    }
+    on(likeBtn, 'hover:enter', function () {
+      react(1);
+    });
+    on(dislikeBtn, 'hover:enter', function () {
+      react(-1);
+    });
+    if (unsubReactions) unsubReactions();
+    unsubReactions = sync.subscribe('reactions', refreshReaction);
+
     // ---- add-to-playlist ("Додати в плейлист") ----
     const playlistBtn = makeAction(ICON_PLAYLIST, t('title.playlist_add'), false).btn;
     on(playlistBtn, 'hover:enter', function () {
@@ -1002,11 +1080,30 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
         // → torrents), not always online.
         openWatchModal(card, seasons, (lastAction === torrents && torrents) || !watch ? 'torrents' : 'online');
       },
+      up: function () {
+        if (desc) toggleMode('title_desc');
+      },
       back: function () {
         router.back();
       },
     };
     Controller.add('title', actionsController);
+    // Overview focused (Up from the buttons): OK opens the full text.
+    Controller.add('title_desc', {
+      toggle: function () {
+        Controller.collectionSet(right);
+        Controller.collectionFocus(desc || false, right);
+      },
+      down: function () {
+        toggleMode('title');
+      },
+      left: function () {
+        Controller.toggle('menu');
+      },
+      back: function () {
+        router.back();
+      },
+    });
 
     toggleMode('title');
   }
@@ -2574,6 +2671,7 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
       destroyed = true;
       head.destroy();
       if (unsubBookmarks) unsubBookmarks();
+      if (unsubReactions) unsubReactions();
       if (closeTrailer) closeTrailer(true);
     },
     pause: function () {

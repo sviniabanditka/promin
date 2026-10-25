@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/sviniabanditka/promin/server/internal/catalog"
+	"github.com/sviniabanditka/promin/server/internal/store"
 	"github.com/sviniabanditka/promin/server/internal/sync"
 )
 
@@ -65,7 +66,7 @@ func (h *catalogHandlers) personalizeHome(r *http.Request, lang string, userID i
 	epochDay := int(time.Now().Unix() / 86400)
 
 	var continueRow *catalog.Row
-	if tcs, err := h.syncSvc.ListContinueWatching(userID, 0); err == nil {
+	if tcs, err := h.continueRows(userID, lang, 0); err == nil {
 		continueRow = h.svc.ContinueWatchingRow(ctx, lang, tcs)
 	}
 
@@ -74,9 +75,26 @@ func (h *catalogHandlers) personalizeHome(r *http.Request, lang string, userID i
 		seen = map[int]bool{}
 	}
 
+	// Likes seed shelves; dislikes leave every shelf (editorial too).
+	var liked []store.Timecode
+	disliked := map[int]bool{}
+	if reacts, err := h.syncSvc.ListReactions(userID); err == nil {
+		for _, x := range reacts {
+			if x.Value > 0 {
+				liked = append(liked, store.Timecode{TMDBID: x.TMDBID, MediaType: x.MediaType, UpdatedAt: x.UpdatedAt})
+			} else if x.Value < 0 {
+				disliked[int(x.TMDBID)] = true
+				seen[int(x.TMDBID)] = true
+			}
+		}
+	}
+	if len(disliked) > 0 {
+		editorial = dropItems(editorial, disliked)
+	}
+
 	var personal []catalog.Row
-	if finished, err := h.syncSvc.ListFinished(userID, 10); err == nil && len(finished) >= 2 {
-		personal = h.svc.PersonalRows(ctx, lang, finished, seen, epochDay)
+	if finished, err := h.syncSvc.ListFinished(userID, 10); err == nil && (len(finished) >= 2 || len(liked) > 0) {
+		personal = h.svc.PersonalRows(ctx, lang, liked, finished, seen, epochDay)
 		if len(personal) > 0 {
 			editorial = dropRows(editorial, "popular_movies", "popular_tv")
 		}
@@ -93,6 +111,23 @@ func (h *catalogHandlers) personalizeHome(r *http.Request, lang string, userID i
 		out = append(out, *providerRow)
 	}
 	out = append(out, editorial...)
+	return out
+}
+
+// dropItems returns rows with the given tmdb ids removed from every row
+// (shared editorial rows are copied, never mutated).
+func dropItems(rows []catalog.Row, ids map[int]bool) []catalog.Row {
+	out := make([]catalog.Row, 0, len(rows))
+	for _, row := range rows {
+		items := make([]catalog.Title, 0, len(row.Items))
+		for _, it := range row.Items {
+			if !ids[it.TMDBID] {
+				items = append(items, it)
+			}
+		}
+		row.Items = items
+		out = append(out, row)
+	}
 	return out
 }
 

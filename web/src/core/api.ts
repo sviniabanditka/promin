@@ -739,6 +739,22 @@ export interface Bookmark {
   rating?: number | null;
 }
 
+// Like (1) / dislike (-1) on a title (docs/api.md).
+export interface Reaction {
+  tmdb_id: number;
+  media_type: string;
+  value: number;
+  updated_at?: number;
+}
+
+export function getReactions(): Promise<{ reactions?: Reaction[] }> {
+  return get<{ reactions?: Reaction[] }>('/reactions');
+}
+
+export function setReaction(tmdbId: number, mediaType: string, value: number): Promise<Reaction> {
+  return put<Reaction>('/reactions', { tmdb_id: tmdbId, media_type: mediaType, value: value });
+}
+
 export interface BookmarksResponse {
   bookmarks?: Bookmark[];
   items?: Bookmark[];
@@ -824,6 +840,13 @@ export function getContinue(limit?: number): Promise<ContinueResponse> {
   return get<ContinueResponse>('/timecodes/continue', p);
 }
 
+// Finished titles (movie ≥90 %, series: last episode ≥90 %) — Library shelf.
+export function getFinished(limit?: number): Promise<ContinueResponse> {
+  const p: QueryParams = {};
+  if (limit != null) p.limit = limit;
+  return get<ContinueResponse>('/timecodes/finished', p);
+}
+
 // ---- settings (docs/api.md) ---------------------------------------------
 
 export interface SettingsResponse {
@@ -853,6 +876,7 @@ export interface SyncEventsResponse {
 
 export interface SyncBootstrap {
   bookmarks?: Bookmark[];
+  reactions?: Reaction[];
   timecodes?: Array<TimecodeRecord & { tmdb_id: number; media_type: string; season?: number | null; episode?: number | null }>;
   settings?: { [k: string]: string };
   cursor: number;

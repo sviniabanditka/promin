@@ -185,6 +185,9 @@ func NewServer(
 	mux.HandleFunc("POST /api/v1/bookmarks", requireAuth(authSvc, syncH.addBookmark))
 	mux.HandleFunc("DELETE /api/v1/bookmarks/{tmdb_id}", requireAuth(authSvc, syncH.removeBookmark))
 
+	mux.HandleFunc("GET /api/v1/reactions", requireAuth(authSvc, syncH.listReactions))
+	mux.HandleFunc("PUT /api/v1/reactions", requireAuth(authSvc, syncH.setReaction))
+
 	mux.HandleFunc("GET /api/v1/playlists", requireAuth(authSvc, syncH.listPlaylists))
 	mux.HandleFunc("POST /api/v1/playlists", requireAuth(authSvc, syncH.createPlaylist))
 	mux.HandleFunc("PATCH /api/v1/playlists/{id}", requireAuth(authSvc, syncH.renamePlaylist))
@@ -193,7 +196,10 @@ func NewServer(
 	mux.HandleFunc("POST /api/v1/playlists/{id}/items", requireAuth(authSvc, syncH.addPlaylistItem))
 	mux.HandleFunc("DELETE /api/v1/playlists/{id}/items/{item_id}", requireAuth(authSvc, syncH.removePlaylistItem))
 
-	mux.HandleFunc("GET /api/v1/timecodes/continue", requireAuth(authSvc, syncH.continueWatching))
+	// continue / finished need both the timecodes and the TMDB cache (a series
+	// counts as finished only once its LAST episode is watched) — catalogHandlers.
+	mux.HandleFunc("GET /api/v1/timecodes/continue", requireAuth(authSvc, cat.continueWatching))
+	mux.HandleFunc("GET /api/v1/timecodes/finished", requireAuth(authSvc, cat.finished))
 	mux.HandleFunc("GET /api/v1/timecodes/{tmdb_id}", requireAuth(authSvc, syncH.getTimecode))
 	mux.HandleFunc("POST /api/v1/timecodes", requireAuth(authSvc, syncH.upsertTimecode))
 

@@ -173,10 +173,10 @@ func normalizeDetail(d tmdbDetail, mediaType string, requestedSeason int, season
 const (
 	maxCastMembers  = 20
 	maxRelatedItems = 20
-	// maxTrailers caps the "trailers" list at a reasonable card size — TMDB
-	// videos can include many teasers/clips/featurettes in every language
-	// it has entries for, most not worth surfacing.
-	maxTrailers = 12
+	// maxTrailers caps the "trailers" list PER LANGUAGE — TMDB videos can
+	// include many teasers/clips/featurettes in every language, and a global
+	// cap let a dozen English clips crowd out the only Ukrainian trailer.
+	maxTrailers = 6
 )
 
 // normalizeCast converts TMDB's credits.cast (already order-sorted by
@@ -250,12 +250,13 @@ func normalizeTrailers(videos []tmdbVideo) []Trailer {
 		return trailerRank(yt[i]) < trailerRank(yt[j])
 	})
 
-	n := len(yt)
-	if n > maxTrailers {
-		n = maxTrailers
-	}
-	out := make([]Trailer, 0, n)
-	for _, v := range yt[:n] {
+	perLang := map[string]int{}
+	out := make([]Trailer, 0, len(yt))
+	for _, v := range yt {
+		if perLang[v.Iso6391] >= maxTrailers {
+			continue
+		}
+		perLang[v.Iso6391]++
 		out = append(out, Trailer{
 			Key:        v.Key,
 			Name:       v.Name,

@@ -30,6 +30,7 @@ type DB struct {
 	TV           *TVRepo
 	Skips        *SkipsRepo
 	Recordings   *RecordingsRepo
+	Reactions    *ReactionsRepo
 }
 
 // Open opens (creating if necessary) the SQLite database at path, applies
@@ -90,6 +91,7 @@ func Open(path string) (*DB, error) {
 		TV:           &TVRepo{db: sqlDB},
 		Skips:        &SkipsRepo{db: sqlDB},
 		Recordings:   &RecordingsRepo{db: sqlDB},
+		Reactions:    &ReactionsRepo{db: sqlDB},
 	}, nil
 }
 

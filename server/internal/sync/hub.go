@@ -25,6 +25,7 @@ type Event struct {
 const (
 	EventBookmarkAdded       = "bookmark_added"
 	EventBookmarkRemoved     = "bookmark_removed"
+	EventReactionSet         = "reaction_set" // payload ReactionDTO (value 0 = cleared)
 	EventPlaylistCreated     = "playlist_created"
 	EventPlaylistUpdated     = "playlist_updated"
 	EventPlaylistItemAdded   = "playlist_item_added"

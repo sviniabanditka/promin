@@ -16,6 +16,10 @@ import {
   getBookmarks,
   addBookmark,
   removeBookmark,
+  setReaction as apiSetReaction,
+  getTitleCached,
+  Card,
+  Reaction,
   upsertTimecode,
   postQueuePop,
   Bookmark,
@@ -40,6 +44,8 @@ const CACHE_KEY = 'promin:sync-cache';
 
 // bookmarks keyed "tmdb:media_type"; timecodes keyed "tmdb:media_type:s:e".
 let bookmarks: { [key: string]: Bookmark } = {};
+// reactions keyed "tmdb:media_type" → 1 (like) / -1 (dislike).
+let reactions: { [key: string]: Reaction } = {};
 let timecodes: { [key: string]: CachedTimecode } = {};
 // Watch queue (docs/miniapp.md): server snapshot only, never persisted — it is
 // only useful with a live session anyway.
@@ -72,7 +78,7 @@ function persistNow(): void {
   try {
     window.localStorage.setItem(
       CACHE_KEY,
-      JSON.stringify({ bookmarks: bookmarks, timecodes: timecodes, cursor: cursor })
+      JSON.stringify({ bookmarks: bookmarks, reactions: reactions, timecodes: timecodes, cursor: cursor })
     );
   } catch (e) {
     /* ignore quota / unavailable */
@@ -92,8 +98,9 @@ function loadPersisted(): void {
   try {
     const raw = window.localStorage.getItem(CACHE_KEY);
     if (!raw) return;
-    const data = JSON.parse(raw) as { bookmarks?: typeof bookmarks; timecodes?: typeof timecodes; cursor?: number };
+    const data = JSON.parse(raw) as { bookmarks?: typeof bookmarks; reactions?: typeof reactions; timecodes?: typeof timecodes; cursor?: number };
     if (data.bookmarks) bookmarks = data.bookmarks;
+    if (data.reactions) reactions = data.reactions;
     if (data.timecodes) timecodes = data.timecodes;
     if (typeof data.cursor === 'number') cursor = data.cursor;
   } catch (e) {
@@ -105,6 +112,7 @@ function resetCache(): void {
   if (persistTimer) window.clearTimeout(persistTimer); // a pending write must not resurrect the old cache
   persistTimer = 0;
   bookmarks = {};
+  reactions = {};
   timecodes = {};
   queue = [];
   cursor = 0;
@@ -117,7 +125,7 @@ function resetCache(): void {
 
 // ---- event emitter -----------------------------------------------------
 
-type Topic = 'bookmarks' | 'timecodes' | 'queue';
+type Topic = 'bookmarks' | 'reactions' | 'timecodes' | 'queue';
 const subscribers: { [topic: string]: Array<() => void> } = {};
 
 // Subscribe a screen to cache changes for a topic. Returns an unsubscribe fn.
@@ -155,6 +163,75 @@ export function getBookmarksList(): Bookmark[] {
 
 export function isBookmarked(tmdbId: number, mediaType: string): boolean {
   return Object.prototype.hasOwnProperty.call(bookmarks, bkey(tmdbId, mediaType));
+}
+
+// 1 like, -1 dislike, 0 none.
+export function getReaction(tmdbId: number, mediaType: string): number {
+  const r = reactions[bkey(tmdbId, mediaType)];
+  return r ? r.value : 0;
+}
+
+// Reactions with the given value, most recent first.
+export function getReactionsList(value: number): Reaction[] {
+  const out: Reaction[] = [];
+  for (const k in reactions) {
+    if (Object.prototype.hasOwnProperty.call(reactions, k) && reactions[k].value === value) out.push(reactions[k]);
+  }
+  out.sort(function (a, b) {
+    return (b.updated_at || 0) - (a.updated_at || 0);
+  });
+  return out;
+}
+
+// Cards for Library lanes from bookmark/reaction rows. The server rows carry
+// only ids: posters come from the (5-min memo) title cache, and are written
+// back onto the bookmark entry so the next paint is instant. Rows whose title
+// fails to load are dropped.
+export function resolveCards(rows: Array<{ tmdb_id: number; media_type: string }>): Promise<Card[]> {
+  const jobs: Promise<Card | null>[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    (function (r: { tmdb_id: number; media_type: string }) {
+      const type = r.media_type === 'tv' ? 'tv' : 'movie';
+      const bm = bookmarks[bkey(r.tmdb_id, r.media_type)];
+      if (bm && bm.poster) {
+        jobs.push(
+          Promise.resolve({
+            tmdb_id: bm.tmdb_id,
+            type: type,
+            title: bm.title || '',
+            poster: bm.poster,
+            backdrop: bm.backdrop || null,
+            year: bm.year != null ? bm.year : null,
+            rating: bm.rating != null ? bm.rating : null,
+          } as Card)
+        );
+        return;
+      }
+      jobs.push(
+        getTitleCached(type, r.tmdb_id).then(
+          function (card) {
+            if (bm && card) {
+              bm.title = card.title;
+              bm.poster = card.poster;
+              bm.backdrop = card.backdrop;
+              bm.year = card.year;
+              bm.rating = card.rating;
+              persist();
+            }
+            return card || null;
+          },
+          function () {
+            return null;
+          }
+        )
+      );
+    })(rows[i]);
+  }
+  return Promise.all(jobs).then(function (cards) {
+    const out: Card[] = [];
+    for (let i = 0; i < cards.length; i++) if (cards[i]) out.push(cards[i] as Card);
+    return out;
+  });
 }
 
 // True once the first bootstrap attempt has settled (so the bookmarks screen
@@ -250,6 +327,30 @@ export function toggleBookmark(tmdbId: number, mediaType: string, meta?: Partial
       notify('bookmarks');
       persist();
       return false;
+    }
+  );
+}
+
+// Like / dislike. Pressing the active one again clears it. Optimistic; the
+// server echoes reaction_set to every device.
+export function toggleReaction(tmdbId: number, mediaType: string, value: number): Promise<number> {
+  const k = bkey(tmdbId, mediaType);
+  const prev = reactions[k];
+  const next = prev && prev.value === value ? 0 : value;
+  if (next === 0) delete reactions[k];
+  else reactions[k] = { tmdb_id: tmdbId, media_type: mediaType, value: next, updated_at: Math.floor(Date.now() / 1000) };
+  notify('reactions');
+  persist();
+  return apiSetReaction(tmdbId, mediaType, next).then(
+    function () {
+      return next;
+    },
+    function () {
+      if (prev) reactions[k] = prev;
+      else delete reactions[k];
+      notify('reactions');
+      persist();
+      return prev ? prev.value : 0;
     }
   );
 }
@@ -350,6 +451,13 @@ function applyEvent(ev: SyncEvent): void {
     delete bookmarks[bkey(Number(p.tmdb_id), String(p.media_type))];
     notify('bookmarks');
     persist();
+  } else if (ev.type === 'reaction_set') {
+    const rk = bkey(Number(p.tmdb_id), String(p.media_type));
+    const v = Number(p.value) || 0;
+    if (v === 0) delete reactions[rk];
+    else reactions[rk] = { tmdb_id: Number(p.tmdb_id), media_type: String(p.media_type), value: v, updated_at: Number(p.updated_at) || 0 };
+    notify('reactions');
+    persist();
   } else if (ev.type === 'timecode_updated') {
     const tmdb = Number(p.tmdb_id);
     const mt = String(p.media_type);
@@ -415,8 +523,10 @@ function applyEvent(ev: SyncEvent): void {
     notify('timecodes');
     if (p.scope === 'all') {
       bookmarks = {};
+      reactions = {};
       queue = [];
       notify('bookmarks');
+      notify('reactions');
       notify('queue');
     }
     persist();
@@ -432,8 +542,25 @@ function bootstrap(): void {
     function (snap) {
       if (!snap) return;
       const bm = snap.bookmarks || [];
+      const prevBm = bookmarks;
       bookmarks = {};
-      for (let i = 0; i < bm.length; i++) bookmarks[bkey(bm[i].tmdb_id, bm[i].media_type)] = bm[i];
+      for (let i = 0; i < bm.length; i++) {
+        const k = bkey(bm[i].tmdb_id, bm[i].media_type);
+        // Server rows carry only ids — keep the poster/title the local copy
+        // already resolved (resolveCards), or every boot repainted blank cards.
+        const old = prevBm[k];
+        if (old && old.poster) {
+          bm[i].title = old.title;
+          bm[i].poster = old.poster;
+          bm[i].backdrop = old.backdrop;
+          bm[i].year = old.year;
+          bm[i].rating = old.rating;
+        }
+        bookmarks[k] = bm[i];
+      }
+      const rx = snap.reactions || [];
+      reactions = {};
+      for (let i = 0; i < rx.length; i++) reactions[bkey(rx[i].tmdb_id, rx[i].media_type)] = rx[i];
       const tc = snap.timecodes || [];
       timecodes = {};
       for (let j = 0; j < tc.length; j++) {
@@ -452,6 +579,7 @@ function bootstrap(): void {
       if (typeof snap.cursor === 'number') cursor = snap.cursor;
       bookmarksReady = true;
       notify('bookmarks');
+      notify('reactions');
       notify('timecodes');
       notify('queue');
       persist();

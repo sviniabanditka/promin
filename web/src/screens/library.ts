@@ -2,8 +2,11 @@
 // vertical stack of horizontal lanes (home-style nav machinery):
 //   - "Продовжити"  continue-watching (GET /timecodes/continue), enriched per
 //     item via getTitle for a poster + progress bar. Skipped when empty.
-//   - "Обране"      favourites, read from the live sync cache (instant, already
-//     enriched), with a trailing "More" tile → the full favourites grid.
+//   - "Обране"      favourites from the sync cache, posters resolved through
+//     sync.resolveCards, with a trailing "More" tile → the full favourites grid.
+//   - "Сподобалося" / "Не сподобалося"  likes / dislikes (sync.getReactionsList).
+//   - "Переглянуто" finished titles (GET /timecodes/finished): a movie at ≥90 %,
+//     a series whose last episode is at ≥90 % — these leave "Продовжити".
 //   - "Плейлисти"   one tile per playlist (open its items) + a "Керувати" tile
 //     that opens the full playlists CRUD screen. Always present so the user can
 //     create the first playlist.
@@ -18,7 +21,7 @@ import Controller, { on } from '../core/controller';
 import { Scroll } from '../core/scroll';
 import { t } from '../core/i18n';
 import { ScreenInstance } from '../core/activity';
-import { getContinue, getPlaylists, getTitleCached, Card, Playlist, ContinueItem } from '../core/api';
+import { getContinue, getFinished, getPlaylists, getTitleCached, Card, Playlist, ContinueItem } from '../core/api';
 import { el } from '../ui/dom';
 import { Background } from '../ui/background';
 import { buildMenu, Menu } from '../ui/menu';
@@ -188,9 +191,11 @@ export function mountLibrary(container: HTMLElement): ScreenInstance {
   function playlistTile(pl: Playlist): HTMLElement {
     const tile = el('div', 'card card--playlist selector');
     const view = el('div', 'card__view card__more-view');
-    view.appendChild(el('div', 'card__pl-name', pl.name || ''));
+    const inner = el('div', 'card__pl');
+    inner.appendChild(el('div', 'card__pl-name', pl.name || ''));
     const n = pl.items_count != null ? pl.items_count : 0;
-    view.appendChild(el('div', 'card__pl-count', t('playlists.count', { n: String(n) })));
+    inner.appendChild(el('div', 'card__pl-count', t('playlists.count', { n: String(n) })));
+    view.appendChild(inner);
     tile.appendChild(view);
     on(tile, 'hover:enter', function () {
       openPlaylist(pl.id, pl.name || '');
@@ -198,7 +203,16 @@ export function mountLibrary(container: HTMLElement): ScreenInstance {
     return tile;
   }
 
-  function buildLanes(continueCards: Card[], playlists: Playlist[]): void {
+  interface LaneData {
+    continueCards: Card[];
+    finishedCards: Card[];
+    favCards: Card[];
+    likedCards: Card[];
+    dislikedCards: Card[];
+    playlists: Playlist[];
+  }
+
+  function buildLanes(d: LaneData): void {
     const keepLane = active; // where the user IS, in case they moved during the load
     while (wrap.firstChild) wrap.removeChild(wrap.firstChild);
     lanes = [];
@@ -225,36 +239,27 @@ export function mountLibrary(container: HTMLElement): ScreenInstance {
 
     // OK on a continue card = resume playback (the most frequent action was
     // 5-6 presses deep: title → watch → source → episode → play).
-    if (continueCards.length) addLane(t('library.continue'), cardNodes(continueCards, true));
+    if (d.continueCards.length) addLane(t('library.continue'), cardNodes(d.continueCards, true));
 
-    const favs = sync.getBookmarksList();
-    if (favs.length) {
-      const favCards: Card[] = [];
-      for (let i = 0; i < favs.length; i++) {
-        const b = favs[i];
-        favCards.push({
-          tmdb_id: b.tmdb_id,
-          type: b.media_type === 'tv' ? 'tv' : 'movie',
-          title: b.title || '',
-          poster: b.poster || null,
-          backdrop: b.backdrop || null,
-          year: b.year != null ? b.year : null,
-          rating: b.rating != null ? b.rating : null,
-        });
-      }
-      const favNodes = cardNodes(favCards);
+    if (d.favCards.length) {
+      const favNodes = cardNodes(d.favCards);
       favNodes.push(moreTile(t('catalog.more'), function () { openBookmarks(); }));
       addLane(t('library.favorites'), favNodes);
     }
+    if (d.likedCards.length) addLane(t('library.liked'), cardNodes(d.likedCards));
+    if (d.finishedCards.length) addLane(t('library.finished'), cardNodes(d.finishedCards));
 
     // Playlists lane: always present (manage tile lets the user create the first).
     const plNodes: HTMLElement[] = [];
-    for (let i = 0; i < playlists.length; i++) plNodes.push(playlistTile(playlists[i]));
+    for (let i = 0; i < d.playlists.length; i++) plNodes.push(playlistTile(d.playlists[i]));
     plNodes.push(moreTile(t('library.manage'), function () { openPlaylistsManage(); }));
     addLane(t('library.playlists'), plNodes);
 
     // Downloads (torrents moved off the rail into the Library).
     if (torrentsEnabled()) addLane(t('menu.torrents'), [moreTile(t('catalog.more'), function () { openTorrents(); })]);
+
+    // Dislikes last — rarely revisited, but the way to undo a 👎.
+    if (d.dislikedCards.length) addLane(t('library.disliked'), cardNodes(d.dislikedCards));
 
     // Hidden under a pushed screen (deep link to a playlist / bookmarks lands
     // before the lanes load): leave the controller alone, resume() takes it.
@@ -275,61 +280,59 @@ export function mountLibrary(container: HTMLElement): ScreenInstance {
     Controller.toggle('content');
   }
 
+  // Timecode rows (continue / finished) → Cards via the title cache.
+  function timecodeCards(items: ContinueItem[], withProgress: boolean): Promise<Card[]> {
+    const jobs: Promise<Card | null>[] = [];
+    for (let i = 0; i < items.length; i++) {
+      (function (rec: ContinueItem) {
+        const type = rec.media_type === 'tv' ? 'tv' : 'movie';
+        jobs.push(
+          getTitleCached(type, rec.tmdb_id).then(
+            function (card) { return card ? (withProgress ? continueCard(rec, card) : card) : null; },
+            function () { return null; }
+          )
+        );
+      })(items[i]);
+    }
+    return Promise.all(jobs).then(function (cards) {
+      const clean: Card[] = [];
+      for (let i = 0; i < cards.length; i++) if (cards[i]) clean.push(cards[i] as Card);
+      return clean;
+    });
+  }
+  function settle<T>(p: Promise<T>, fallback: T): Promise<T> {
+    return p.then(
+      function (v) { return v; },
+      function () { return fallback; }
+    );
+  }
+
   function load(silent?: boolean): void {
     // silent (resume path): keep the current lanes painted instead of blanking
     // to a full-screen spinner — buildLanes swaps them out when data arrives.
     if (!silent) showSpinner();
-    // Kicked off together with getContinue: it used to wait for the whole
-    // continue enrichment (up to 20 title fetches) before even starting.
-    const plP = getPlaylists();
-    // Continue needs per-item enrichment; playlists are one call. Favourites are
-    // read synchronously from the sync cache inside buildLanes.
-    getContinue(20).then(
-      function (res) {
-        const recs = res && res.items ? res.items : [];
-        const jobs: Promise<Card | null>[] = [];
-        for (let i = 0; i < recs.length; i++) {
-          (function (rec: ContinueItem) {
-            const type = rec.media_type === 'tv' ? 'tv' : 'movie';
-            jobs.push(
-              getTitleCached(type, rec.tmdb_id).then(
-                function (card) { return card ? continueCard(rec, card) : null; },
-                function () { return null; }
-              )
-            );
-          })(recs[i]);
-        }
-        Promise.all(jobs).then(function (cards) {
-          if (destroyed) return;
-          const clean: Card[] = [];
-          for (let i = 0; i < cards.length; i++) if (cards[i]) clean.push(cards[i] as Card);
-          plP.then(
-            function (plres) {
-              if (destroyed) return;
-              buildLanes(clean, plres && plres.playlists ? plres.playlists : []);
-            },
-            function () {
-              if (destroyed) return;
-              buildLanes(clean, []);
-            }
-          );
-        });
-      },
-      function () {
-        if (destroyed) return;
-        // Continue failed → still show favourites + playlists.
-        plP.then(
-          function (plres) {
-            if (destroyed) return;
-            buildLanes([], plres && plres.playlists ? plres.playlists : []);
-          },
-          function () {
-            if (destroyed) return;
-            buildLanes([], []);
-          }
-        );
-      }
-    );
+    // Every lane loads in parallel; a failed one is simply empty (the Library
+    // still shows the rest).
+    const none: Card[] = [];
+    const nonePl: Playlist[] = [];
+    Promise.all([
+      settle(getContinue(20).then(function (res) { return timecodeCards(res && res.items ? res.items : [], true); }), none),
+      settle(getFinished(20).then(function (res) { return timecodeCards(res && res.items ? res.items : [], false); }), none),
+      settle(sync.resolveCards(sync.getBookmarksList()), none),
+      settle(sync.resolveCards(sync.getReactionsList(1)), none),
+      settle(sync.resolveCards(sync.getReactionsList(-1)), none),
+      settle(getPlaylists().then(function (res) { return res && res.playlists ? res.playlists : nonePl; }), nonePl),
+    ]).then(function (r) {
+      if (destroyed) return;
+      buildLanes({
+        continueCards: r[0] as Card[],
+        finishedCards: r[1] as Card[],
+        favCards: r[2] as Card[],
+        likedCards: r[3] as Card[],
+        dislikedCards: r[4] as Card[],
+        playlists: r[5] as Playlist[],
+      });
+    });
   }
 
   load();

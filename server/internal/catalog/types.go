@@ -85,6 +85,10 @@ type tmdbDetail struct {
 		SeasonNumber int    `json:"season_number"`
 		Name         string `json:"name"`
 	} `json:"seasons"`
+	LastEpisodeToAir struct { // tv: the newest aired episode
+		SeasonNumber  int `json:"season_number"`
+		EpisodeNumber int `json:"episode_number"`
+	} `json:"last_episode_to_air"`
 
 	Credits struct { // append_to_response=credits
 		Cast []tmdbCastMember `json:"cast"`

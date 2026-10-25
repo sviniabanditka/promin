@@ -60,7 +60,7 @@ Common query: `lang` (UI language, e.g. `uk`, `ru`, `en`; default per service).
 
 | Method | Path | Auth | Params | Response |
 |---|---|---|---|---|
-| GET | `/api/v1/catalog/home` | bearer | `lang?` | `{rows: [{id, title, items: [Title]}]}`. Authenticated home is personalized: `continue_watching` first, recommendation/themed rows once the user has ≥ 2 finished titles (they displace `popular_movies`/`popular_tv`), one rotating provider row, then editorial rows |
+| GET | `/api/v1/catalog/home` | bearer | `lang?` | `{rows: [{id, title, items: [Title]}]}`. Authenticated home is personalized: `continue_watching` first, recommendation/themed rows once the user has ≥ 2 finished titles or ≥ 1 like (they displace `popular_movies`/`popular_tv`; a liked seed comes first, disliked titles are dropped from every row), one rotating provider row, then editorial rows |
 | GET | `/api/v1/catalog/list` | bearer | `type=movie\|tv`, `genre?` (TMDB id), `year_from?`, `year_to?`, `rating_from?`, `sort?=popularity\|rating\|year`, `page?=1`, `lang?` | `{page, total_pages, items: [Title]}` |
 | GET | `/api/v1/catalog/search` | bearer | `q` (required), `page?`, `lang?`, `type?` = `movie` \| `tv` (typed TMDB search; omitted → `/search/multi`) | `{page, total_pages, items: [Title], people?: [{id, name, photo?, department?}]}` — `people` only on untyped searches |
 | GET | `/api/v1/catalog/person/{id}` | bearer | `lang?` | `{id, name, photo?, department?, biography?, birthday?, deathday?, place_of_birth?, credits: [Title]}` — filmography most popular first, de-duplicated, poster-less entries dropped; `404 person_not_found` |
@@ -76,7 +76,7 @@ seasons[]}`.
 
 `TitleDetail` = `Title` + `{cast: [{id, name, character?, photo?}], similar:
 [Title], recommendations: [Title], trailers: [{key, name, type, lang?,
-youtube_url}]}`; `seasons: [{season, name, episodes: [{episode, name, air_date,
+youtube_url}]}` (YouTube only, uk/ru/en, at most 6 per language so no language is crowded out); `seasons: [{season, name, episodes: [{episode, name, air_date,
 still?, overview?, runtime_minutes?, rating?, timecode}]}]`; `timecode` is the
 caller's latest `{position_sec, duration_sec, season?, episode?}` on this title
 or `null`.
@@ -140,6 +140,16 @@ unix seconds.
 | POST | `/api/v1/bookmarks` | bearer | body `{tmdb_id, media_type}` | `201` (created) or `200` (already present) `{tmdb_id, media_type, added_at}` |
 | DELETE | `/api/v1/bookmarks/{tmdb_id}` | bearer | `?media_type=` | 204 |
 
+### Reactions (like / dislike)
+
+| Method | Path | Auth | Params | Response |
+|---|---|---|---|---|
+| GET | `/api/v1/reactions` | bearer | — | `{reactions: [{tmdb_id, media_type, value, updated_at}]}` — `value` 1 like, -1 dislike |
+| PUT | `/api/v1/reactions` | bearer | body `{tmdb_id, media_type, value}` (`0` clears) | `{tmdb_id, media_type, value, updated_at}`; sync event `reaction_set` |
+
+Likes seed the home shelf `liked:<type>:<id>` («Тому що вам сподобалося …», one
+liked title rotated daily); disliked titles are removed from every home row.
+
 ### Playlists
 
 | Method | Path | Auth | Params | Response |
@@ -163,7 +173,8 @@ unix seconds.
 
 | Method | Path | Auth | Params | Response |
 |---|---|---|---|---|
-| GET | `/api/v1/timecodes/continue` | bearer | `limit?=20` | `{items: [{tmdb_id, media_type, season?, episode?, position_sec, duration_sec, updated_at}]}` |
+| GET | `/api/v1/timecodes/continue` | bearer | `limit?=20`, `lang?` | `{items: [{tmdb_id, media_type, season?, episode?, position_sec, duration_sec, updated_at}]}` — unfinished titles; a series leaves once its **last aired episode** is at ≥ 90 % |
+| GET | `/api/v1/timecodes/finished` | bearer | `limit?=20`, `lang?` | same shape — movies at ≥ 90 %, series whose last aired episode (TMDB `last_episode_to_air`, from the cached detail for `lang`) is at ≥ 90 % |
 | GET | `/api/v1/timecodes/{tmdb_id}` | bearer | `media_type`, `season?`, `episode?` | `{media_type, position_sec, duration_sec, updated_at}`; `404 not_found` |
 | POST | `/api/v1/timecodes` | bearer | body `{tmdb_id, media_type, season, episode, position_sec, duration_sec, updated_at}` (`updated_at` > 0 required) | `{accepted, position_sec, updated_at}` — last-write-wins on `updated_at`; when `accepted` is false the server's values are returned |
 
@@ -191,11 +202,12 @@ Every change publishes `queue_updated` with the whole queue: `{items: [...]}`.
 
 | Method | Path | Auth | Params | Response |
 |---|---|---|---|---|
-| GET | `/api/v1/sync/bootstrap` | bearer | — | `{bookmarks[], playlists[], history[], timecodes[], settings{}, queue[], cursor}` |
+| GET | `/api/v1/sync/bootstrap` | bearer | — | `{bookmarks[], reactions[], playlists[], history[], timecodes[], settings{}, queue[], cursor}` |
 | GET | `/api/v1/sync/events` | bearer | `since=<cursor>` | `{events: [{id, type, payload}], cursor}`; `410 gone` when the cursor is older than the hub's buffer → bootstrap again |
 | GET | `/api/v1/ws` | media (`?t=`) | WebSocket upgrade | server → client: one `{id, type, payload}` frame per event for this user; client → server: `{"type":"ping"}` answered with `{"type":"pong"}` |
 
 Event `type` values: `bookmark_added`, `bookmark_removed` (payload: bookmark),
+`reaction_set` (reaction, `value` 0 = cleared),
 `playlist_created`, `playlist_updated` (playlist, or `{id, deleted: true}`),
 `playlist_item_added` (`{playlist_id, item}`), `playlist_item_removed`
 (`{playlist_id, item_id}`), `history_added` (history item), `timecode_updated`
@@ -220,7 +232,7 @@ Served under `/admin/logs/*` behind the admin session cookie (same gate as every
 | Method | Path | Auth | Effect |
 |---|---|---|---|
 | DELETE | `/api/v1/me/history` | bearer | Deletes the profile's history and timecodes; sync event `data_cleared` (`scope: history`). 204. |
-| DELETE | `/api/v1/me/data` | bearer | Deletes bookmarks, playlists, history, timecodes, settings and revokes all sessions of the profile; sync event `data_cleared` (`scope: all`). 204. |
+| DELETE | `/api/v1/me/data` | bearer | Deletes bookmarks, reactions, playlists, history, timecodes, settings and revokes all sessions of the profile; sync event `data_cleared` (`scope: all`). 204. |
 
 ## Telegram companion
 

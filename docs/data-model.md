@@ -79,6 +79,14 @@ CREATE TABLE bookmarks (
 );
 CREATE INDEX idx_bookmarks_user_added ON bookmarks(user_id, added_at DESC);
 
+-- 0020: 👍 / 👎 on a title. value 1 or -1; no row = neutral. Likes seed the
+-- personalised home shelves, dislikes are excluded from every shelf.
+CREATE TABLE reactions (
+  user_id INTEGER NOT NULL, tmdb_id INTEGER NOT NULL, media_type TEXT NOT NULL,
+  value INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, tmdb_id, media_type)
+) WITHOUT ROWID;
+
 CREATE TABLE playlists (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

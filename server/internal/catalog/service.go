@@ -55,6 +55,17 @@ type ListFilters struct {
 // "continue_watching"/"trending"/"new_releases"/"genre:28" as a sample,
 // not an exhaustive list). continue_watching itself isn't built here — it
 // needs the caller's timecodes, which this package doesn't own — see
+// LastAiredEpisode reads a series' newest aired episode from the cached
+// detail (cache-only, like CardCached). ok=false on a cache miss or when TMDB
+// has no last_episode_to_air.
+func (s *Service) LastAiredEpisode(tmdbID int, lang string) (season, episode int, ok bool) {
+	d, ok := s.client.cachedDetail("tv", tmdbID, lang)
+	if !ok || d.LastEpisodeToAir.EpisodeNumber == 0 {
+		return 0, 0, false
+	}
+	return d.LastEpisodeToAir.SeasonNumber, d.LastEpisodeToAir.EpisodeNumber, true
+}
+
 // ContinueWatchingRow, which internal/httpapi calls and prepends to
 // these rows when the request is authenticated (Phase 3 добивание).
 func (s *Service) Home(ctx context.Context, lang string) (HomeResponse, error) {

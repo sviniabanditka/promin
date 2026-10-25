@@ -482,7 +482,12 @@ html, body {
 
 /* Playlist tile in the Library "Плейлисти" lane: same dark frame as the More
    tile, name + item count stacked and centred. */
-.card--playlist .card__view {
+.card__pl {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1002,6 +1007,30 @@ body.reduce-motion .toast__progress::after {
   -webkit-box-orient: vertical;
   width: 100%;
   margin-bottom: 1.6em;
+}
+
+.full-start-new__description.selector {
+  border-radius: var(--radius-xs);
+  padding: 0.3em 0.5em;
+  margin-left: -0.5em;
+}
+.full-start-new__description.selector.focus {
+  background-color: var(--surface-2);
+  box-shadow: inset 0 0 0 0.2rem var(--focus);
+  -webkit-line-clamp: 6;
+}
+
+/* Full overview modal: a bounded translate-Scroll of plain text (same idiom
+   as .modal__list). */
+.settings-modal__box--text { width: 64rem; max-width: 64rem; }
+.settings-modal__text { overflow: hidden; }
+.settings-modal__text > .scroll { width: 100%; max-height: 60vh; }
+.settings-modal__text-body {
+  font-size: 1.9rem;
+  line-height: 1.5;
+  color: var(--ink-2);
+  padding-right: 1rem;
+  white-space: pre-line;
 }
 
 .full-start-new__buttons {
@@ -2697,35 +2726,6 @@ body.reduce-motion .toast__progress::after {
   background-color: #fff;
   color: #000;
 }
-
-/* Icon + caption pills (left group). */
-.player-panel .button--labeled {
-  width: auto;
-  height: 2em;
-  border-radius: 1em;
-  padding: 0.3em 0.9em 0.3em 0.7em;
-}
-.player-panel .button--labeled svg {
-  width: 1.2em;
-  height: 1.2em;
-  flex-shrink: 0;
-}
-.player-panel .button__label {
-  margin-left: 0.45em;
-  font-size: 0.85em;
-  white-space: nowrap;
-}
-.player-panel .button__value {
-  margin-left: 0.45em;
-  font-size: 0.72em;
-  opacity: 0.7;
-  white-space: nowrap;
-  max-width: 7em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.player-panel .button__value:empty { display: none; }
-.player-panel__left .button + .button { margin-left: 0.6em; }
 
 /* Name of the focused control, floating above it (icons alone don't say
  * "episodes" or "framing"). */

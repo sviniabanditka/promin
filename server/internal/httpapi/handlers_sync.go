@@ -67,6 +67,39 @@ func (h *syncHandlers) removeBookmark(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// --- Reactions ------------------------------------------------------------
+
+func (h *syncHandlers) listReactions(w http.ResponseWriter, r *http.Request) {
+	info, _ := authFrom(r)
+	list, err := h.svc.ListReactions(info.User.ID)
+	if err != nil {
+		writeSyncError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"reactions": list})
+}
+
+type reactionRequest struct {
+	TMDBID    int64  `json:"tmdb_id"`
+	MediaType string `json:"media_type"`
+	Value     int    `json:"value"` // 1 like, -1 dislike, 0 clear
+}
+
+func (h *syncHandlers) setReaction(w http.ResponseWriter, r *http.Request) {
+	info, _ := authFrom(r)
+	var req reactionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.TMDBID <= 0 {
+		writeBadRequest(w, "невірне тіло запиту")
+		return
+	}
+	dto, err := h.svc.SetReaction(info.User.ID, req.TMDBID, req.MediaType, req.Value)
+	if err != nil {
+		writeSyncError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, dto)
+}
+
 // --- Playlists --------------------------------------------------------------
 
 func (h *syncHandlers) listPlaylists(w http.ResponseWriter, r *http.Request) {
@@ -240,24 +273,6 @@ func (h *syncHandlers) upsertTimecode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
-}
-
-func (h *syncHandlers) continueWatching(w http.ResponseWriter, r *http.Request) {
-	info, _ := authFrom(r)
-	limit := atoiDefault(r.URL.Query().Get("limit"), 20)
-	rows, err := h.svc.ListContinueWatching(info.User.ID, limit)
-	if err != nil {
-		writeSyncError(w, err)
-		return
-	}
-	items := make([]sync.TimecodeDTO, 0, len(rows))
-	for _, t := range rows {
-		items = append(items, sync.TimecodeDTO{
-			TMDBID: t.TMDBID, MediaType: t.MediaType, Season: t.Season, Episode: t.Episode,
-			PositionSec: t.PositionSec, DurationSec: t.DurationSec, UpdatedAt: t.UpdatedAt,
-		})
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 // --- Settings ---------------------------------------------------------------

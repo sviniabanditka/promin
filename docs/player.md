@@ -37,7 +37,7 @@ Everything is built once; availability is toggled with `.hide` (which also remov
 - **Subtitle surface** (`player__subs`): the player's own cue renderer, positioned above the panel when it is visible.
 - **"▲ Next episode" hint** (`player__skip`) during the last 90 s of an episode when `onNext` exists; UP while it shows (panel hidden) jumps.
 - **Panel** (bottom, `player-panel`): timeline (buffer bar, progress, knob, time bubble), a line with current time and `total · −remaining · ends at HH:MM`, and a button row:
-  - left, **labeled pills** (icon + caption + current value): Episodes, Audio, Subtitles, plus the "Next: 5. Name" caption;
+  - left, icon buttons: Episodes, Audio, Subtitles (the focused one shows its name — and the current dub / subtitle track — in the tooltip; captioned pills overflowed at 720p), plus the "Next: 5. Name" caption;
   - centre: prev/next episode (series) or skip-to-start/end (movie), rewind, play/pause, forward;
   - right: quality pill (`1080p`, or `Auto · 720p` under ABR), speed pill (`1.5×`), and a "more" sheet (PiP when the API exists, mute, fit/fill framing, subtitle size).
 - **Sheets** (`player__popup`): every menu is a bottom sheet above the panel. List layout is one column that scrolls the focused row into view; the **episode strip** layout is a horizontal row of cards with the still image, number badge, watched progress bar or ✓, name and "position / duration", slid with `translate3d` to keep the focused card centred. The sheet opens on the active item.

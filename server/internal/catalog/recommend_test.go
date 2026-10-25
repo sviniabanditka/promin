@@ -88,7 +88,7 @@ func TestRecsRowExcludeAndThinDrop(t *testing.T) {
 func TestPersonalRowsEmptyGuard(t *testing.T) {
 	cache := newTestCache(t)
 	svc := NewService(NewClient([]string{"http://127.0.0.1:0"}, "k", cache, slog.Default()), nil)
-	if rows := svc.PersonalRows(context.Background(), "uk", nil, nil, 0); rows != nil {
+	if rows := svc.PersonalRows(context.Background(), "uk", nil, nil, nil, 0); rows != nil {
 		t.Fatalf("expected nil rows for empty finished, got %d", len(rows))
 	}
 }

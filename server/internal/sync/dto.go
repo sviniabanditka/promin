@@ -9,6 +9,14 @@ type BookmarkDTO struct {
 	AddedAt   int64  `json:"added_at"`
 }
 
+// ReactionDTO is a like (1) / dislike (-1) on a title.
+type ReactionDTO struct {
+	TMDBID    int64  `json:"tmdb_id"`
+	MediaType string `json:"media_type"`
+	Value     int    `json:"value"`
+	UpdatedAt int64  `json:"updated_at"`
+}
+
 type PlaylistDTO struct {
 	ID         int64  `json:"id"`
 	Name       string `json:"name"`
@@ -57,6 +65,7 @@ type QueueItemDTO struct {
 // (docs/api.md).
 type BootstrapDTO struct {
 	Bookmarks []BookmarkDTO     `json:"bookmarks"`
+	Reactions []ReactionDTO     `json:"reactions"`
 	Playlists []PlaylistDTO     `json:"playlists"`
 	Timecodes []TimecodeDTO     `json:"timecodes"`
 	Settings  map[string]string `json:"settings"`

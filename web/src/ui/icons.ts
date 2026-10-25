@@ -37,6 +37,11 @@ export const ICON_TRAILER =
 export const ICON_FOLDER =
   '<svg viewBox="0 0 128 112" fill="none" xmlns="http://www.w3.org/2000/svg"><rect y="20" width="128" height="92" rx="13" fill="currentColor"/><path d="M29.9963 8H98.0037C96.0446 3.3021 91.4079 0 86 0H42C36.5921 0 31.9555 3.3021 29.9963 8Z" fill="currentColor" fill-opacity="0.23"/><rect x="11" y="8" width="106" height="76" rx="13" fill="currentColor" fill-opacity="0.51"/></svg>';
 
+export const ICON_THUMB_UP =
+  '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 10.5v9.5H4a1 1 0 01-1-1v-7.5a1 1 0 011-1h3zm0 0l4.2-7.6a1.6 1.6 0 012.9 1.1L13.3 9h5.4a2 2 0 011.95 2.45l-1.6 7A2 2 0 0117.1 20H7" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>';
+export const ICON_THUMB_DOWN =
+  '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M17 13.5V4h3a1 1 0 011 1v7.5a1 1 0 01-1 1h-3zm0 0l-4.2 7.6a1.6 1.6 0 01-2.9-1.1l.8-5H5.3a2 2 0 01-1.95-2.45l1.6-7A2 2 0 016.9 4H17" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>';
+
 export const ICON_CHECK =
   '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 12.5L9.5 18L20 6.5" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
