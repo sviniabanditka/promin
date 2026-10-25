@@ -13,7 +13,7 @@
 import { onlineEnabled, torrentsEnabled } from '../core/features';
 import Controller, { on, trigger } from '../core/controller';
 import { Scroll } from '../core/scroll';
-import { t } from '../core/i18n';
+import { t, getLang } from '../core/i18n';
 import * as router from '../core/router';
 import { ScreenInstance } from '../core/activity';
 import {
@@ -2198,11 +2198,45 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
       let trackerFilter = '';
       let qualityFilter = '';
       let torrentsCache: Torrent[] | null = null;
+      // Search language: JacRed indexes Russian/original release names, so the
+      // uk UI title often finds nothing. Remembered across titles.
+      const SEARCH_LANG_KEY = 'promin:torrents-lang';
+      let searchLang = '';
+      try {
+        searchLang = window.localStorage.getItem(SEARCH_LANG_KEY) || '';
+      } catch (e) {
+        /* ignore */
+      }
+      if (searchLang !== 'uk' && searchLang !== 'ru' && searchLang !== 'en') searchLang = getLang();
 
+      const fLang = makeFilter('online.search_lang', langLabel(searchLang));
       const fTracker = makeFilter('online.source', t('common.all'));
       const fQuality = makeFilter('online.quality', t('common.all'));
+      filters.appendChild(fLang.el);
       filters.appendChild(fTracker.el);
       filters.appendChild(fQuality.el);
+
+      on(fLang.el, 'hover:enter', function () {
+        const opts = [
+          { label: langLabel('uk'), value: 'uk' },
+          { label: langLabel('ru'), value: 'ru' },
+          { label: langLabel('en'), value: 'en' },
+        ];
+        openChoice(t('online.search_lang'), opts, searchLang, function (v) {
+          if (v === searchLang) return;
+          searchLang = v;
+          fLang.value.textContent = langLabel(v);
+          try {
+            window.localStorage.setItem(SEARCH_LANG_KEY, v);
+          } catch (e) {
+            /* ignore */
+          }
+          torrentsCache = null;
+          trackerFilter = '';
+          qualityFilter = '';
+          loadTorrents(true);
+        });
+      });
 
       // Distinct trackers / qualities present in the loaded torrent list, each
       // prefixed with an "all" reset option.
@@ -2272,6 +2306,7 @@ export function mountTitle(container: HTMLElement, params: TitleParams): ScreenI
           title: card.title,
           original_title: card.original_title,
           year: card.year != null ? card.year : undefined,
+          search_lang: searchLang,
           // Don't send season: it's hardcoded to season 1, and the backend drops
           // any pack whose declared seasons don't include it → later-season packs
           // vanished. Show all packs; a proper season picker is a later phase.

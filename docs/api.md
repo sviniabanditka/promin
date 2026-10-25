@@ -111,7 +111,7 @@ when loaded by a media element; the client stamps it (`mediaUrl()`).
 
 | Method | Path | Auth | Params | Response |
 |---|---|---|---|---|
-| GET | `/api/v1/sources/torrents` | bearer | `title` and/or `original_title` (one required, else empty list), `type?=movie` , `tmdb_id?`, `year?`, `season?`, `episode?` | `{degraded, torrents: [{id, title, tracker, size, size_human, seeders, peers, quality, voices[]?}]}` sorted by seeders; `id` is the magnet id for `/torrents/add` |
+| GET | `/api/v1/sources/torrents` | bearer | `title` and/or `original_title` (one required, else empty list), `type?=movie` , `tmdb_id?`, `year?`, `season?`, `episode?`, `search_lang?=uk\|ru\|en` (search by the TMDB title in that language instead of `title`; needs `tmdb_id`) | `{degraded, torrents: [{id, title, tracker, size, size_human, seeders, peers, quality, voices[]?}]}` sorted by seeders; `id` is the magnet id for `/torrents/add` |
 | GET / POST | `/api/v1/torrents/add` | bearer | `id=<magnet_id>` **or** `magnet=<magnet: URI or base64url>` | `{infohash, files: [{index, name, size, is_video}]}`; `504 metadata_timeout`; `409 too_many_active_torrents` |
 | GET | `/api/v1/torrents/active` | bearer | — | `{torrents: [{infohash, name, size, downloaded, progress, readers, added_at}]}` |
 | GET | `/api/v1/torrents/audio` | bearer | `infohash`, `file` (index) | `{tracks: [{index, lang?, title?}]}` (ffprobe) ; `404 file_not_found` |

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sviniabanditka/promin/server/internal/catalog"
 	"github.com/sviniabanditka/promin/server/internal/remux"
 	"github.com/sviniabanditka/promin/server/internal/sources"
 	torrentpkg "github.com/sviniabanditka/promin/server/internal/torrent"
@@ -22,6 +23,7 @@ import (
 // docs/backend.md
 type torrentHandlers struct {
 	sourcesSvc  *sources.Service
+	cat         *catalog.Service // search_lang → TMDB title in that language
 	mgr         *torrentpkg.Manager
 	remuxQueue  *remux.Queue
 	selfBaseURL string // loopback base for internal /stream reads (ffmpeg/ffprobe)
@@ -64,10 +66,24 @@ func (h *torrentHandlers) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// search_lang=uk|ru|en: search JacRed by the TMDB title in that language
+	// (the modal's «Мова пошуку» dropdown) instead of the UI-language title the
+	// client sent. Cached like every detail; a miss keeps the client's title.
+	title := q.Get("title")
+	if lang := q.Get("search_lang"); lang != "" && h.cat != nil {
+		if id := atoiDefault(q.Get("tmdb_id"), 0); id > 0 {
+			cctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+			if t, err := h.cat.Title(cctx, mediaType, id, 0, lang); err == nil && t.Title != "" {
+				title = t.Title
+			}
+			cancel()
+		}
+	}
+
 	resp := h.sourcesSvc.Torrents(r.Context(), sources.TorrentsRequest{
 		TMDBID:        atoiDefault(q.Get("tmdb_id"), 0),
 		Type:          mediaType,
-		Title:         q.Get("title"),
+		Title:         title,
 		OriginalTitle: q.Get("original_title"),
 		Year:          atoiDefault(q.Get("year"), 0),
 		Season:        atoiDefault(q.Get("season"), 0),

@@ -520,6 +520,7 @@ export interface TorrentsParams {
   year?: number | null;
   season?: number | null;
   episode?: number | null;
+  search_lang?: string; // uk|ru|en — search by the TMDB title in this language
 }
 
 // A file inside an added torrent. `index` is the file index used by /stream.

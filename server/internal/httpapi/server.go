@@ -110,7 +110,7 @@ func NewServer(
 	mux.HandleFunc("GET /api/v1/sources/online", requireAuth(authSvc, requireFeature("online", src.online)))
 	mux.HandleFunc("GET /api/v1/sources/online/resolve", requireAuth(authSvc, requireFeature("online", src.resolve)))
 
-	trh := &torrentHandlers{sourcesSvc: sourcesSvc, mgr: torrentMgr, remuxQueue: remuxQueue, selfBaseURL: selfBaseURL, logger: logger}
+	trh := &torrentHandlers{sourcesSvc: sourcesSvc, cat: catalogSvc, mgr: torrentMgr, remuxQueue: remuxQueue, selfBaseURL: selfBaseURL, logger: logger}
 	mux.HandleFunc("GET /api/v1/sources/torrents", requireAuth(authSvc, requireFeature("torrents", trh.list)))
 	mux.HandleFunc("GET /api/v1/torrents/add", requireAuth(authSvc, requireFeature("torrents", trh.add)))
 	mux.HandleFunc("POST /api/v1/torrents/add", requireAuth(authSvc, requireFeature("torrents", trh.add)))
