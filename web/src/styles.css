@@ -1130,8 +1130,17 @@ body.reduce-motion .toast__progress::after {
   border-color: var(--focus);
   color: var(--ink);
 }
-/* "Смотреть" (button--active) uses the SAME focus as the rest — no divergent
-   white/black pill. */
+/* Toggled-on action (favourite / 👍 / 👎): gold ink + the outline glyph
+   filled. The pill is .full-start__button, not .button, so the generic
+   .button--active rule below never matched it. */
+.full-start__button.button--active {
+  color: #ffd23f;
+  border-color: rgba(255, 210, 63, 0.6);
+}
+.full-start__button.button--active .full-start__button-ico svg path {
+  fill: currentColor;
+}
+/* Focused active button keeps the unified focus ring; the glyph stays filled. */
 .full-start__button.button--active.focus {
   background-color: var(--surface-2);
   box-shadow: inset 0 0 0 0.2rem var(--focus);
